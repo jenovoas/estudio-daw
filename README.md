@@ -149,6 +149,13 @@ preparan fuera del hilo RT, el scheduler compara el coste de transferencia y cad
 operación conserva una ruta CPU segura. El objetivo es reducir el coste total del
 proyecto, no trasladar trabajo a la GPU cuando la transferencia resulte más cara.
 
+La política inicial y el benchmark CPU se pueden ejecutar así:
+
+```bash
+cargo test -p estudio-daw-compute-runtime
+cargo run -q -p estudio-daw-compute-runtime --bin compute-benchmark
+```
+
 ### Plugins
 
 Estudio DAW será principalmente un host extensible, no una reimplementación inmediata de todo el catálogo de instrumentos y efectos.
