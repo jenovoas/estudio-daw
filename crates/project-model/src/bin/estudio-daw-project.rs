@@ -129,7 +129,7 @@ fn main() -> ExitCode {
                     .unwrap_or_else(|| "FluidSynth".into()),
             )
         }
-        "midi-outputs" => midi_outputs_command(),
+        "midi-output" | "midi-outputs" => midi_outputs_command(),
         _ => {
             usage();
             Err("comando desconocido".into())
