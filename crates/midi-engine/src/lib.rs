@@ -207,7 +207,7 @@ pub fn record_alsa_midi(
     let deadline = Instant::now() + duration;
     let mut input = seq.input();
     while Instant::now() < deadline {
-        if input.event_input_pending(false)? > 0 {
+        if input.event_input_pending(true)? > 0 {
             let event = input.event_input()?;
             let normalized = normalize_alsa_event(&event);
             recorder.record(&normalized)?;
