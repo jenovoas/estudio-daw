@@ -79,6 +79,11 @@ medidores agregados o tiles de espectrograma); la lectura de vuelta GPU se hace
 asíncronamente y fuera del callback. El WebView puede usar su propia aceleración
 para dibujar, pero eso no sustituye ni duplica el DSP nativo.
 
+El contrato v1 de snapshots, medidores, waveform y tiles de espectrograma está
+especificado en [`ui-bridge-contract-v1.md`](ui-bridge-contract-v1.md). Los IDs
+de derivados son opacos; la UI no resuelve rutas del filesystem y el payload de
+tiles binarios se solicita por separado del JSON.
+
 En modo navegador el dominio portable podrá compartir modelos y comandos, pero el
 backend de audio/compute será otro adaptador (por ejemplo Web Audio/AudioWorklet y
 WebGPU cuando estén disponibles). No se presupone intercambio zero-copy con el

@@ -655,6 +655,7 @@ Después se añadirán clips, escenas, Arrangement View, plugins, escalas, anál
 - [Control MIDI live](docs/midi-live-control.md)
 - [Frontera Core/UI](docs/ui-architecture.md)
 - [Shell de escritorio Tauri](crates/ui-shell/tauri.conf.json)
+- [Contrato versionado UI/backend v1](docs/ui-bridge-contract-v1.md)
 - [Propuesta inicial](openspec/changes/bootstrap-opendaw-architecture/proposal.md)
 - [Diseño](openspec/changes/bootstrap-opendaw-architecture/design.md)
 - [Especificación de audio y MIDI](openspec/changes/bootstrap-opendaw-architecture/specs/runtime-audio-midi/spec.md)

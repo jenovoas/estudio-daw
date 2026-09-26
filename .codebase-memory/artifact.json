@@ -1,11 +1,11 @@
 {
     "schema_version": 2,
-    "commit": "54233ff5789b7ef8a1ed2658c560db3dc4a398f1",
-    "indexed_at": "2026-09-26T20:13:25Z",
+    "commit": "c970e8cd379bad0175a7b699716d8de7ca301495",
+    "indexed_at": "2026-09-26T20:21:54Z",
     "project": "estudio-daw",
-    "nodes": 1719,
-    "edges": 4569,
-    "original_size": 6750208,
-    "compressed_size": 857192,
+    "nodes": 1770,
+    "edges": 4707,
+    "original_size": 6881280,
+    "compressed_size": 880869,
     "compression_level": 9
 }

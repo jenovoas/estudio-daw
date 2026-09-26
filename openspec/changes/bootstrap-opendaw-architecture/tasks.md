@@ -156,9 +156,10 @@
 
 - [x] Crear un shell experimental Tauri que consuma `ProjectApplication`, mantenga
   el frontend desacoplado del runtime nativo y no transporte PCM por IPC.
-- [ ] Diseñar contratos de snapshot/telemetría compacta y referencias opacas a
+- [x] Diseñar contratos de snapshot/telemetría compacta y referencias opacas a
   medios; visualizar waveform/espectrograma desde artefactos derivados sin asumir
-  memoria GPU compartida entre `wgpu` nativo y WebView.
+  memoria GPU compartida entre `wgpu` nativo y WebView. (Contratos v1 definidos;
+  endpoints, jobs de artefactos y renderer quedan como implementación posterior.)
 
 ## Verificación
 

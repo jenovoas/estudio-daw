@@ -29,6 +29,7 @@ struct TrackSummary {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct UiSnapshot {
+    schema_version: &'static str,
     project_id: String,
     project_revision: u64,
     project_path: Option<String>,
@@ -41,6 +42,80 @@ struct UiSnapshot {
     can_undo: bool,
     can_redo: bool,
     audio_engine_connected: bool,
+}
+
+/// Medición agregada para UI. `sequence` permite descartar mensajes atrasados;
+/// `at_sample` mantiene la sincronía con el timeline sin enviar PCM.
+#[allow(dead_code)] // Contrato preparado antes de conectar los medidores live.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct MeterFrameV1 {
+    schema_version: &'static str,
+    sequence: u64,
+    at_sample: u64,
+    sample_rate_hz: u32,
+    window_frames: u32,
+    meters: Vec<MeterReadingV1>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct MeterReadingV1 {
+    channel_id: String,
+    peak_dbfs: f32,
+    rms_dbfs: f32,
+    clipping: bool,
+}
+
+/// Referencia a un derivado visual, nunca una ruta local ni un handle de GPU.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+#[allow(dead_code)] // Consumido por el endpoint de artefactos en la fase visual.
+struct VisualizationArtifactRefV1 {
+    schema_version: &'static str,
+    artifact_id: String,
+    kind: &'static str,
+    project_revision: u64,
+    source_digest: String,
+    sample_rate_hz: u32,
+    channel_count: u16,
+    frame_count: u64,
+    level_count: u8,
+}
+
+/// Una consulta de waveform retorna pares min/max ya reducidos en el backend.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+#[allow(dead_code)] // Consumido por la lectura paginada de waveform.
+struct WaveformChunkV1 {
+    schema_version: &'static str,
+    artifact_id: String,
+    level: u8,
+    first_bin: u64,
+    bins: Vec<WaveformBinV1>,
+}
+
+#[derive(Debug, Clone, Copy, Serialize)]
+#[serde(rename_all = "camelCase")]
+#[allow(dead_code)] // Payload pequeño de bins, separado del PCM original.
+struct WaveformBinV1 {
+    min: f32,
+    max: f32,
+}
+
+/// Tiles de espectrograma se consultan como artefactos binarios acotados por
+/// rango; no se serializan como PCM ni como un buffer de textura compartido.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+#[allow(dead_code)] // Consumido por el protocolo de tiles de espectrograma.
+struct SpectrogramTileRefV1 {
+    schema_version: &'static str,
+    artifact_id: String,
+    tile_x: u32,
+    tile_y: u16,
+    width: u16,
+    height: u16,
+    encoding: &'static str,
 }
 
 fn summarize(application: &ProjectApplication) -> UiSnapshot {
@@ -62,6 +137,7 @@ fn summarize(application: &ProjectApplication) -> UiSnapshot {
         .collect();
 
     UiSnapshot {
+        schema_version: "ui-snapshot.v1",
         project_id: project.project_id,
         project_revision: domain.project.revision,
         project_path: application
@@ -217,11 +293,79 @@ mod tests {
             .expect("el snapshot compacto debe serializarse");
 
         assert_eq!(value["projectId"], "ui-contract-test");
+        assert_eq!(value["schemaVersion"], "ui-snapshot.v1");
         assert_eq!(value["tempoBpm"], 96.0);
         assert_eq!(value["trackCount"], 0);
         assert_eq!(value["audioEngineConnected"], false);
         assert!(value.get("samples").is_none());
         assert!(value.get("pcm").is_none());
         assert!(value.get("gpu_buffers").is_none());
+    }
+
+    #[test]
+    fn visualization_contracts_are_versioned_and_use_opaque_artifact_ids() {
+        let reference = VisualizationArtifactRefV1 {
+            schema_version: "visualization-artifact-ref.v1",
+            artifact_id: "viz_opaque_01HXYZ".to_owned(),
+            kind: "waveform-minmax-pyramid",
+            project_revision: 7,
+            source_digest: "sha256:abc123".to_owned(),
+            sample_rate_hz: 48_000,
+            channel_count: 2,
+            frame_count: 96_000,
+            level_count: 8,
+        };
+        let value = serde_json::to_value(reference).expect("serialización de referencia");
+
+        assert_eq!(value["schemaVersion"], "visualization-artifact-ref.v1");
+        assert_eq!(value["artifactId"], "viz_opaque_01HXYZ");
+        assert!(value.get("path").is_none());
+        assert!(value.get("gpuBuffer").is_none());
+        assert!(value.get("samples").is_none());
+
+        let chunk = WaveformChunkV1 {
+            schema_version: "waveform-chunk.v1",
+            artifact_id: "viz_opaque_01HXYZ".to_owned(),
+            level: 3,
+            first_bin: 128,
+            bins: vec![WaveformBinV1 {
+                min: -0.8,
+                max: 0.9,
+            }],
+        };
+        let chunk = serde_json::to_value(chunk).expect("serialización de waveform");
+        assert_eq!(chunk["bins"].as_array().map(Vec::len), Some(1));
+        assert_eq!(chunk["firstBin"], 128);
+
+        let meter = MeterFrameV1 {
+            schema_version: "meter-frame.v1",
+            sequence: 12,
+            at_sample: 48_000,
+            sample_rate_hz: 48_000,
+            window_frames: 256,
+            meters: vec![MeterReadingV1 {
+                channel_id: "master".to_owned(),
+                peak_dbfs: -1.5,
+                rms_dbfs: -12.0,
+                clipping: false,
+            }],
+        };
+        let meter = serde_json::to_value(meter).expect("serialización de medidores");
+        assert_eq!(meter["schemaVersion"], "meter-frame.v1");
+        assert_eq!(meter["meters"][0]["channelId"], "master");
+        assert!(meter.get("samples").is_none());
+
+        let tile = SpectrogramTileRefV1 {
+            schema_version: "spectrogram-tile-ref.v1",
+            artifact_id: "spec_opaque_01HXYZ".to_owned(),
+            tile_x: 4,
+            tile_y: 2,
+            width: 256,
+            height: 256,
+            encoding: "image/webp",
+        };
+        let tile = serde_json::to_value(tile).expect("serialización de tile");
+        assert_eq!(tile["encoding"], "image/webp");
+        assert!(tile.get("path").is_none());
     }
 }
