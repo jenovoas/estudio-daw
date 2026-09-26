@@ -1,0 +1,44 @@
+{
+  "schema_version": "estudio-daw.project.v1",
+  "project_id": "fixture-dawproject-minimal",
+  "transport": {
+    "tempo_bpm": 92.0,
+    "time_signature": {"numerator": 4, "denominator": 4},
+    "key": "E",
+    "mode": "natural_minor"
+  },
+  "tracks": [
+    {
+      "id": "track-midi",
+      "name": "Keyboard Study",
+      "kind": "midi",
+      "channel": {"audio_channels": 2, "volume": 0.8, "pan": 0.0},
+      "notes": [
+        {"pitch_class": "E", "octave": 4, "midi_key": 64, "scale_degree": 1, "microtonal_cents": 0.0, "velocity": 0.8, "tick_start": 0, "tick_duration": 480},
+        {"pitch_class": "G", "octave": 4, "midi_key": 67, "scale_degree": 3, "microtonal_cents": 0.0, "velocity": 0.75, "tick_start": 480, "tick_duration": 480},
+        {"pitch_class": "B", "octave": 4, "midi_key": 71, "scale_degree": 5, "microtonal_cents": 0.0, "velocity": 0.85, "tick_start": 960, "tick_duration": 960}
+      ]
+    },
+    {
+      "id": "track-audio",
+      "name": "Guitar Take",
+      "kind": "audio",
+      "channel": {"audio_channels": 1, "volume": 0.8, "pan": 0.0},
+      "media": {
+        "source_id": "guitar-original",
+        "original": {"status": "missing", "path": "audio/guitar-take.wav"},
+        "proxy": {"status": "missing", "path": "proxies/guitar-take.proxy.wav"},
+        "selection_policy": "auto"
+      }
+    }
+  ],
+  "import_provenance": {
+    "format": "dawproject",
+    "format_version": "1.0",
+    "source_file": "project.xml",
+    "warnings": [
+      "No audio media is included in the fixture.",
+      "Plugin state and automation are intentionally absent."
+    ]
+  }
+}

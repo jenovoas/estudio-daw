@@ -1,0 +1,10 @@
+[package]
+name = "estudio-daw-runtime-diagnostics"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Non-real-time PipeWire/MIDI diagnostics for Estudio DAW"
+
+[dependencies]
+serde_json = "1"
+thiserror = "2"

@@ -1,0 +1,107 @@
+use std::{env, fs, path::PathBuf, process::ExitCode};
+
+use estudio_daw_project_model::{export_dawproject, import_dawproject, Project};
+use estudio_daw_runtime_diagnostics::{audio_devices, midi_devices, DeviceInfo};
+
+fn usage() {
+    eprintln!(
+        "Uso:\n  estudio-daw-project devices\n  estudio-daw-project midi-monitor\n  estudio-daw-project audio-test\n  estudio-daw-project import <entrada.dawproject> <salida.json>\n  estudio-daw-project export <entrada.json> <salida.dawproject>"
+    );
+}
+
+fn main() -> ExitCode {
+    let mut args = env::args_os().skip(1);
+    let Some(command) = args.next() else {
+        usage();
+        return ExitCode::from(2);
+    };
+
+    let result = match command.to_string_lossy().as_ref() {
+        "devices" => devices_command(),
+        "midi-monitor" => midi_monitor_command(),
+        "audio-test" => audio_test_command(),
+        "import" | "export" => {
+            let Some(input) = args.next() else {
+                usage();
+                return ExitCode::from(2);
+            };
+            let Some(output) = args.next() else {
+                usage();
+                return ExitCode::from(2);
+            };
+            match command.to_string_lossy().as_ref() {
+                "import" => import_command(input.into(), output.into()),
+                "export" => export_command(input.into(), output.into()),
+                _ => unreachable!(),
+            }
+        }
+        _ => {
+            usage();
+            Err("comando desconocido".into())
+        }
+    };
+
+    match result {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(error) => {
+            eprintln!("error: {error}");
+            ExitCode::from(1)
+        }
+    }
+}
+
+fn devices_command() -> Result<(), Box<dyn std::error::Error>> {
+    println!("Dispositivos PipeWire:");
+    print_devices(&estudio_daw_runtime_diagnostics::enumerate_pipewire()?);
+    Ok(())
+}
+
+fn midi_monitor_command() -> Result<(), Box<dyn std::error::Error>> {
+    println!("Puertos MIDI detectados:");
+    print_devices(&midi_devices()?);
+    println!("Monitor en vivo: pendiente del backend MIDI RT; esta fase sólo enumera capacidades.");
+    Ok(())
+}
+
+fn audio_test_command() -> Result<(), Box<dyn std::error::Error>> {
+    println!("Dispositivos de audio PipeWire:");
+    print_devices(&audio_devices()?);
+    println!(
+        "Prueba de stream: pendiente del backend de audio RT; no se abre ningún stream todavía."
+    );
+    Ok(())
+}
+
+fn print_devices(devices: &[DeviceInfo]) {
+    if devices.is_empty() {
+        println!("  (ninguno)");
+    }
+    for device in devices {
+        println!(
+            "  [{}] {} — {} ({})",
+            device.id, device.name, device.description, device.media_class
+        );
+    }
+}
+
+fn import_command(input: PathBuf, output: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
+    let result = import_dawproject(input)?;
+    fs::write(&output, serde_json::to_string_pretty(&result.project)?)?;
+    println!("Importado a {}", output.display());
+    print_warnings(&result.warnings);
+    Ok(())
+}
+
+fn export_command(input: PathBuf, output: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
+    let project: Project = serde_json::from_slice(&fs::read(&input)?)?;
+    let result = export_dawproject(&project, &output)?;
+    println!("Exportado a {}", output.display());
+    print_warnings(&result.warnings);
+    Ok(())
+}
+
+fn print_warnings(warnings: &[String]) {
+    for warning in warnings {
+        eprintln!("warning: {warning}");
+    }
+}

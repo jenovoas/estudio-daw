@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Project version="1.0">
+  <Application name="Estudio DAW Fixture" version="0.1.0"/>
+  <Transport>
+    <Tempo max="666.000000" min="20.000000" unit="bpm" value="92.000000" id="tempo" name="Tempo"/>
+    <TimeSignature numerator="4" denominator="4" id="timesig" name="Time Signature"/>
+  </Transport>
+  <Structure>
+    <Track contentType="notes" id="track-midi" name="Keyboard Study">
+      <Channel audioChannels="2" id="channel-midi" name="Keyboard Study" role="regular">
+        <Pan max="1.000000" min="-1.000000" unit="linear" value="0.000000" id="pan-midi" name="Pan"/>
+        <Volume max="1.000000" min="0.000000" unit="linear" value="0.800000" id="volume-midi" name="Volume"/>
+      </Channel>
+    </Track>
+    <Track contentType="audio" id="track-audio" name="Guitar Take">
+      <Channel audioChannels="1" id="channel-audio" name="Guitar Take" role="regular">
+        <Pan max="1.000000" min="-1.000000" unit="linear" value="0.000000" id="pan-audio" name="Pan"/>
+        <Volume max="1.000000" min="0.000000" unit="linear" value="0.800000" id="volume-audio" name="Volume"/>
+      </Channel>
+    </Track>
+  </Structure>
+  <Arrangement id="arrangement" name="Arrangement">
+    <Lanes id="arrangement-lanes" timeUnit="beats">
+      <Notes id="notes-midi" track="track-midi" timeUnit="beats">
+        <Note time="0.000000" duration="1.000000" channel="1" key="64" vel="0.80"/>
+        <Note time="1.000000" duration="1.000000" channel="1" key="67" vel="0.75"/>
+        <Note time="2.000000" duration="2.000000" channel="1" key="71" vel="0.85"/>
+      </Notes>
+    </Lanes>
+  </Arrangement>
+</Project>

@@ -1,0 +1,432 @@
+//! Modelo canónico mínimo y adaptador de intercambio DAWproject.
+//!
+//! DAWproject sólo es una frontera de intercambio. El modelo interno conserva
+//! información adicional como escala, procedencia y estado de proxies.
+
+use quick_xml::{de::from_str, escape::escape};
+use serde::{Deserialize, Serialize};
+use std::{
+    fs::File,
+    io::{Cursor, Read, Write},
+    path::Path,
+};
+use thiserror::Error;
+use zip::{write::SimpleFileOptions, ZipArchive, ZipWriter};
+
+#[derive(Debug, Error)]
+pub enum ProjectError {
+    #[error("no se pudo leer el archivo: {0}")]
+    Io(#[from] std::io::Error),
+    #[error("no se pudo abrir el contenedor DAWproject: {0}")]
+    Zip(#[from] zip::result::ZipError),
+    #[error("XML inválido: {0}")]
+    Xml(#[from] quick_xml::DeError),
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct Project {
+    pub schema_version: String,
+    pub project_id: String,
+    pub transport: Transport,
+    pub tracks: Vec<Track>,
+    pub import_provenance: ImportProvenance,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct Transport {
+    pub tempo_bpm: f64,
+    pub time_signature: TimeSignature,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct TimeSignature {
+    pub numerator: u32,
+    pub denominator: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct Track {
+    pub id: String,
+    pub name: String,
+    pub kind: TrackKind,
+    pub notes: Vec<Note>,
+    pub audio_channels: Option<u32>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum TrackKind {
+    Midi,
+    Audio,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct Note {
+    pub midi_key: u8,
+    pub velocity: f32,
+    pub time_beats: f64,
+    pub duration_beats: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ImportProvenance {
+    pub format: String,
+    pub format_version: String,
+    pub source_file: String,
+    pub warnings: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ImportResult {
+    pub project: Project,
+    pub warnings: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ExportResult {
+    pub warnings: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct DawProject {
+    #[serde(rename = "@version")]
+    version: String,
+    #[serde(rename = "Transport")]
+    transport: Option<DawTransport>,
+    #[serde(rename = "Structure")]
+    structure: Option<DawStructure>,
+    #[serde(rename = "Arrangement")]
+    arrangement: Option<DawArrangement>,
+}
+
+#[derive(Debug, Deserialize)]
+struct DawTransport {
+    #[serde(rename = "Tempo")]
+    tempo: Option<DawTempo>,
+    #[serde(rename = "TimeSignature")]
+    time_signature: Option<DawTimeSignature>,
+}
+
+#[derive(Debug, Deserialize)]
+struct DawTempo {
+    #[serde(rename = "@value")]
+    value: Option<f64>,
+}
+
+#[derive(Debug, Deserialize)]
+struct DawTimeSignature {
+    #[serde(rename = "@numerator")]
+    numerator: u32,
+    #[serde(rename = "@denominator")]
+    denominator: u32,
+}
+
+#[derive(Debug, Deserialize)]
+struct DawStructure {
+    #[serde(rename = "Track", default)]
+    tracks: Vec<DawTrack>,
+}
+
+#[derive(Debug, Deserialize)]
+struct DawTrack {
+    #[serde(rename = "@id")]
+    id: String,
+    #[serde(rename = "@name", default)]
+    name: String,
+    #[serde(rename = "@contentType", default)]
+    content_type: String,
+    #[serde(rename = "Channel")]
+    channel: Option<DawChannel>,
+}
+
+#[derive(Debug, Deserialize)]
+struct DawChannel {
+    #[serde(rename = "@audioChannels")]
+    audio_channels: Option<u32>,
+}
+
+#[derive(Debug, Deserialize)]
+struct DawArrangement {
+    #[serde(rename = "Lanes")]
+    lanes: Option<DawLanes>,
+}
+
+#[derive(Debug, Deserialize)]
+struct DawLanes {
+    #[serde(rename = "Notes", default)]
+    notes: Vec<DawNotes>,
+}
+
+#[derive(Debug, Deserialize)]
+struct DawNotes {
+    #[serde(rename = "@track")]
+    track: String,
+    #[serde(rename = "Note", default)]
+    notes: Vec<DawNote>,
+}
+
+#[derive(Debug, Deserialize)]
+struct DawNote {
+    #[serde(rename = "@time")]
+    time: f64,
+    #[serde(rename = "@duration")]
+    duration: f64,
+    #[serde(rename = "@key")]
+    key: u8,
+    #[serde(rename = "@vel", default)]
+    velocity: Option<f32>,
+}
+
+/// Importa un archivo `.dawproject` empaquetado.
+pub fn import_dawproject(path: impl AsRef<Path>) -> Result<ImportResult, ProjectError> {
+    let mut file = File::open(path)?;
+    let mut bytes = Vec::new();
+    file.read_to_end(&mut bytes)?;
+    let mut archive = ZipArchive::new(Cursor::new(bytes))?;
+    let mut project_xml = String::new();
+    archive
+        .by_name("project.xml")?
+        .read_to_string(&mut project_xml)?;
+    import_project_xml(&project_xml)
+}
+
+/// Importa `project.xml`, útil para fixtures y pruebas del adaptador.
+pub fn import_project_xml(xml: &str) -> Result<ImportResult, ProjectError> {
+    let source: DawProject = from_str(xml)?;
+    let tempo = source
+        .transport
+        .as_ref()
+        .and_then(|t| t.tempo.as_ref())
+        .and_then(|t| t.value)
+        .unwrap_or(120.0);
+    let signature = source
+        .transport
+        .as_ref()
+        .and_then(|t| t.time_signature.as_ref())
+        .map(|s| TimeSignature {
+            numerator: s.numerator,
+            denominator: s.denominator,
+        })
+        .unwrap_or(TimeSignature {
+            numerator: 4,
+            denominator: 4,
+        });
+
+    let daw_tracks = source.structure.map(|s| s.tracks).unwrap_or_default();
+    let arrangement_notes = source
+        .arrangement
+        .and_then(|a| a.lanes)
+        .map(|l| l.notes)
+        .unwrap_or_default();
+    let mut warnings = Vec::new();
+    if arrangement_notes.is_empty() {
+        warnings.push("El proyecto no contiene notas en Arrangement/Lanes.".into());
+    }
+    warnings
+        .push("El estado de plugins, proxies y análisis no forma parte del XML importado.".into());
+
+    let tracks = daw_tracks
+        .into_iter()
+        .map(|track| {
+            let kind = if track.content_type.contains("audio") {
+                TrackKind::Audio
+            } else {
+                TrackKind::Midi
+            };
+            let notes = arrangement_notes
+                .iter()
+                .filter(|group| group.track == track.id)
+                .flat_map(|group| group.notes.iter())
+                .map(|note| Note {
+                    midi_key: note.key,
+                    velocity: note.velocity.unwrap_or(1.0),
+                    time_beats: note.time,
+                    duration_beats: note.duration,
+                })
+                .collect();
+            Track {
+                id: track.id,
+                name: track.name,
+                kind,
+                notes,
+                audio_channels: track.channel.and_then(|c| c.audio_channels),
+            }
+        })
+        .collect();
+
+    let project = Project {
+        schema_version: "estudio-daw.project.v1".into(),
+        project_id: "imported-dawproject".into(),
+        transport: Transport {
+            tempo_bpm: tempo,
+            time_signature: signature,
+        },
+        tracks,
+        import_provenance: ImportProvenance {
+            format: "dawproject".into(),
+            format_version: source.version,
+            source_file: "project.xml".into(),
+            warnings: warnings.clone(),
+        },
+    };
+    Ok(ImportResult { project, warnings })
+}
+
+/// Exporta el modelo interno como un contenedor `.dawproject` mínimo.
+///
+/// Los artefactos de audio, proxies, plugins y análisis no se inventan durante
+/// la exportación: se reportan como warnings hasta que exista su adaptador.
+pub fn export_dawproject(
+    project: &Project,
+    path: impl AsRef<Path>,
+) -> Result<ExportResult, ProjectError> {
+    let mut warnings = project.import_provenance.warnings.clone();
+    if project
+        .tracks
+        .iter()
+        .any(|track| matches!(track.kind, TrackKind::Audio))
+    {
+        warnings.push("Las referencias de audio/proxy aún no se exportan al contenedor.".into());
+    }
+    warnings
+        .push("El estado de plugins, análisis y operaciones del agente no se exporta aún.".into());
+
+    let project_xml = project_to_xml(project);
+    let metadata_xml = metadata_to_xml(project);
+    let file = File::create(path)?;
+    let mut archive = ZipWriter::new(file);
+    let options = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
+    archive.start_file("project.xml", options)?;
+    archive.write_all(project_xml.as_bytes())?;
+    archive.start_file("metadata.xml", options)?;
+    archive.write_all(metadata_xml.as_bytes())?;
+    archive.finish()?;
+    Ok(ExportResult { warnings })
+}
+
+fn project_to_xml(project: &Project) -> String {
+    let mut xml = String::from("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n");
+    xml.push_str("<Project version=\"1.0\">\n");
+    xml.push_str("  <Application name=\"Estudio DAW\" version=\"0.1.0\"/>\n");
+    xml.push_str("  <Transport>\n");
+    xml.push_str(&format!(
+        "    <Tempo max=\"666.000000\" min=\"20.000000\" unit=\"bpm\" value=\"{:.6}\" id=\"tempo\" name=\"Tempo\"/>\n",
+        project.transport.tempo_bpm
+    ));
+    xml.push_str(&format!(
+        "    <TimeSignature numerator=\"{}\" denominator=\"{}\" id=\"timesig\" name=\"Time Signature\"/>\n",
+        project.transport.time_signature.numerator,
+        project.transport.time_signature.denominator
+    ));
+    xml.push_str("  </Transport>\n  <Structure>\n");
+    for track in &project.tracks {
+        let content_type = match track.kind {
+            TrackKind::Midi => "notes",
+            TrackKind::Audio => "audio",
+        };
+        xml.push_str(&format!(
+            "    <Track contentType=\"{}\" id=\"{}\" name=\"{}\">\n",
+            content_type,
+            escape_attr(&track.id),
+            escape_attr(&track.name)
+        ));
+        xml.push_str(&format!(
+            "      <Channel audioChannels=\"{}\" id=\"channel-{}\" name=\"{}\" role=\"regular\">\n",
+            track.audio_channels.unwrap_or(2),
+            escape_attr(&track.id),
+            escape_attr(&track.name)
+        ));
+        xml.push_str("        <Pan max=\"1.000000\" min=\"-1.000000\" unit=\"linear\" value=\"0.000000\" id=\"pan-");
+        xml.push_str(&escape_attr(&track.id));
+        xml.push_str("\" name=\"Pan\"/>\n");
+        xml.push_str("        <Volume max=\"1.000000\" min=\"0.000000\" unit=\"linear\" value=\"0.800000\" id=\"volume-");
+        xml.push_str(&escape_attr(&track.id));
+        xml.push_str("\" name=\"Volume\"/>\n      </Channel>\n    </Track>\n");
+    }
+    xml.push_str("  </Structure>\n  <Arrangement id=\"arrangement\" name=\"Arrangement\">\n    <Lanes id=\"arrangement-lanes\" timeUnit=\"beats\">\n");
+    for track in project
+        .tracks
+        .iter()
+        .filter(|track| !track.notes.is_empty())
+    {
+        xml.push_str(&format!(
+            "      <Notes id=\"notes-{}\" track=\"{}\" timeUnit=\"beats\">\n",
+            escape_attr(&track.id),
+            escape_attr(&track.id)
+        ));
+        for note in &track.notes {
+            xml.push_str(&format!(
+                "        <Note time=\"{:.6}\" duration=\"{:.6}\" channel=\"1\" key=\"{}\" vel=\"{:.6}\"/>\n",
+                note.time_beats, note.duration_beats, note.midi_key, note.velocity
+            ));
+        }
+        xml.push_str("      </Notes>\n");
+    }
+    xml.push_str("    </Lanes>\n  </Arrangement>\n</Project>\n");
+    xml
+}
+
+fn metadata_to_xml(project: &Project) -> String {
+    format!(
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<MetaData>\n  <Title>{}</Title>\n  <Artist>Estudio DAW</Artist>\n  <Comment>Exported project {}</Comment>\n</MetaData>\n",
+        escape_attr(&project.project_id),
+        escape_attr(&project.project_id)
+    )
+}
+
+fn escape_attr(value: &str) -> String {
+    escape(value).to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn imports_minimal_fixture_from_zip() {
+        let result =
+            import_dawproject("../../tests/fixtures/dawproject/minimal.dawproject").unwrap();
+        assert_eq!(result.project.transport.tempo_bpm, 92.0);
+        assert_eq!(result.project.transport.time_signature.denominator, 4);
+        assert_eq!(result.project.tracks.len(), 2);
+        assert_eq!(result.project.tracks[0].notes.len(), 3);
+        assert!(result
+            .warnings
+            .iter()
+            .any(|warning| warning.contains("plugins")));
+    }
+
+    #[test]
+    fn keeps_audio_track_without_notes() {
+        let result =
+            import_dawproject("../../tests/fixtures/dawproject/minimal.dawproject").unwrap();
+        let audio = result
+            .project
+            .tracks
+            .iter()
+            .find(|track| track.kind == TrackKind::Audio)
+            .unwrap();
+        assert!(audio.notes.is_empty());
+        assert_eq!(audio.audio_channels, Some(1));
+    }
+
+    #[test]
+    fn exports_and_reimports_project_round_trip() {
+        let source =
+            import_dawproject("../../tests/fixtures/dawproject/minimal.dawproject").unwrap();
+        let output = std::env::temp_dir().join(format!(
+            "estudio-daw-roundtrip-{}.dawproject",
+            std::process::id()
+        ));
+        let export = export_dawproject(&source.project, &output).unwrap();
+        assert!(!export.warnings.is_empty());
+        let round_trip = import_dawproject(&output).unwrap();
+        assert_eq!(round_trip.project.transport, source.project.transport);
+        assert_eq!(round_trip.project.tracks.len(), source.project.tracks.len());
+        assert_eq!(
+            round_trip.project.tracks[0].notes,
+            source.project.tracks[0].notes
+        );
+        std::fs::remove_file(output).unwrap();
+    }
+}

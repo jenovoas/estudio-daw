@@ -1,0 +1,14 @@
+/target/
+/.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+*.wav
+*.flac
+*.mp3
+*.ogg
+/projects/
+/tmp/
+.env
+.DS_Store
