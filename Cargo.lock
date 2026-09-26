@@ -237,6 +237,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "877a4ace8713b0bcf2a4e7eec82529c029f1d0619886d18145fea96c3ffe5c0f"
 
 [[package]]
+name = "estudio-daw-midi-engine"
+version = "0.1.0"
+dependencies = [
+ "alsa",
+ "estudio-daw-runtime-diagnostics",
+ "serde",
+ "thiserror",
+]
+
+[[package]]
 name = "estudio-daw-project-model"
 version = "0.1.0"
 dependencies = [
