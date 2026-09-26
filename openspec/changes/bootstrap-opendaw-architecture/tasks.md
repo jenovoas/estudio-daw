@@ -17,6 +17,7 @@
 - [x] Integrar una toma MIDI grabada como `MidiClip` en `project.json`.
 - [x] Añadir cuantización no destructiva de Note On/Off en clips MIDI.
 - [x] Añadir reproducción MIDI básica hacia destinos ALSA.
+- [x] Reproducir un `MidiClip` directamente desde `project.json`.
 - [ ] Registrar atribuciones, licencias, dependencias transitivas y estrategia de
   aislamiento antes de portar cualquier código o asset.
 

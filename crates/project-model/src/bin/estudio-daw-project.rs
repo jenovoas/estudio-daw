@@ -16,6 +16,7 @@ fn usage() {
         "\n  estudio-daw-project quantize <proyecto.json> <clip-id> <rejilla-ticks> <salida.json>",
             "\n  estudio-daw-project midi-summary <proyecto.json>",
             "\n  estudio-daw-project midi-play <toma.json> [destino]",
+            "\n  estudio-daw-project project-play <proyecto.json> [clip-id] [destino]",
             "\n  estudio-daw-project midi-outputs"
     ));
 }
@@ -130,6 +131,20 @@ fn main() -> ExitCode {
             )
         }
         "midi-output" | "midi-outputs" => midi_outputs_command(),
+        "project-play" => {
+            let Some(project) = args.next() else {
+                usage();
+                return ExitCode::from(2);
+            };
+            project_play_command(
+                project.into(),
+                args.next()
+                    .map(|value| value.to_string_lossy().into_owned()),
+                args.next()
+                    .map(|value| value.to_string_lossy().into_owned())
+                    .unwrap_or_else(|| "FluidSynth".into()),
+            )
+        }
         _ => {
             usage();
             Err("comando desconocido".into())
@@ -276,6 +291,34 @@ fn midi_play_command(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let take: MidiTake = serde_json::from_slice(&fs::read(&take_path)?)?;
     play_midi_take(&take, &destination)?;
+    Ok(())
+}
+
+/// Reproduce un clip que ya pertenece a la sesión.
+///
+/// Mantener esta resolución en la CLI nos permite reutilizar el mismo motor
+/// `play_midi_take` mientras todavía no existe el transporte global del DAW.
+/// Más adelante esta función será reemplazada por una orden del motor y no
+/// tendrá que cargar el JSON completo en cada reproducción.
+fn project_play_command(
+    project_path: PathBuf,
+    clip_id: Option<String>,
+    destination: String,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let project: Project = serde_json::from_slice(&fs::read(&project_path)?)?;
+    let clip = match clip_id {
+        Some(ref id) => project
+            .midi_clips
+            .iter()
+            .find(|clip| clip.id == *id)
+            .ok_or_else(|| format!("no existe el clip MIDI '{id}'"))?,
+        None => project
+            .midi_clips
+            .first()
+            .ok_or("el proyecto no contiene clips MIDI")?,
+    };
+    println!("Clip seleccionado: {} ({})", clip.id, clip.name);
+    play_midi_take(&clip.take, &destination)?;
     Ok(())
 }
 
