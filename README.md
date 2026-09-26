@@ -583,6 +583,9 @@ La versión nativa seguirá siendo la referencia para baja latencia, interfaces 
 ```text
 estudio-daw/
 ├── crates/       núcleo Rust
+│   ├── session/   estado de sesión y CommandBus bounded
+│   ├── midi-engine/
+│   └── dsp/       procesamiento DSP modular
 ├── python/       workers de análisis
 ├── schemas/      contratos versionados
 ├── docs/         decisiones y documentación
@@ -638,6 +641,7 @@ Después se añadirán clips, escenas, Arrangement View, plugins, escalas, anál
 ## Documentación de planificación
 
 - [Architecture Reset v2](docs/architecture-v2.md)
+- [Estado de sesión y CommandBus](docs/session-command-bus.md)
 - [Control MIDI live](docs/midi-live-control.md)
 - [Propuesta inicial](openspec/changes/bootstrap-opendaw-architecture/proposal.md)
 - [Diseño](openspec/changes/bootstrap-opendaw-architecture/design.md)

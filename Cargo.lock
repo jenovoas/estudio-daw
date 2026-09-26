@@ -413,6 +413,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "estudio-daw-session"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "thiserror",
+]
+
+[[package]]
 name = "find-msvc-tools"
 version = "0.1.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"

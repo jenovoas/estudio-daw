@@ -1,0 +1,10 @@
+[package]
+name = "estudio-daw-session"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Session state and bounded command bus for Estudio DAW"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+thiserror = "2"

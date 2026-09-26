@@ -70,6 +70,8 @@
   `project-play-live`.
 - [x] Permitir iniciar y detener una grabación MIDI desde el botón Record del
   puerto DAW con `midi-record-live`.
+- [x] Crear crate de sesión con `TransportSnapshot`, `SessionCommand` y
+  `CommandBus` bounded, documentado y probado sin hardware.
 - [x] Definir schema inicial de `project.json` para la fixture de interoperabilidad.
 - [ ] Definir entidades Track, Clip, Take, Device, Automation y AnalysisArtifact.
 - [ ] Definir relación original-proxy, timebase, canales y estado de disponibilidad.

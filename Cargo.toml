@@ -6,6 +6,7 @@ members = [
     "crates/midi-engine",
     "crates/compute-runtime",
     "crates/dsp",
+    "crates/session",
 ]
 
 [workspace.package]
