@@ -72,6 +72,16 @@ pub enum ProxyJobError {
     TranscoderFailed(String),
     #[error("el proxy no cumple el perfil de audio solicitado: {0}")]
     InvalidAudioOutput(String),
+    #[error("ya existe una generación activa para este proxy")]
+    AlreadyBuilding,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProxyCacheState {
+    Missing,
+    Building,
+    Ready,
+    Stale,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -124,6 +134,30 @@ impl MediaSource {
             original_path: path,
             proxy: None,
         })
+    }
+
+    pub fn proxy_cache_state(
+        &self,
+        destination: impl AsRef<Path>,
+        profile: &str,
+    ) -> ProxyCacheState {
+        let destination = destination.as_ref();
+        if building_marker(destination).is_file() {
+            return ProxyCacheState::Building;
+        }
+        let Some(proxy) = self.proxy.as_ref() else {
+            return ProxyCacheState::Missing;
+        };
+        if proxy.path == destination
+            && proxy.profile == profile
+            && proxy.source_signature == self.original_signature
+            && (proxy.source_hash.is_empty() || proxy.source_hash == self.original_hash)
+            && destination.is_file()
+        {
+            ProxyCacheState::Ready
+        } else {
+            ProxyCacheState::Stale
+        }
     }
 
     /// Resuelve la representación sin copiar, re-encodear ni modificar medios.
@@ -240,6 +274,7 @@ pub fn generate_audio_proxy_ffmpeg(
     {
         fs::create_dir_all(parent)?;
     }
+    let _marker = BuildingMarker::create(destination)?;
     let temp = destination.with_file_name(format!(
         ".{}.tmp-{}",
         destination
@@ -288,6 +323,44 @@ pub fn generate_audio_proxy_ffmpeg(
         source_hash,
         profile: profile.id.clone(),
     })
+}
+
+fn building_marker(destination: &Path) -> PathBuf {
+    destination.with_file_name(format!(
+        ".{}.building",
+        destination
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("proxy")
+    ))
+}
+
+struct BuildingMarker {
+    path: PathBuf,
+}
+
+impl BuildingMarker {
+    fn create(destination: &Path) -> Result<Self, ProxyJobError> {
+        let path = building_marker(destination);
+        fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&path)
+            .map_err(|error| {
+                if error.kind() == std::io::ErrorKind::AlreadyExists {
+                    ProxyJobError::AlreadyBuilding
+                } else {
+                    ProxyJobError::Io(error)
+                }
+            })?;
+        Ok(Self { path })
+    }
+}
+
+impl Drop for BuildingMarker {
+    fn drop(&mut self) {
+        let _ = fs::remove_file(&self.path);
+    }
 }
 
 fn validate_audio_proxy(path: &Path, profile: &AudioProxyProfile) -> Result<(), ProxyJobError> {
@@ -883,14 +956,52 @@ mod tests {
         std::fs::create_dir_all(&root).unwrap();
         std::fs::write(&original, b"source-audio").unwrap();
         let mut source = MediaSource::from_original(&original).unwrap();
+        assert_eq!(
+            source.proxy_cache_state(&proxy, "identity-test"),
+            ProxyCacheState::Missing
+        );
 
         let asset = generate_proxy(&source, &proxy, "identity-test").unwrap();
         assert_eq!(asset.profile, "identity-test");
         assert_eq!(asset.source_hash, content_hash(&original).unwrap());
         assert_eq!(std::fs::read(&proxy).unwrap(), b"source-audio");
         source.proxy = Some(asset);
+        assert_eq!(
+            source.proxy_cache_state(&proxy, "identity-test"),
+            ProxyCacheState::Ready
+        );
         assert_eq!(source.resolve(ProxyPolicy::Auto).unwrap().path, proxy);
         assert!(!root.join("cache/.proxy.wav.tmp").exists());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn cache_state_distinguishes_building_and_stale_profiles() {
+        let root =
+            std::env::temp_dir().join(format!("estudio-daw-cache-state-{}", std::process::id()));
+        let original = root.join("original.wav");
+        let proxy = root.join("preview.ogg");
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(&original, b"audio").unwrap();
+        std::fs::write(&proxy, b"proxy").unwrap();
+        let mut source = MediaSource::from_original(&original).unwrap();
+        let marker = building_marker(&proxy);
+        std::fs::write(&marker, b"building").unwrap();
+        assert_eq!(
+            source.proxy_cache_state(&proxy, "audio-opus-preview-v1"),
+            ProxyCacheState::Building
+        );
+        std::fs::remove_file(marker).unwrap();
+        source.proxy = Some(ProxyAsset {
+            path: proxy.clone(),
+            source_signature: source.original_signature.clone(),
+            source_hash: source.original_hash.clone(),
+            profile: "old-profile".into(),
+        });
+        assert_eq!(
+            source.proxy_cache_state(&proxy, "audio-opus-preview-v1"),
+            ProxyCacheState::Stale
+        );
         std::fs::remove_dir_all(root).unwrap();
     }
 

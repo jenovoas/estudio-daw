@@ -13,6 +13,11 @@ fuente que lo generó.
 - `Proxy`: exige un proxy existente cuya firma coincida con la fuente.
 - `Auto`: usa el proxy válido y vuelve al original cuando todavía no hay proxy.
 
+`MediaSource::proxy_cache_state()` expone el estado observable de la caché:
+`Missing`, `Building`, `Ready` o `Stale`. Los jobs crean un marcador
+`.building` con `create_new`, por lo que dos procesos no pueden generar el
+mismo proxy simultáneamente.
+
 La resolución sólo selecciona una ruta; no copia, modifica ni re-encodea ningún
 archivo. Si el original cambió, la firma del proxy deja de coincidir y el
 proxy se considera obsoleto. La firma inicial es una comprobación barata de
