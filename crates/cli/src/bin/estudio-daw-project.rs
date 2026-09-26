@@ -812,11 +812,7 @@ fn midi_synth_live_command(
         report.output_callbacks
     );
     if let Some(worker) = instrument_worker.as_ref() {
-        println!(
-            "SoundFont worker: underrun_samples={}, worker_errors={}",
-            worker.underrun_samples(),
-            worker.worker_errors()
-        );
+        print_soundfont_metrics(worker, config.sample_rate, config.period_frames);
     }
     Ok(())
 }
@@ -874,13 +870,30 @@ fn midi_synth_play_command(
         report.output_callbacks,
     );
     if let Some(worker) = instrument_worker.as_ref() {
-        println!(
-            "SoundFont worker: underrun_samples={}, worker_errors={}",
-            worker.underrun_samples(),
-            worker.worker_errors()
-        );
+        print_soundfont_metrics(worker, config.sample_rate, config.period_frames);
     }
     Ok(())
+}
+
+/// Reporta salud y profundidad observada del ring sin confundirla con
+/// latencia acústica total: faltan la latencia del dispositivo y el recorrido
+/// físico de entrada/salida para medir ese extremo a extremo.
+fn print_soundfont_metrics(
+    worker: &SoundFontInstrumentWorker,
+    sample_rate: u32,
+    period_frames: usize,
+) {
+    let queue = worker.pcm_queue_metrics();
+    let peak_buffer_ms = queue.peak_frames as f64 * 1_000.0 / f64::from(sample_rate);
+    let period_ms = period_frames as f64 * 1_000.0 / f64::from(sample_rate);
+    println!(
+        "SoundFont: underruns={}, worker_errors={}, PCM ring actual={} frames, pico={} / {} frames (pico equivalente={peak_buffer_ms:.2} ms); PipeWire periodo solicitado={period_frames} frames ({period_ms:.2} ms). La latencia total del hardware no se mide aquí.",
+        worker.underrun_samples(),
+        worker.worker_errors(),
+        queue.current_frames,
+        queue.peak_frames,
+        queue.capacity_frames,
+    );
 }
 
 fn synth_event_from_input(event: &NormalizedMidiEvent) -> Option<SynthMidiEvent> {

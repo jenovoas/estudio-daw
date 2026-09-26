@@ -17,7 +17,7 @@ See `proposal.md` for the motivation and `specs/soundfont-instrument/spec.md` fo
 
 - Ship a SoundFont, claim that a SoundFont is license-free, or package a specific piano library.
 - Reimplement a sample-based synthesizer or create an instrument editor in this change.
-- Guarantee zero added latency before measuring the worker-to-callback bridge on supported hardware.
+- Claim zero added latency; the worker-to-callback PCM queue is observable, while end-to-end latency requires a physical MIDI/audio loopback measurement.
 - Replace the existing external ALSA MIDI destination workflow.
 
 ## Decisions
@@ -61,7 +61,7 @@ The sine source remains available for tests and systems without FluidSynth. Sele
 
 ## Risks / Trade-offs
 
-- **[Worker scheduling can add latency or underrun]** → expose pre-roll, current queue depth, and underruns; test at the target PipeWire quantum and document measured latency. Do not block the callback to hide starvation.
+- **[Worker scheduling can add latency or underrun]** → expose current/peak PCM queue depth and underruns; document buffer-equivalent queue duration separately from end-to-end latency. Measure key-to-audio latency with a physical MIDI/audio loopback on target hardware. Do not block the callback to hide starvation.
 - **[Native ABI or library version mismatch]** → validate required symbols and minimum runtime version before creating the instrument; return an actionable compatibility error.
 - **[SoundFont formats and presets vary]** → start with SF2, enumerate presets from the selected file, and test with a user-provided fixture without checking copyrighted banks into Git.
 - **[SoundFont licensing is independent of FluidSynth]** → store no bundled bank; show the external path and document asset-license responsibility.

@@ -19,7 +19,8 @@ mod fluidsynth;
 pub use fluidsynth::{FluidSynthEngine, FluidSynthError, FluidSynthPreset, FluidSynthVersion};
 mod fluidsynth_worker;
 pub use fluidsynth_worker::{
-    FluidSynthPcmNode, SoundFontEventSender, SoundFontInstrumentWorker, SoundFontWorkerError,
+    FluidSynthPcmNode, PcmQueueMetrics, SoundFontEventSender, SoundFontInstrumentWorker,
+    SoundFontWorkerError,
 };
 
 pub const MIDI_EVENT_CAPACITY: usize = 256;

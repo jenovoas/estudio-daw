@@ -24,6 +24,20 @@ descartes. El SoundFont se carga y el preset se valida antes de iniciar el
 stream; si falla, el comando muestra el diagnóstico y no modifica ningún
 proyecto. El sinte sinusoidal se conserva como fallback explícito.
 
+Al terminar `midi-synth-live` o `midi-synth-play`, el CLI informa la ocupación
+actual y el máximo observado del ring PCM, su capacidad, la duración equivalente
+del pico (`frames / sample_rate`) y el periodo PipeWire solicitado. La ocupación
+se toma antes de consumir cada bloque; por eso el máximo describe cuánto audio
+ya renderizado puede quedar por delante de un evento MIDI. No equivale a la
+latencia completa desde una tecla hasta la salida acústica: esa medición requiere
+sincronizar la entrada MIDI con un loopback físico de AudioBox y considerar el
+hardware y PipeWire. En la prueba local de reproducción de una toma KeyLab, el
+ring alcanzó 2048/2048 frames (42.67 ms a 48 kHz), con 288 frames al cierre,
+cero underruns y cero errores del worker; el periodo PipeWire solicitado fue
+32 frames (0.67 ms). Una apertura live de 3 s, sin tocar deliberadamente teclas,
+observó el mismo pico, cero eventos MIDI descartados y cero underruns. Son
+mediciones del puente PCM en este equipo, no una afirmación de latencia total.
+
 ## SineSynth
 
 El instrumento de prueba tiene 16 voces, frecuencias precalculadas, ataque y
@@ -80,7 +94,8 @@ eso no es una evaluación subjetiva del timbre.
 
 Los tests verifican render FluidSynth, paso de notas por el worker y ausencia de
 asignaciones en el nodo PCM y el handoff de RenderPlan bajo un allocator de
-conteo. Si
+conteo. La prueba de ocupación verifica que el nodo registra los frames
+disponibles antes de consumirlos. Si
 `/usr/share/soundfonts/FluidR3_GM.sf2` no existe, los tests del banco local se
 omiten. Todavía no hay control semántico de sustain/CC ni editor de presets. La
 API hot-swap está disponible para un host que conserve el endpoint de control,

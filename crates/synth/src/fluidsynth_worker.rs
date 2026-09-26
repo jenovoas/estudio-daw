@@ -39,6 +39,8 @@ pub enum SoundFontWorkerError {
 pub struct FluidSynthPcmNode {
     ring: Arc<SampleRingBuffer>,
     underrun_samples: Arc<AtomicUsize>,
+    current_queue_samples: Arc<AtomicUsize>,
+    peak_queue_samples: Arc<AtomicUsize>,
 }
 
 impl FluidSynthPcmNode {
@@ -52,6 +54,13 @@ impl AudioNode for FluidSynthPcmNode {
         if interleaved.len() % 2 != 0 {
             return Err(AudioNodeError::InvalidBlockLength);
         }
+        // Measure occupancy before this block consumes PCM. Relaxed atomics
+        // keep the diagnostic lock-free; these values never gate audio work.
+        let queued_samples = self.ring.available();
+        self.current_queue_samples
+            .store(queued_samples, Ordering::Relaxed);
+        self.peak_queue_samples
+            .fetch_max(queued_samples, Ordering::Relaxed);
         interleaved.fill(0.0);
         let read = self.ring.pop(interleaved);
         self.underrun_samples
@@ -68,6 +77,18 @@ pub struct SoundFontInstrumentWorker {
     dropped_events: Arc<AtomicUsize>,
     worker_errors: Arc<AtomicUsize>,
     underrun_samples: Arc<AtomicUsize>,
+    current_queue_samples: Arc<AtomicUsize>,
+    peak_queue_samples: Arc<AtomicUsize>,
+}
+
+/// Occupación observada del puente PCM estéreo. Los frames no son una medida
+/// de latencia acústica total; su duración equivalente cuantifica sólo el
+/// audio ya renderizado que espera delante del callback.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PcmQueueMetrics {
+    pub current_frames: usize,
+    pub peak_frames: usize,
+    pub capacity_frames: usize,
 }
 
 /// Extremo clonable para los threads MIDI/scheduler; su Drop no detiene el
@@ -121,6 +142,8 @@ impl SoundFontInstrumentWorker {
         let dropped_events = Arc::new(AtomicUsize::new(0));
         let worker_errors = Arc::new(AtomicUsize::new(0));
         let underrun_samples = Arc::new(AtomicUsize::new(0));
+        let current_queue_samples = Arc::new(AtomicUsize::new(0));
+        let peak_queue_samples = Arc::new(AtomicUsize::new(0));
         let (commands, command_rx) = command_queue(Arc::clone(&dropped_events));
         let (ready_tx, ready_rx) = mpsc::sync_channel::<Result<(), String>>(1);
         let worker_ring = Arc::clone(&ring);
@@ -200,10 +223,14 @@ impl SoundFontInstrumentWorker {
                     dropped_events,
                     worker_errors,
                     underrun_samples: Arc::clone(&underrun_samples),
+                    current_queue_samples: Arc::clone(&current_queue_samples),
+                    peak_queue_samples: Arc::clone(&peak_queue_samples),
                 },
                 FluidSynthPcmNode {
                     ring,
                     underrun_samples,
+                    current_queue_samples,
+                    peak_queue_samples,
                 },
             )),
             Ok(Err(error)) => {
@@ -237,6 +264,17 @@ impl SoundFontInstrumentWorker {
     /// Número de muestras que el callback tuvo que completar con silencio.
     pub fn underrun_samples(&self) -> usize {
         self.underrun_samples.load(Ordering::Relaxed)
+    }
+
+    /// Instantánea y máximo observado antes de consumir un bloque de audio.
+    /// El ring es intercalado estéreo, por eso las muestras se convierten a
+    /// frames dividiendo por dos.
+    pub fn pcm_queue_metrics(&self) -> PcmQueueMetrics {
+        PcmQueueMetrics {
+            current_frames: self.current_queue_samples.load(Ordering::Relaxed) / 2,
+            peak_frames: self.peak_queue_samples.load(Ordering::Relaxed) / 2,
+            capacity_frames: RING_SAMPLES / 2,
+        }
     }
 }
 
@@ -389,9 +427,13 @@ mod tests {
     fn pcm_source_counts_starvation_and_recovers_when_samples_arrive() {
         let ring = Arc::new(SampleRingBuffer::new(256));
         let underruns = Arc::new(AtomicUsize::new(0));
+        let current_queue_samples = Arc::new(AtomicUsize::new(0));
+        let peak_queue_samples = Arc::new(AtomicUsize::new(0));
         let mut source = FluidSynthPcmNode {
             ring: Arc::clone(&ring),
             underrun_samples: Arc::clone(&underruns),
+            current_queue_samples: Arc::clone(&current_queue_samples),
+            peak_queue_samples: Arc::clone(&peak_queue_samples),
         };
         let mut output = [1.0_f32; 128];
         source.process(&mut output).unwrap();
@@ -403,5 +445,7 @@ mod tests {
         source.process(&mut output).unwrap();
         assert_eq!(output, recovery);
         assert_eq!(source.underrun_samples(), 128);
+        assert_eq!(peak_queue_samples.load(Ordering::Relaxed), 128);
+        assert_eq!(current_queue_samples.load(Ordering::Relaxed), 128);
     }
 }
