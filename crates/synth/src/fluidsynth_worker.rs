@@ -294,6 +294,35 @@ fn apply_midi_event(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use estudio_daw_audio_engine::{render_plan_exchange, GainNode, RenderPlanBuilder};
+
+    #[test]
+    fn failed_soundfont_preparation_keeps_the_active_render_plan_playable() {
+        let _guard = crate::fluidsynth::FLUIDSYNTH_TEST_LOCK.lock().unwrap();
+        let mut initial = RenderPlanBuilder::new();
+        initial.add_node(GainNode::new(0.5));
+        let (control, mut processor) = render_plan_exchange(initial.build().unwrap());
+
+        // La carga falla antes de publicar una sustitución; por diseño no toca
+        // el plan activo ni su slot. La ruta usa un nombre único que no existe.
+        let missing_font = std::env::temp_dir().join(format!(
+            "estudio-daw-missing-{}-{}.sf2",
+            std::process::id(),
+            thread::current().name().unwrap_or("test")
+        ));
+        assert!(SoundFontInstrumentWorker::start(
+            missing_font.to_string_lossy().into_owned(),
+            48_000,
+            0,
+            0,
+        )
+        .is_err());
+
+        let mut block = [1.0, -1.0];
+        processor.process(&mut block).unwrap();
+        assert_eq!(block, [0.5, -0.5]);
+        assert!(!control.reap_retired());
+    }
 
     #[test]
     fn worker_renders_soundfont_notes_into_the_callback_source() {

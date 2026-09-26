@@ -27,6 +27,13 @@ Trabaja sobre el buffer F32LE mapeado por PipeWire, lo limpia y llama al plan
 DSP. La serialización SPA y la negociación de formato suceden antes de
 `main_loop.run()`.
 
+Los hosts pueden usar `run_pipewire_output_controlled()` o
+`run_pipewire_duplex_controlled()` con el `RenderPlanProcessor` producido por
+`render_plan_exchange()`. Un hilo de control conserva el `RenderPlanControl`,
+prepara el plan alternativo y lo publica; el callback lo adopta en el siguiente
+bloque. Después, ese hilo recoge el plan anterior con `reap_retired()`. Los
+helpers no controlados siguen aceptando `RenderPlan` y mantienen compatibilidad.
+
 ## Configuración
 
 ```rust

@@ -10,7 +10,7 @@
 - [x] 2.1 Implement worker-owned FluidSynth initialization, SoundFont loading, preset enumeration/selection, and MIDI note dispatch; verify audible PCM from the locally installed SF2 without checking the asset into Git.
 - [x] 2.2 Add a bounded MIDI command queue and preallocated PCM ring; verify ordering, empty/full/disconnected behavior, nonblocking overflow accounting, and clean worker shutdown. Counters are exposed by `SoundFontInstrumentWorker`.
 - [x] 2.3 Add the render-graph audio-source adapter that only drains PCM and emits silence/counts underruns when empty; verify the worker-to-node path and zero allocations in the callback test.
-- [ ] 2.4 Add non-destructive backend replacement at a render-plan boundary; verify a failed SoundFont load leaves the previous instrument and project playable.
+- [x] 2.4 Add non-destructive backend replacement at a render-plan boundary; verify a failed SoundFont load leaves the previous instrument and project playable. `RenderPlanProcessor` adopts a fully prepared plan at block start; the control endpoint alone reclaims retired plans. Tests verify the failed local SF2 load leaves the active plan rendering, handoff adds zero callback allocations, and destruction stays off the callback.
 
 ## 3. Project and CLI integration
 
@@ -22,4 +22,4 @@
 
 - [x] 4.1 Add deterministic worker/bridge tests for event timing, starvation recovery, and callback allocation constraints; verified with `cargo test --workspace`.
 - [x] 4.2 Document local runtime installation, SoundFont path/preset selection, runtime and asset licensing, diagnostics, and fallback; CLI option tests cover the documented forms and no sample bank is bundled.
-- [ ] 4.3 Run the full live KeyLab → FluidSynth SoundFont → PipeWire capture-and-playback integration on Linux hardware; the saved KeyLab take was replayed through FluidSynth/PipeWire (37,184 callbacks, 0 MIDI drops, 0 PCM underruns, 0 worker errors), but live KeyLab input while the SoundFont worker is active remains unverified. Record measured queue depth and latency on completion; sound quality remains subjective.
+- [ ] 4.3 Run the full live KeyLab → FluidSynth SoundFont → PipeWire capture-and-playback integration on Linux hardware; saved KeyLab take replayed through FluidSynth/PipeWire twice (37,184 callbacks, 0 MIDI drops, 0 PCM underruns, 0 worker errors). An additional 3-second live stream opened the KeyLab/AudioBox path (8,768 callbacks, 0 drops/underruns/errors), but no intentional note sequence was verified during that unattended run. Record measured queue depth and latency on completion; sound quality remains subjective.

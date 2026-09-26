@@ -57,9 +57,25 @@ builder.connect(equalizer, master)?;
 let mut plan = builder.build()?;
 ```
 
-La integración de entrada/salida PipeWire y los buffers scratch preasignados
-vendrá después. El `RenderPlan` actual valida la arquitectura sin introducir
-todavía una dependencia del sistema de audio.
+## Reemplazo seguro del plan
+
+`render_plan_exchange(initial)` entrega dos endpoints: `RenderPlanProcessor`
+para el callback y `RenderPlanControl` para el único hilo productor/control.
+El productor compila y publica un plan completo; el processor lo adopta sólo
+al comenzar `process()` para un nuevo bloque. La topología activa no cambia a
+mitad de bloque.
+
+El intercambio usa dos slots con estados atómicos. El callback nunca destruye
+el plan anterior: lo marca como retirado y el hilo de control lo libera mediante
+`reap_retired()`. Hasta que se recoja ese slot, una nueva publicación se
+rechaza devolviendo el plan preparado al caller. Esto evita que `Drop` de nodos
+—incluido el cierre de workers— ejecute en tiempo real.
+
+Un error al preparar el backend o compilar su plan ocurre antes de `publish`;
+por tanto no cambia el slot activo y la reproducción continúa con el plan
+anterior. El host PipeWire tiene variantes `*_controlled` para conectar estos
+endpoints; los helpers existentes conservan su API y crean un intercambio
+interno sin exponer control live.
 
 ## Prueba de regresión RT
 
@@ -71,7 +87,7 @@ es thread-local, de modo que asignaciones del harness en otros hilos no alteran
 el resultado.
 
 Esta prueba cubre el camino síncrono `RenderPlan::process_block()` y el paso por
-el ring preasignado. No sustituye una auditoría del callback PipeWire completo,
-ni detecta operaciones que evadan el allocator global de Rust o que ocurran en
-procesos/threads externos; esa integración se probará al conectar el plan al
-backend.
+el ring preasignado. La suite unitaria del audio-engine también prueba el
+cambio de slot y la destrucción diferida; el test de integración `synth`
+comprueba cero asignaciones al consumir PCM. Esto no sustituye una auditoría de
+operaciones que evadan el allocator de Rust ni de procesos externos.

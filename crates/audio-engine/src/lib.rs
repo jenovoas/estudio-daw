@@ -7,7 +7,8 @@
 pub use estudio_daw_dsp::EqBandConfig;
 use estudio_daw_dsp::{DspError, Equalizer};
 use std::cell::UnsafeCell;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicU8, AtomicUsize, Ordering};
+use std::sync::Arc;
 use thiserror::Error;
 
 pub trait AudioNode: Send {
@@ -254,6 +255,149 @@ pub struct RenderPlan {
     nodes: Vec<Box<dyn AudioNode>>,
 }
 
+const SLOT_FREE: u8 = 0;
+const SLOT_WRITING: u8 = 1;
+const SLOT_PENDING: u8 = 2;
+const SLOT_ACTIVE: u8 = 3;
+const SLOT_RETIRED: u8 = 4;
+const SLOT_RECLAIMING: u8 = 5;
+const NO_SLOT: usize = usize::MAX;
+
+struct RenderPlanSlot {
+    state: AtomicU8,
+    plan: UnsafeCell<Option<RenderPlan>>,
+}
+
+// Safety: access to `plan` is exclusive by the state machine. The control
+// thread writes FREE→WRITING and reclaims RETIRED; the audio thread alone
+// reads/writes ACTIVE and publishes it as RETIRED only after finishing a block.
+unsafe impl Sync for RenderPlanSlot {}
+
+struct RenderPlanExchangeInner {
+    slots: [RenderPlanSlot; 2],
+    pending: AtomicUsize,
+}
+
+/// Control-plane endpoint for replacing a compiled render plan.
+///
+/// One control thread may publish plans. The old plan must be reclaimed with
+/// `reap_retired` on that thread; it is never destroyed by the audio callback.
+pub struct RenderPlanControl {
+    inner: Arc<RenderPlanExchangeInner>,
+    // A single control producer keeps publication and slot reservation SPSC.
+    _single_producer: std::marker::PhantomData<std::cell::Cell<()>>,
+}
+
+/// Audio-thread endpoint for a plan exchange. `process` checks for a new plan
+/// exactly at a block boundary and performs no allocation, lock, or drop.
+pub struct RenderPlanProcessor {
+    inner: Arc<RenderPlanExchangeInner>,
+    active_slot: usize,
+}
+
+impl RenderPlanControl {
+    /// Publishes a fully prepared plan. `Err(plan)` means a prior replacement
+    /// is still pending or its retired plan has not yet been reclaimed.
+    pub fn publish(&self, plan: RenderPlan) -> Result<(), RenderPlan> {
+        if self.inner.pending.load(Ordering::Acquire) != NO_SLOT {
+            return Err(plan);
+        }
+
+        let Some((slot_index, slot)) = self.inner.slots.iter().enumerate().find(|(_, slot)| {
+            slot.state
+                .compare_exchange(
+                    SLOT_FREE,
+                    SLOT_WRITING,
+                    Ordering::Acquire,
+                    Ordering::Relaxed,
+                )
+                .is_ok()
+        }) else {
+            return Err(plan);
+        };
+
+        // SAFETY: WRITING grants exclusive control-thread access until the
+        // plan is fully initialized and published with Release ordering.
+        unsafe { *slot.plan.get() = Some(plan) };
+        slot.state.store(SLOT_PENDING, Ordering::Release);
+        self.inner.pending.store(slot_index, Ordering::Release);
+        Ok(())
+    }
+
+    /// Destroys the previous plan outside real-time, freeing its slot for the
+    /// next replacement. Returns whether a retired plan was reclaimed.
+    pub fn reap_retired(&self) -> bool {
+        for slot in &self.inner.slots {
+            if slot
+                .state
+                .compare_exchange(
+                    SLOT_RETIRED,
+                    SLOT_RECLAIMING,
+                    Ordering::Acquire,
+                    Ordering::Relaxed,
+                )
+                .is_ok()
+            {
+                // SAFETY: RECLAIMING excludes both the audio thread and any
+                // publisher until the value is dropped and the slot is FREE.
+                let old_plan = unsafe { (&mut *slot.plan.get()).take() };
+                drop(old_plan);
+                slot.state.store(SLOT_FREE, Ordering::Release);
+                return true;
+            }
+        }
+        false
+    }
+}
+
+impl RenderPlanProcessor {
+    /// Called by the host once per output block. Plan ownership changes only
+    /// here; destruction is deferred until control calls `reap_retired`.
+    pub fn process(&mut self, interleaved: &mut [f32]) -> Result<(), AudioNodeError> {
+        let next = self.inner.pending.swap(NO_SLOT, Ordering::AcqRel);
+        if next != NO_SLOT {
+            let old = self.active_slot;
+            self.active_slot = next;
+            self.inner.slots[next]
+                .state
+                .store(SLOT_ACTIVE, Ordering::Release);
+            self.inner.slots[old]
+                .state
+                .store(SLOT_RETIRED, Ordering::Release);
+        }
+
+        let slot = &self.inner.slots[self.active_slot];
+        // SAFETY: this processor is the sole owner of the active slot until it
+        // marks that slot RETIRED at a later block boundary.
+        let plan = unsafe { (&mut *slot.plan.get()).as_mut() }
+            .expect("an active render-plan slot must contain a plan");
+        plan.process(interleaved)
+    }
+}
+
+/// Creates a render endpoint and a control endpoint around the initial plan.
+/// The returned control handle is intended for the non-real-time/UI thread.
+pub fn render_plan_exchange(initial: RenderPlan) -> (RenderPlanControl, RenderPlanProcessor) {
+    let mut initial = Some(initial);
+    let inner = Arc::new(RenderPlanExchangeInner {
+        slots: std::array::from_fn(|index| RenderPlanSlot {
+            state: AtomicU8::new(if index == 0 { SLOT_ACTIVE } else { SLOT_FREE }),
+            plan: UnsafeCell::new(if index == 0 { initial.take() } else { None }),
+        }),
+        pending: AtomicUsize::new(NO_SLOT),
+    });
+    (
+        RenderPlanControl {
+            inner: Arc::clone(&inner),
+            _single_producer: std::marker::PhantomData,
+        },
+        RenderPlanProcessor {
+            inner,
+            active_slot: 0,
+        },
+    )
+}
+
 impl RenderPlan {
     pub fn process(&mut self, interleaved: &mut [f32]) -> Result<(), AudioNodeError> {
         for node in &mut self.nodes {
@@ -318,6 +462,21 @@ impl AudioNode for EqualizerNode {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::atomic::AtomicUsize;
+
+    struct DropCounter(Arc<AtomicUsize>);
+
+    impl AudioNode for DropCounter {
+        fn process(&mut self, _interleaved: &mut [f32]) -> Result<(), AudioNodeError> {
+            Ok(())
+        }
+    }
+
+    impl Drop for DropCounter {
+        fn drop(&mut self) {
+            self.0.fetch_add(1, Ordering::Relaxed);
+        }
+    }
 
     #[test]
     fn compiles_dag_in_dependency_order() {
@@ -397,5 +556,53 @@ mod tests {
         assert_eq!(ring.push(&[1.0, 2.0, 3.0]), 2);
         assert_eq!(ring.available(), 2);
         assert_eq!(ring.push(&[4.0]), 0);
+    }
+
+    #[test]
+    fn render_plan_swap_occurs_at_block_boundary_and_retires_off_rt() {
+        let drops = Arc::new(AtomicUsize::new(0));
+        let mut initial = RenderPlanBuilder::new();
+        initial.add_node(DropCounter(Arc::clone(&drops)));
+        let initial = initial.build().unwrap();
+
+        let mut replacement = RenderPlanBuilder::new();
+        replacement.add_node(GainNode::new(2.0));
+        let replacement = replacement.build().unwrap();
+        let (control, mut processor) = render_plan_exchange(initial);
+
+        // El plan viejo sigue siendo el activo hasta que comienza el siguiente
+        // bloque después de que el productor publica el plan completo.
+        assert!(control.publish(replacement).is_ok());
+        let mut block = [0.25, -0.25];
+        processor.process(&mut block).unwrap();
+        assert_eq!(block, [0.5, -0.5]);
+
+        // Cambiar de plan no destruye nodos ni ejecuta Drop en tiempo real.
+        assert_eq!(drops.load(Ordering::Relaxed), 0);
+        assert!(control.reap_retired());
+        assert_eq!(drops.load(Ordering::Relaxed), 1);
+        assert!(!control.reap_retired());
+    }
+
+    #[test]
+    fn exchange_rejects_another_plan_until_retired_slot_is_reclaimed() {
+        let mut builder = RenderPlanBuilder::new();
+        builder.add_node(GainNode::new(1.0));
+        let (control, mut processor) = render_plan_exchange(builder.build().unwrap());
+
+        let mut replacement = RenderPlanBuilder::new();
+        replacement.add_node(GainNode::new(3.0));
+        assert!(control.publish(replacement.build().unwrap()).is_ok());
+        let mut block = [1.0];
+        processor.process(&mut block).unwrap();
+
+        let mut next = RenderPlanBuilder::new();
+        next.add_node(GainNode::new(4.0));
+        let next = next.build().unwrap();
+        assert!(control.publish(next).is_err());
+        assert!(control.reap_retired());
+        let mut next = RenderPlanBuilder::new();
+        next.add_node(GainNode::new(4.0));
+        assert!(control.publish(next.build().unwrap()).is_ok());
     }
 }

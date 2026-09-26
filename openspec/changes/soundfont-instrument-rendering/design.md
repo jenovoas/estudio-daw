@@ -38,6 +38,16 @@ Create the synth, load/unload the SoundFont, select presets, dispatch MIDI, rend
 
 The render-plan adapter only drains available PCM frames into its preallocated `AudioBlock`. It never calls the C API or waits for the worker. If the queue is empty it writes silence for missing frames and increments an underrun counter. A successful instrument load is swapped at a safe plan boundary; the old instrument remains active until then. A failed replacement does not invalidate the active plan.
 
+Render-plan replacement uses two preallocated ownership slots shared by a
+single control producer and the audio processor. The producer fully constructs
+the replacement before publishing its slot with release ordering. At the next
+`RenderPlanProcessor::process` boundary, the callback adopts that slot and marks
+the old slot retired. It never destroys a plan or node; `RenderPlanControl`
+reclaims retired plans from the control thread. A second publication is refused
+until that reclamation completes. This keeps node/worker destructors and their
+joins out of the audio callback. PipeWire exposes controlled output and duplex
+entry points so a host can retain the control endpoint while streaming.
+
 ### Persist references, not sample-bank bytes
 
 Portable project state records the backend, local SoundFont reference, optional expected content hash, and bank/program selection. It never embeds or copies the SoundFont. Resolution supports a project-relative asset when the user has deliberately placed it in project media, otherwise a local external path; missing references produce a recoverable diagnostic. Bundling and sharing projects with third-party SoundFonts is outside this change.

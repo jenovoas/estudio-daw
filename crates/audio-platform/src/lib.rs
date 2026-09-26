@@ -3,7 +3,9 @@
 //! Este crate contiene PipeWire y no debe filtrarse hacia el modelo de sesión.
 //! El único objeto que atraviesa la frontera es el `RenderPlan` ya compilado.
 
-use estudio_daw_audio_engine::{RenderPlan, SampleRingBuffer};
+use estudio_daw_audio_engine::{
+    render_plan_exchange, RenderPlan, RenderPlanProcessor, SampleRingBuffer,
+};
 use pipewire as pw;
 use pw::{properties::properties, spa};
 use spa::pod::Pod;
@@ -243,7 +245,17 @@ impl PipeWireStreamConfig {
 /// plan DSP compilado.
 pub fn run_pipewire_output(
     config: PipeWireStreamConfig,
-    mut render_plan: RenderPlan,
+    render_plan: RenderPlan,
+) -> Result<(), PipeWireError> {
+    let (_control, processor) = render_plan_exchange(render_plan);
+    run_pipewire_output_controlled(config, processor)
+}
+
+/// Ejecuta la salida con un procesador que admite reemplazos desde su
+/// `RenderPlanControl` asociado. El plan nuevo se activa en un límite de bloque.
+pub fn run_pipewire_output_controlled(
+    config: PipeWireStreamConfig,
+    mut processor: RenderPlanProcessor,
 ) -> Result<(), PipeWireError> {
     let config = config.validate()?;
     pw::init();
@@ -281,7 +293,7 @@ pub fn run_pipewire_output(
                 // posible prefijo/sufijo no alineado sin asignar memoria.
                 let (_, samples, _) = unsafe { bytes.align_to_mut::<f32>() };
                 samples.fill(0.0);
-                let _ = render_plan.process(samples);
+                let _ = processor.process(samples);
                 samples.len()
             };
             let chunk = data.chunk_mut();
@@ -330,7 +342,17 @@ pub fn run_pipewire_duplex(
     config: PipeWireStreamConfig,
     render_plan: RenderPlan,
 ) -> Result<(), PipeWireError> {
-    run_pipewire_duplex_internal(config, render_plan, None, None, PipeWireTargets::default())
+    let (_control, processor) = render_plan_exchange(render_plan);
+    run_pipewire_duplex_controlled(config, processor)
+}
+
+/// Variante con hot-swap habilitado. El caller conserva el handle de control
+/// en un hilo no-RT y recoge los planes retirados después de cada publicación.
+pub fn run_pipewire_duplex_controlled(
+    config: PipeWireStreamConfig,
+    processor: RenderPlanProcessor,
+) -> Result<(), PipeWireError> {
+    run_pipewire_duplex_internal(config, processor, None, None, PipeWireTargets::default())
         .map(|_| ())
 }
 
@@ -351,7 +373,18 @@ pub fn run_pipewire_duplex_for_targets(
     duration: Duration,
     targets: PipeWireTargets,
 ) -> Result<PipeWireDuplexReport, PipeWireError> {
-    run_pipewire_duplex_internal(config, render_plan, Some(duration), None, targets)
+    let (_control, processor) = render_plan_exchange(render_plan);
+    run_pipewire_duplex_for_targets_controlled(config, processor, duration, targets)
+}
+
+/// Prueba finita del duplex con reemplazo de plan habilitado para el callback.
+pub fn run_pipewire_duplex_for_targets_controlled(
+    config: PipeWireStreamConfig,
+    processor: RenderPlanProcessor,
+    duration: Duration,
+    targets: PipeWireTargets,
+) -> Result<PipeWireDuplexReport, PipeWireError> {
+    run_pipewire_duplex_internal(config, processor, Some(duration), None, targets)
         .map(|(report, _)| report)
 }
 
@@ -366,8 +399,9 @@ pub fn run_pipewire_duplex_for_targets_with_capture(
     targets: PipeWireTargets,
     recorder: WavCaptureRecorder,
 ) -> Result<(PipeWireDuplexReport, WavCaptureReport), PipeWireError> {
+    let (_control, processor) = render_plan_exchange(render_plan);
     let (report, capture_report) =
-        run_pipewire_duplex_internal(config, render_plan, Some(duration), Some(recorder), targets)?;
+        run_pipewire_duplex_internal(config, processor, Some(duration), Some(recorder), targets)?;
     capture_report
         .ok_or(PipeWireError::CaptureStillInUse)
         .map(|capture| (report, capture))
@@ -375,7 +409,7 @@ pub fn run_pipewire_duplex_for_targets_with_capture(
 
 fn run_pipewire_duplex_internal(
     config: PipeWireStreamConfig,
-    mut render_plan: RenderPlan,
+    mut processor: RenderPlanProcessor,
     duration: Option<Duration>,
     recorder: Option<WavCaptureRecorder>,
     targets: PipeWireTargets,
@@ -483,7 +517,7 @@ fn run_pipewire_duplex_internal(
             let copied = output_ring.pop(samples);
             samples[copied..].fill(0.0);
             output_silence_counter.fetch_add((samples.len() - copied) as u64, Ordering::Relaxed);
-            let _ = render_plan.process(samples);
+            let _ = processor.process(samples);
         })
         .register()?;
 

@@ -8,7 +8,9 @@ use std::{
     cell::Cell,
 };
 
-use estudio_daw_audio_engine::{AudioBlock, GainNode, RenderPlanBuilder, SampleRingBuffer};
+use estudio_daw_audio_engine::{
+    render_plan_exchange, AudioBlock, GainNode, RenderPlanBuilder, SampleRingBuffer,
+};
 
 thread_local! {
     static TRACKING_ENABLED: Cell<bool> = const { Cell::new(false) };
@@ -91,4 +93,29 @@ fn processing_preallocated_audio_and_ring_does_not_allocate() {
     let allocations = TRACKED_ALLOCATIONS.with(Cell::get);
     assert_eq!(allocations, 0, "se detectaron asignaciones en el camino RT");
     assert!(block.samples().iter().all(|sample| *sample == 0.75));
+}
+
+#[test]
+fn render_plan_handoff_at_audio_boundary_does_not_allocate() {
+    let mut initial = RenderPlanBuilder::new();
+    initial.add_node(GainNode::new(1.0));
+    let (control, mut processor) = render_plan_exchange(initial.build().unwrap());
+
+    let mut replacement = RenderPlanBuilder::new();
+    replacement.add_node(GainNode::new(0.5));
+    assert!(control.publish(replacement.build().unwrap()).is_ok());
+    let mut block = [1.0_f32; 64];
+    processor.process(&mut block).unwrap();
+    assert_eq!(block, [0.5; 64]);
+
+    TRACKED_ALLOCATIONS.with(|count| count.set(0));
+    TRACKING_ENABLED.with(|enabled| enabled.set(true));
+    for _ in 0..1_000 {
+        block.fill(1.0);
+        processor.process(&mut block).unwrap();
+    }
+    TRACKING_ENABLED.with(|enabled| enabled.set(false));
+
+    assert_eq!(TRACKED_ALLOCATIONS.with(Cell::get), 0);
+    assert!(control.reap_retired());
 }

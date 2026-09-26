@@ -58,8 +58,9 @@ omite `--soundfont`, se usa SineSynth. Una ruta ilegible, preset inexistente o
 runtime ausente se informa antes de iniciar el audio.
 
 El modelo de proyecto ya puede guardar una referencia portable y un hash
-opcional, sin copiar el banco. En esta primera integración la elección se pasa
-por CLI; editar y persistir la selección desde la UI queda pendiente.
+opcional, sin copiar el banco. El motor y PipeWire exponen intercambio de
+RenderPlan en límite de bloque; la selección interactiva y persistida desde la
+UI queda pendiente.
 
 ## Probar SineSynth
 
@@ -78,7 +79,8 @@ eso no es una evaluación subjetiva del timbre.
 ## Pruebas y límites
 
 Los tests verifican render FluidSynth, paso de notas por el worker y ausencia de
-asignaciones en el nodo PCM bajo un allocator de conteo. Si
+asignaciones en el nodo PCM y en el handoff de RenderPlan bajo un allocator de conteo. Si
 `/usr/share/soundfonts/FluidR3_GM.sf2` no existe, los tests del banco local se
-omiten. Todavía no hay control semántico de sustain/CC, editor de presets ni
-intercambio hot-swap de instrumentos durante reproducción.
+omiten. Todavía no hay control semántico de sustain/CC ni editor de presets. La
+API hot-swap está disponible para un host que conserve el endpoint de control,
+pero la CLI y UI aún no ofrecen un selector interactivo durante reproducción.
