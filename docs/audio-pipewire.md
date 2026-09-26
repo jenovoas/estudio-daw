@@ -69,6 +69,19 @@ La ruta ya incluye un `EqualizerNode` con un high-pass de 20 Hz antes de la
 salida. Esto verifica la integración real del DSP modular dentro del callback,
 no sólo su compilación aislada.
 
+## Captura a WAV sin bloquear el callback
+
+`WavCaptureRecorder` ofrece la primera frontera de grabación persistente. El
+callback sólo hace `push()` a un ring SPSC preasignado; un hilo escritor genera
+un WAV IEEE-float de 32 bits y actualiza el encabezado al finalizar. Si el
+disco no alcanza la velocidad de captura, el diagnóstico expone las muestras
+descartadas en vez de bloquear el audio.
+
+La integración con el stream duplex usará este componente como consumidor
+secundario de la captura. El render y la reproducción no dependerán del estado
+del archivo, y la ruta de grabación podrá sustituirse después por FLAC, stems o
+un proxy sin cambiar el contrato del callback.
+
 ## Smoke test
 
 El comando de laboratorio abre el duplex durante tres segundos, imprime los

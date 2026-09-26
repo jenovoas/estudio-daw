@@ -8,8 +8,11 @@ use pipewire as pw;
 use pw::{properties::properties, spa};
 use spa::pod::Pod;
 use std::io::Cursor;
+use std::fs::File;
+use std::io::{self, Seek, SeekFrom, Write};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::thread::{self, JoinHandle};
 use std::time::Duration;
 use thiserror::Error;
 
@@ -46,6 +49,163 @@ pub enum PipeWireError {
     PipeWire(#[from] pw::Error),
     #[error("error del timer PipeWire: {0}")]
     Timer(String),
+    #[error("error de captura WAV: {0}")]
+    Capture(#[from] io::Error),
+    #[error("el hilo de captura WAV terminó inesperadamente")]
+    CaptureWorkerPanic,
+}
+
+/// Resultado de una captura escrita por `WavCaptureRecorder`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct WavCaptureReport {
+    pub captured_samples: u64,
+    pub dropped_samples: u64,
+}
+
+/// Escritor WAV desacoplado del callback de audio.
+///
+/// `push()` es la única operación permitida desde el hilo RT: escribe en un
+/// ring SPSC preasignado y no reserva memoria ni toca el sistema de archivos.
+/// Un hilo dedicado consume el ring y genera un WAV IEEE-float de 32 bits.
+pub struct WavCaptureRecorder {
+    ring: Arc<SampleRingBuffer>,
+    stop: Arc<std::sync::atomic::AtomicBool>,
+    captured_samples: Arc<AtomicU64>,
+    dropped_samples: Arc<AtomicU64>,
+    worker: Option<JoinHandle<io::Result<()>>>,
+}
+
+impl WavCaptureRecorder {
+    pub fn new(
+        path: impl Into<std::path::PathBuf>,
+        sample_rate: u32,
+        channels: u16,
+        capacity_frames: usize,
+    ) -> Result<Self, PipeWireError> {
+        if sample_rate == 0 || channels == 0 || capacity_frames == 0 {
+            return Err(PipeWireError::InvalidConfig);
+        }
+        let path = path.into();
+        let ring = Arc::new(SampleRingBuffer::new(
+            capacity_frames.saturating_mul(channels as usize),
+        ));
+        let stop = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let captured_samples = Arc::new(AtomicU64::new(0));
+        let dropped_samples = Arc::new(AtomicU64::new(0));
+        let worker_ring = Arc::clone(&ring);
+        let worker_stop = Arc::clone(&stop);
+        let worker = thread::Builder::new()
+            .name("estudio-wav-writer".into())
+            .spawn(move || write_wav(worker_ring, worker_stop, path, sample_rate, channels))
+            .map_err(PipeWireError::Capture)?;
+
+        Ok(Self {
+            ring,
+            stop,
+            captured_samples,
+            dropped_samples,
+            worker: Some(worker),
+        })
+    }
+
+    /// Copia muestras al ring sin bloquear ni asignar memoria.
+    pub fn push(&self, samples: &[f32]) -> usize {
+        let pushed = self.ring.push(samples);
+        self.captured_samples
+            .fetch_add(pushed as u64, Ordering::Relaxed);
+        self.dropped_samples
+            .fetch_add((samples.len() - pushed) as u64, Ordering::Relaxed);
+        pushed
+    }
+
+    pub fn finish(mut self) -> Result<WavCaptureReport, PipeWireError> {
+        self.stop.store(true, Ordering::Release);
+        let worker_result = self
+            .worker
+            .take()
+            .expect("el escritor WAV debe existir")
+            .join()
+            .map_err(|_| PipeWireError::CaptureWorkerPanic)?;
+        worker_result.map_err(PipeWireError::Capture)?;
+        Ok(WavCaptureReport {
+            captured_samples: self.captured_samples.load(Ordering::Relaxed),
+            dropped_samples: self.dropped_samples.load(Ordering::Relaxed),
+        })
+    }
+}
+
+impl Drop for WavCaptureRecorder {
+    fn drop(&mut self) {
+        if self.worker.is_some() {
+            self.stop.store(true, Ordering::Release);
+            if let Some(worker) = self.worker.take() {
+                let _ = worker.join();
+            }
+        }
+    }
+}
+
+fn write_wav(
+    ring: Arc<SampleRingBuffer>,
+    stop: Arc<std::sync::atomic::AtomicBool>,
+    path: std::path::PathBuf,
+    sample_rate: u32,
+    channels: u16,
+) -> io::Result<()> {
+    let mut file = File::create(path)?;
+    // Reservamos el encabezado y actualizamos sus tamaños al finalizar.
+    file.write_all(&[0; 44])?;
+    let mut block = vec![0.0_f32; 16_384];
+    let mut data_bytes = 0_u32;
+    loop {
+        let count = ring.pop(&mut block);
+        if count > 0 {
+            let bytes = samples_as_le_bytes(&block[..count]);
+            file.write_all(&bytes)?;
+            data_bytes = data_bytes.saturating_add(bytes.len() as u32);
+        } else if stop.load(Ordering::Acquire) {
+            break;
+        } else {
+            thread::yield_now();
+        }
+    }
+
+    file.seek(SeekFrom::Start(0))?;
+    write_wav_header(&mut file, sample_rate, channels, data_bytes)?;
+    file.flush()
+}
+
+fn samples_as_le_bytes(samples: &[f32]) -> Vec<u8> {
+    let mut bytes = Vec::with_capacity(samples.len() * 4);
+    for sample in samples {
+        bytes.extend_from_slice(&sample.to_le_bytes());
+    }
+    bytes
+}
+
+fn write_wav_header(
+    file: &mut File,
+    sample_rate: u32,
+    channels: u16,
+    data_bytes: u32,
+) -> io::Result<()> {
+    let riff_size = 36_u32.saturating_add(data_bytes);
+    let byte_rate = sample_rate
+        .saturating_mul(u32::from(channels))
+        .saturating_mul(4);
+    let block_align = channels.saturating_mul(4);
+    file.write_all(b"RIFF")?;
+    file.write_all(&riff_size.to_le_bytes())?;
+    file.write_all(b"WAVEfmt ")?;
+    file.write_all(&16_u32.to_le_bytes())?;
+    file.write_all(&3_u16.to_le_bytes())?; // IEEE float
+    file.write_all(&channels.to_le_bytes())?;
+    file.write_all(&sample_rate.to_le_bytes())?;
+    file.write_all(&byte_rate.to_le_bytes())?;
+    file.write_all(&block_align.to_le_bytes())?;
+    file.write_all(&32_u16.to_le_bytes())?;
+    file.write_all(b"data")?;
+    file.write_all(&data_bytes.to_le_bytes())
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -381,5 +541,29 @@ mod tests {
             .to_string(),
             "configuración PipeWire inválida"
         );
+    }
+
+    #[test]
+    fn wav_recorder_writes_float_header_and_samples_off_rt_thread() {
+        let path = std::env::temp_dir().join(format!(
+            "estudio-daw-test-{}-{}.wav",
+            std::process::id(),
+            std::thread::current().name().unwrap_or("audio")
+        ));
+        let recorder = WavCaptureRecorder::new(&path, 48_000, 2, 64).unwrap();
+        let source = [0.0_f32, 0.25, -0.5, 1.0];
+        assert_eq!(recorder.push(&source), source.len());
+        let report = recorder.finish().unwrap();
+        assert_eq!(report.captured_samples, 4);
+        assert_eq!(report.dropped_samples, 0);
+
+        let bytes = std::fs::read(&path).unwrap();
+        assert_eq!(&bytes[0..4], b"RIFF");
+        assert_eq!(&bytes[8..12], b"WAVE");
+        assert_eq!(&bytes[36..40], b"data");
+        assert_eq!(u32::from_le_bytes(bytes[40..44].try_into().unwrap()), 16);
+        assert_eq!(&bytes[44..48], &0.0_f32.to_le_bytes());
+        assert_eq!(&bytes[48..52], &0.25_f32.to_le_bytes());
+        std::fs::remove_file(path).unwrap();
     }
 }
