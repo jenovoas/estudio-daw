@@ -41,7 +41,7 @@ SoundFont loading, filesystem access, and synthesis control MUST NOT block, allo
 
 #### Scenario: Failed replacement preserves the current instrument
 - **WHEN** preparation of a replacement SoundFont or render plan fails
-- **THEN** the replacement is not published, the active plan remains playable, and retired plans are destroyed only by the non-real-time control thread
+- **THEN** the replacement is not published, the active plan and its worker remain playable, and retired plans/resources are destroyed only by the non-real-time control thread
 
 ### Requirement: Instrument dependencies and assets stay local and auditable
 The SoundFont capability MUST work without a network or paid API. The application MUST NOT bundle or redistribute user SoundFonts by default, MUST identify the required synthesis runtime when unavailable, and MUST document third-party runtime notices separately from SoundFont asset licenses.

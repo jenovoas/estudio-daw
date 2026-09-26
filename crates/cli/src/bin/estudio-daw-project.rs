@@ -657,7 +657,7 @@ fn build_synth_render_plan(
     (
         estudio_daw_audio_engine::RenderPlan,
         SynthEventSink,
-        Option<SoundFontInstrumentWorker>,
+        Option<Arc<SoundFontInstrumentWorker>>,
     ),
     Box<dyn std::error::Error>,
 > {
@@ -681,6 +681,7 @@ fn build_synth_render_plan(
         } => {
             let (worker, node) =
                 SoundFontInstrumentWorker::start(path, config.sample_rate, bank, program)?;
+            let worker = Arc::new(worker);
             let sender = worker.event_sender();
             (
                 SynthAudioSource::SoundFont(node),
@@ -698,7 +699,14 @@ fn build_synth_render_plan(
     let master = builder.add_node(GainNode::new(0.8));
     builder.connect(instrument, insert)?;
     builder.connect(insert, master)?;
-    Ok((builder.build()?, sink, worker))
+    let mut plan = builder.build()?;
+    if let Some(worker) = worker.as_ref() {
+        // The plan owns the worker lifetime: a replacement plan can be
+        // prepared while the active instrument keeps rendering, and the old
+        // worker stops only after control reclaims its retired plan.
+        plan.retain_resource(Arc::clone(worker));
+    }
+    Ok((plan, sink, worker))
 }
 
 /// Escucha y graba MIDI desde el KeyLab mientras el instrumento nativo toca por

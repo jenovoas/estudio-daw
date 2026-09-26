@@ -71,6 +71,12 @@ el plan anterior: lo marca como retirado y el hilo de control lo libera mediante
 rechaza devolviendo el plan preparado al caller. Esto evita que `Drop` de nodos
 —incluido el cierre de workers— ejecute en tiempo real.
 
+Los recursos no-RT del instrumento se asocian con `RenderPlan::retain_resource`.
+El constructor SoundFont mantiene allí una referencia al worker: el plan nuevo
+lo conserva mientras esté pendiente/activo y el worker anterior sólo puede
+cerrarse tras reclamar su plan retirado. Las referencias externas usadas para
+telemetría no deben mantener vivo indefinidamente un worker que se desea parar.
+
 Un error al preparar el backend o compilar su plan ocurre antes de `publish`;
 por tanto no cambia el slot activo y la reproducción continúa con el plan
 anterior. El host PipeWire tiene variantes `*_controlled` para conectar estos

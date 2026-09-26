@@ -10,7 +10,7 @@
 - [x] 2.1 Implement worker-owned FluidSynth initialization, SoundFont loading, preset enumeration/selection, and MIDI note dispatch; verify audible PCM from the locally installed SF2 without checking the asset into Git.
 - [x] 2.2 Add a bounded MIDI command queue and preallocated PCM ring; verify ordering, empty/full/disconnected behavior, nonblocking overflow accounting, and clean worker shutdown. Counters are exposed by `SoundFontInstrumentWorker`.
 - [x] 2.3 Add the render-graph audio-source adapter that only drains PCM and emits silence/counts underruns when empty; verify the worker-to-node path and zero allocations in the callback test.
-- [x] 2.4 Add non-destructive backend replacement at a render-plan boundary; verify a failed SoundFont load leaves the previous instrument and project playable. `RenderPlanProcessor` adopts a fully prepared plan at block start; the control endpoint alone reclaims retired plans. Tests verify the failed local SF2 load leaves the active plan rendering, handoff adds zero callback allocations, and destruction stays off the callback.
+- [x] 2.4 Add non-destructive backend replacement at a render-plan boundary; verify a failed SoundFont load leaves the previous instrument and project playable. `RenderPlanProcessor` adopts a fully prepared plan at block start; plans retain their instrument workers, and the control endpoint alone reclaims retired plans/resources. Tests verify the failed local SF2 load leaves the active plan rendering, handoff adds zero callback allocations, and destruction stays off the callback.
 
 ## 3. Project and CLI integration
 

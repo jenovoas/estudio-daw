@@ -245,6 +245,7 @@ impl RenderPlanBuilder {
             .collect();
         Ok(RenderPlan {
             nodes: ordered_nodes,
+            retained_resources: Vec::new(),
         })
     }
 }
@@ -253,6 +254,9 @@ impl RenderPlanBuilder {
 /// nodos. El procesamiento no asigna memoria ni calcula dependencias.
 pub struct RenderPlan {
     nodes: Vec<Box<dyn AudioNode>>,
+    // Workers and non-RT resources whose lifetime must cover this plan. They
+    // are never touched by process and are destroyed by control when retired.
+    retained_resources: Vec<Box<dyn Send>>,
 }
 
 const SLOT_FREE: u8 = 0;
@@ -399,6 +403,12 @@ pub fn render_plan_exchange(initial: RenderPlan) -> (RenderPlanControl, RenderPl
 }
 
 impl RenderPlan {
+    /// Keeps a resource (for example, an instrument worker feeding a node)
+    /// alive for the full plan lifetime. Allocation and destruction are non-RT.
+    pub fn retain_resource<T: Send + 'static>(&mut self, resource: T) {
+        self.retained_resources.push(Box::new(resource));
+    }
+
     pub fn process(&mut self, interleaved: &mut [f32]) -> Result<(), AudioNodeError> {
         for node in &mut self.nodes {
             node.process(interleaved)?;
@@ -563,7 +573,8 @@ mod tests {
         let drops = Arc::new(AtomicUsize::new(0));
         let mut initial = RenderPlanBuilder::new();
         initial.add_node(DropCounter(Arc::clone(&drops)));
-        let initial = initial.build().unwrap();
+        let mut initial = initial.build().unwrap();
+        initial.retain_resource(DropCounter(Arc::clone(&drops)));
 
         let mut replacement = RenderPlanBuilder::new();
         replacement.add_node(GainNode::new(2.0));
@@ -580,7 +591,7 @@ mod tests {
         // Cambiar de plan no destruye nodos ni ejecuta Drop en tiempo real.
         assert_eq!(drops.load(Ordering::Relaxed), 0);
         assert!(control.reap_retired());
-        assert_eq!(drops.load(Ordering::Relaxed), 1);
+        assert_eq!(drops.load(Ordering::Relaxed), 2);
         assert!(!control.reap_retired());
     }
 

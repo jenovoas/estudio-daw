@@ -294,13 +294,14 @@ fn apply_midi_event(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use estudio_daw_audio_engine::{render_plan_exchange, GainNode, RenderPlanBuilder};
+    use estudio_daw_audio_engine::{render_plan_exchange, RenderPlanBuilder};
 
     #[test]
     fn failed_soundfont_preparation_keeps_the_active_render_plan_playable() {
         let _guard = crate::fluidsynth::FLUIDSYNTH_TEST_LOCK.lock().unwrap();
+        let (mut midi_sender, midi_receiver) = crate::midi_event_queue();
         let mut initial = RenderPlanBuilder::new();
-        initial.add_node(GainNode::new(0.5));
+        initial.add_node(crate::SineSynthNode::new(48_000, 2, midi_receiver).unwrap());
         let (control, mut processor) = render_plan_exchange(initial.build().unwrap());
 
         // La carga falla antes de publicar una sustitución; por diseño no toca
@@ -318,9 +319,14 @@ mod tests {
         )
         .is_err());
 
-        let mut block = [1.0, -1.0];
+        assert!(midi_sender.try_send(SynthMidiEvent::NoteOn {
+            channel: 0,
+            note: 69,
+            velocity: 100,
+        }));
+        let mut block = [0.0; 512];
         processor.process(&mut block).unwrap();
-        assert_eq!(block, [0.5, -0.5]);
+        assert!(block.iter().any(|sample| sample.abs() > 0.001));
         assert!(!control.reap_retired());
     }
 

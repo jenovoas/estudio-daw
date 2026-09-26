@@ -79,7 +79,8 @@ eso no es una evaluación subjetiva del timbre.
 ## Pruebas y límites
 
 Los tests verifican render FluidSynth, paso de notas por el worker y ausencia de
-asignaciones en el nodo PCM y en el handoff de RenderPlan bajo un allocator de conteo. Si
+asignaciones en el nodo PCM y el handoff de RenderPlan bajo un allocator de
+conteo. Si
 `/usr/share/soundfonts/FluidR3_GM.sf2` no existe, los tests del banco local se
 omiten. Todavía no hay control semántico de sustain/CC ni editor de presets. La
 API hot-swap está disponible para un host que conserve el endpoint de control,

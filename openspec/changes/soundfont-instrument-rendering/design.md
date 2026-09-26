@@ -44,9 +44,12 @@ the replacement before publishing its slot with release ordering. At the next
 `RenderPlanProcessor::process` boundary, the callback adopts that slot and marks
 the old slot retired. It never destroys a plan or node; `RenderPlanControl`
 reclaims retired plans from the control thread. A second publication is refused
-until that reclamation completes. This keeps node/worker destructors and their
-joins out of the audio callback. PipeWire exposes controlled output and duplex
-entry points so a host can retain the control endpoint while streaming.
+until that reclamation completes. Instrument workers are retained by their
+`RenderPlan`, so a SoundFont worker stays alive while its plan is pending or
+active; reclaiming the retired plan releases that ownership off-RT. This keeps
+node/worker destructors and their joins out of the audio callback. PipeWire
+exposes controlled output and duplex entry points so a host can retain the
+control endpoint while streaming.
 
 ### Persist references, not sample-bank bytes
 
