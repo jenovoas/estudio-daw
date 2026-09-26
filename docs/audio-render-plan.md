@@ -35,6 +35,13 @@ El nodo no debe asignar memoria ni bloquear. La configuración, creación de
 nodos y recompilación del plan pertenecen al hilo de control. Actualmente el
 crate incluye `GainNode` y `EqualizerNode` como pruebas de integración.
 
+## AudioBlock
+
+`AudioBlock::new(channels, frames)` reserva una vez el buffer intercalado. El
+callback sólo utiliza `samples_mut()` y llama a `RenderPlan::process_block()`;
+no hay `Vec::resize`, creación de slices temporales ni cálculo de topología en
+esa ruta.
+
 ## Ejemplo de cadena
 
 ```rust
@@ -53,4 +60,3 @@ let mut plan = builder.build()?;
 La integración de entrada/salida PipeWire y los buffers scratch preasignados
 vendrá después. El `RenderPlan` actual valida la arquitectura sin introducir
 todavía una dependencia del sistema de audio.
-

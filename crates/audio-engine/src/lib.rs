@@ -11,6 +11,62 @@ pub trait AudioNode: Send {
     fn process(&mut self, interleaved: &mut [f32]) -> Result<(), AudioNodeError>;
 }
 
+#[derive(Debug, Error, PartialEq, Eq)]
+pub enum AudioBlockError {
+    #[error("la cantidad de canales debe ser mayor que cero")]
+    InvalidChannelCount,
+    #[error("la cantidad de frames debe ser mayor que cero")]
+    InvalidFrameCount,
+}
+
+/// Buffer intercalado reservado antes de iniciar el stream de audio.
+///
+/// `AudioBlock::new` puede asignar porque pertenece a la preparación del
+/// stream. `RenderPlan::process_block` sólo presta el slice existente a cada
+/// nodo; no redimensiona ni crea buffers en el callback.
+#[derive(Debug, PartialEq)]
+pub struct AudioBlock {
+    channels: usize,
+    frames: usize,
+    samples: Vec<f32>,
+}
+
+impl AudioBlock {
+    pub fn new(channels: usize, frames: usize) -> Result<Self, AudioBlockError> {
+        if channels == 0 {
+            return Err(AudioBlockError::InvalidChannelCount);
+        }
+        if frames == 0 {
+            return Err(AudioBlockError::InvalidFrameCount);
+        }
+        Ok(Self {
+            channels,
+            frames,
+            samples: vec![0.0; channels * frames],
+        })
+    }
+
+    pub fn channels(&self) -> usize {
+        self.channels
+    }
+
+    pub fn frames(&self) -> usize {
+        self.frames
+    }
+
+    pub fn samples(&self) -> &[f32] {
+        &self.samples
+    }
+
+    pub fn samples_mut(&mut self) -> &mut [f32] {
+        &mut self.samples
+    }
+
+    pub fn clear(&mut self) {
+        self.samples.fill(0.0);
+    }
+}
+
 #[derive(Debug, Error)]
 pub enum AudioNodeError {
     #[error("el bloque de audio tiene una longitud inválida")]
@@ -128,6 +184,10 @@ impl RenderPlan {
         Ok(())
     }
 
+    pub fn process_block(&mut self, block: &mut AudioBlock) -> Result<(), AudioNodeError> {
+        self.process(block.samples_mut())
+    }
+
     pub fn node_count(&self) -> usize {
         self.nodes.len()
     }
@@ -213,5 +273,30 @@ mod tests {
         let mut block = [0.1; 32];
         plan.process(&mut block).unwrap();
         assert!(block.iter().all(|sample| sample.is_finite()));
+    }
+
+    #[test]
+    fn processes_preallocated_audio_block() {
+        let mut builder = RenderPlanBuilder::new();
+        builder.add_node(GainNode::new(0.5));
+        let mut plan = builder.build().unwrap();
+        let mut block = AudioBlock::new(2, 4).unwrap();
+        block.samples_mut().fill(1.0);
+        plan.process_block(&mut block).unwrap();
+        assert_eq!(block.channels(), 2);
+        assert_eq!(block.frames(), 4);
+        assert!(block.samples().iter().all(|sample| *sample == 0.5));
+    }
+
+    #[test]
+    fn rejects_empty_audio_blocks_before_the_callback() {
+        assert_eq!(
+            AudioBlock::new(0, 64),
+            Err(AudioBlockError::InvalidChannelCount)
+        );
+        assert_eq!(
+            AudioBlock::new(2, 0),
+            Err(AudioBlockError::InvalidFrameCount)
+        );
     }
 }
