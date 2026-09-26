@@ -92,3 +92,7 @@ Trabajar de forma continua y evitar confirmaciones repetitivas. Interrumpir al
 usuario únicamente por un bloqueo real, una decisión que cambie el alcance o una
 acción destructiva/externa que requiera autorización. Informar resultados,
 riesgos y decisiones concretas; no repetir acuerdos ya asentados.
+
+<!-- codebase-memory-mcp:start -->
+For structural codebase exploration, use the installed `codebase-memory` skill.
+<!-- codebase-memory-mcp:end -->
