@@ -48,6 +48,8 @@
 - [ ] Benchmark CPU/GPU para FFT, convolución, time-stretch, render y análisis.
 - [x] Definir contrato testeable de selección CPU/GPU y razones de fallback.
 - [x] Crear baseline CPU reproducible para DFT de referencia y convolución.
+- [x] Implementar FFT radix-2 CPU con prueba de round-trip.
+- [x] Añadir sonda `wgpu` de adaptadores y límites de GPU.
 
 ## Modelo de proyecto
 

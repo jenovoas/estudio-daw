@@ -127,6 +127,122 @@ pub fn choose_backend(request: ComputeRequest, policy: ComputePolicy) -> Compute
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FftError {
+    EmptyInput,
+    LengthMismatch,
+    LengthNotPowerOfTwo,
+}
+
+/// FFT radix-2 in-place para buffers de tamaño potencia de dos.
+///
+/// `inverse=true` normaliza el resultado por N. La implementación usa sólo
+/// memoria que recibe el llamador, una propiedad importante para poder crear
+/// después una variante sin asignaciones en el runtime de audio.
+pub fn fft_in_place(
+    real: &mut [f32],
+    imaginary: &mut [f32],
+    inverse: bool,
+) -> Result<(), FftError> {
+    if real.is_empty() {
+        return Err(FftError::EmptyInput);
+    }
+    if real.len() != imaginary.len() {
+        return Err(FftError::LengthMismatch);
+    }
+    if !real.len().is_power_of_two() {
+        return Err(FftError::LengthNotPowerOfTwo);
+    }
+
+    // Reordenamiento bit-reversal: deja las muestras en el orden necesario
+    // para que cada pasada combine mariposas contiguas.
+    let mut reversed = 0;
+    for index in 1..real.len() {
+        let mut bit = real.len() >> 1;
+        while reversed & bit != 0 {
+            reversed ^= bit;
+            bit >>= 1;
+        }
+        reversed ^= bit;
+        if index < reversed {
+            real.swap(index, reversed);
+            imaginary.swap(index, reversed);
+        }
+    }
+
+    let sign = if inverse { 1.0 } else { -1.0 };
+    let mut width = 2;
+    while width <= real.len() {
+        let angle = sign * std::f32::consts::TAU / width as f32;
+        let sine = angle.sin();
+        let cosine = angle.cos();
+        for start in (0..real.len()).step_by(width) {
+            let mut twiddle_real = 1.0;
+            let mut twiddle_imaginary = 0.0;
+            for offset in 0..width / 2 {
+                let left = start + offset;
+                let right = left + width / 2;
+                let product_real =
+                    twiddle_real * real[right] - twiddle_imaginary * imaginary[right];
+                let product_imaginary =
+                    twiddle_real * imaginary[right] + twiddle_imaginary * real[right];
+                real[right] = real[left] - product_real;
+                imaginary[right] = imaginary[left] - product_imaginary;
+                real[left] += product_real;
+                imaginary[left] += product_imaginary;
+                let next_real = twiddle_real * cosine - twiddle_imaginary * sine;
+                twiddle_imaginary = twiddle_real * sine + twiddle_imaginary * cosine;
+                twiddle_real = next_real;
+            }
+        }
+        width *= 2;
+    }
+
+    if inverse {
+        let scale = 1.0 / real.len() as f32;
+        for (real, imaginary) in real.iter_mut().zip(imaginary.iter_mut()) {
+            *real *= scale;
+            *imaginary *= scale;
+        }
+    }
+    Ok(())
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GpuAdapterReport {
+    pub name: String,
+    pub backend: String,
+    pub device_type: String,
+    pub vendor: u32,
+    pub device: u32,
+    pub driver: String,
+    pub driver_info: String,
+    pub max_storage_buffer_binding_size: u32,
+}
+
+/// Consulta adaptadores sin crear un device ni reservar buffers de trabajo.
+/// Es seguro ejecutarlo al iniciar la aplicación, nunca desde el callback RT.
+pub fn probe_gpu_adapters() -> Vec<GpuAdapterReport> {
+    let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
+    pollster::block_on(instance.enumerate_adapters(wgpu::Backends::all()))
+        .into_iter()
+        .map(|adapter| {
+            let info = adapter.get_info();
+            let limits = adapter.limits();
+            GpuAdapterReport {
+                name: info.name,
+                backend: format!("{:?}", info.backend),
+                device_type: format!("{:?}", info.device_type),
+                vendor: info.vendor,
+                device: info.device,
+                driver: info.driver,
+                driver_info: info.driver_info,
+                max_storage_buffer_binding_size: limits.max_storage_buffer_binding_size as u32,
+            }
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -226,5 +342,28 @@ mod tests {
             ..ComputePolicy::default()
         };
         assert_eq!(choose_backend(request, policy).backend, ComputeBackend::Gpu);
+    }
+
+    #[test]
+    fn fft_round_trip_recovers_signal() {
+        let original = [1.0, 0.0, -1.0, 0.5, 2.0, -0.25, 0.0, 0.75];
+        let mut real = original;
+        let mut imaginary = [0.0; 8];
+        fft_in_place(&mut real, &mut imaginary, false).unwrap();
+        fft_in_place(&mut real, &mut imaginary, true).unwrap();
+        for (actual, expected) in real.iter().zip(original) {
+            assert!((actual - expected).abs() < 0.0001);
+        }
+        assert!(imaginary.iter().all(|value| value.abs() < 0.0001));
+    }
+
+    #[test]
+    fn fft_rejects_non_power_of_two() {
+        let mut real = [0.0; 3];
+        let mut imaginary = [0.0; 3];
+        assert_eq!(
+            fft_in_place(&mut real, &mut imaginary, false),
+            Err(FftError::LengthNotPowerOfTwo)
+        );
     }
 }

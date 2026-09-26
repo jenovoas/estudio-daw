@@ -154,6 +154,7 @@ La política inicial y el benchmark CPU se pueden ejecutar así:
 ```bash
 cargo test -p estudio-daw-compute-runtime
 cargo run -q -p estudio-daw-compute-runtime --bin compute-benchmark
+cargo run -q -p estudio-daw-compute-runtime --bin gpu-probe
 ```
 
 ### Plugins
