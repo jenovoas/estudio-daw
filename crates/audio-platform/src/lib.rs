@@ -239,11 +239,16 @@ fn run_pipewire_duplex_internal(
             let Some(data) = buffer.datas_mut().first_mut() else {
                 return;
             };
-            let valid_bytes = data.chunk().size() as usize;
             let Some(bytes) = data.data() else {
                 return;
             };
-            let valid_bytes = valid_bytes.min(bytes.len());
+            // En un buffer de salida el chunk puede venir con size=0 porque
+            // todavía no existe contenido producido. La capacidad mapeada es
+            // maxsize; la acotamos al bloque configurado para no procesar
+            // memoria de más si PipeWire entrega un pool sobredimensionado.
+            let valid_bytes = (config.max_buffer_frames * config.channels as usize)
+                .saturating_mul(std::mem::size_of::<f32>())
+                .min(bytes.len());
             let (_, samples, _) = unsafe { bytes[..valid_bytes].align_to_mut::<f32>() };
             output_callbacks_counter.fetch_add(1, Ordering::Relaxed);
             let copied = output_ring.pop(samples);
