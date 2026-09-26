@@ -61,6 +61,11 @@ la medición de xruns se añadirán en la capa de diagnóstico.
 La selección explícita de nodos, latencia medida y sincronización duplex serán
 las siguientes extensiones.
 
+El smoke test usa temporalmente la autoconexión de PipeWire. Por eso puede
+seleccionar el micrófono y salida predeterminados del sistema en vez de la
+AudioBox. El siguiente paso añadirá `target.object`/selección por node id para
+forzar `AudioBox USB 96` como entrada y salida.
+
 ## Smoke test
 
 El comando de laboratorio abre el duplex durante tres segundos, imprime los

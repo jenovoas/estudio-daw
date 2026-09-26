@@ -205,10 +205,12 @@ fn run_pipewire_duplex_internal(
             let Some(data) = buffer.datas_mut().first_mut() else {
                 return;
             };
+            let valid_bytes = data.chunk().size() as usize;
             let Some(bytes) = data.data() else {
                 return;
             };
-            let (_, samples, _) = unsafe { bytes.align_to::<f32>() };
+            let valid_bytes = valid_bytes.min(bytes.len());
+            let (_, samples, _) = unsafe { bytes[..valid_bytes].align_to::<f32>() };
             capture_callbacks_counter.fetch_add(1, Ordering::Relaxed);
             let pushed = capture_ring.push(samples);
             capture_dropped_counter.fetch_add((samples.len() - pushed) as u64, Ordering::Relaxed);
@@ -237,10 +239,12 @@ fn run_pipewire_duplex_internal(
             let Some(data) = buffer.datas_mut().first_mut() else {
                 return;
             };
+            let valid_bytes = data.chunk().size() as usize;
             let Some(bytes) = data.data() else {
                 return;
             };
-            let (_, samples, _) = unsafe { bytes.align_to_mut::<f32>() };
+            let valid_bytes = valid_bytes.min(bytes.len());
+            let (_, samples, _) = unsafe { bytes[..valid_bytes].align_to_mut::<f32>() };
             output_callbacks_counter.fetch_add(1, Ordering::Relaxed);
             let copied = output_ring.pop(samples);
             samples[copied..].fill(0.0);
