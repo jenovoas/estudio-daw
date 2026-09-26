@@ -1,7 +1,8 @@
 use std::{env, fs, path::PathBuf, process::ExitCode};
 
 use estudio_daw_midi_engine::{
-    play_midi_take, play_midi_take_interactive, record_alsa_midi, MidiTake,
+    play_midi_take, play_midi_take_interactive, record_alsa_midi, run_alsa_midi_control,
+    MidiControlMap, MidiTake,
 };
 use estudio_daw_project_model::{
     attach_midi_take, export_dawproject, import_dawproject, quantize_midi_clip, Project,
@@ -18,6 +19,7 @@ fn usage() {
         "\n  estudio-daw-project quantize <proyecto.json> <clip-id> <rejilla-ticks> <salida.json>",
             "\n  estudio-daw-project midi-summary <proyecto.json>",
             "\n  estudio-daw-project midi-play <toma.json> [destino]",
+            "\n  estudio-daw-project midi-control-monitor [nombre]",
             "\n  estudio-daw-project project-play <proyecto.json> [clip-id] [destino]",
             "\n  estudio-daw-project midi-outputs"
     ));
@@ -133,6 +135,10 @@ fn main() -> ExitCode {
             )
         }
         "midi-output" | "midi-outputs" => midi_outputs_command(),
+        "midi-control-monitor" => midi_control_monitor_command(
+            args.next()
+                .map(|value| value.to_string_lossy().into_owned()),
+        ),
         "project-play" => {
             let Some(project) = args.next() else {
                 usage();
@@ -172,6 +178,18 @@ fn midi_monitor_command(query: Option<String>) -> Result<(), Box<dyn std::error:
     println!("Puertos MIDI detectados:");
     print_devices(&midi_devices()?);
     monitor_alsa_midi(query.as_deref().unwrap_or("KeyLab"))?;
+    Ok(())
+}
+
+fn midi_control_monitor_command(query: Option<String>) -> Result<(), Box<dyn std::error::Error>> {
+    let map = MidiControlMap::live_defaults();
+    println!("Mapa live inicial: pads 36-41 en canal 10; CC7 en canal 1 controla volumen master.");
+    run_alsa_midi_control(query.as_deref().unwrap_or("KeyLab"), &map, |command| {
+        println!(
+            "Comando MIDI: {:?}, valor {:.3}",
+            command.action, command.value
+        );
+    })?;
     Ok(())
 }
 

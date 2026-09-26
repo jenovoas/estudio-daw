@@ -59,6 +59,8 @@
 
 - [ ] Separar `Portable Domain` de `Platform Runtime` mediante crates y traits explícitos.
 - [ ] Definir `Session`, `TransportSnapshot`, `CommandBus` y `ChangeSet`.
+- [x] Crear mapa modular de control MIDI para transporte, escenas y volumen
+  master, con lector ALSA reutilizable y resolución sin asignaciones.
 - [x] Definir schema inicial de `project.json` para la fixture de interoperabilidad.
 - [ ] Definir entidades Track, Clip, Take, Device, Automation y AnalysisArtifact.
 - [ ] Definir relación original-proxy, timebase, canales y estado de disponibilidad.

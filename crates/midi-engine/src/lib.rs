@@ -19,6 +19,176 @@ use thiserror::Error;
 
 pub const DEFAULT_PPQ: u32 = 480;
 
+/// Entrada MIDI que puede convertirse en un control de la sesión.
+///
+/// Se mantiene separada de `RecordedMidiMessage`: una nota puede ser música
+/// en una pista o un comando de transporte según el contexto de la sesión.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub enum MidiControlInput {
+    Note { channel: u8, note: u8 },
+    ControlChange { channel: u8, controller: u32 },
+    PitchBend { channel: u8 },
+}
+
+/// Acciones de alto nivel que la futura `CommandBus` aplicará a la sesión.
+///
+/// Los valores continuos se entregan aparte en `MidiControlCommand`; así el
+/// binding permanece estático y resolverlo no necesita crear objetos dinámicos.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub enum MidiControlAction {
+    TogglePlay,
+    Stop,
+    ToggleRecord,
+    ToggleLoop,
+    NextScene,
+    PreviousScene,
+    MasterVolume,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MidiBinding {
+    pub input: MidiControlInput,
+    pub action: MidiControlAction,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct MidiControlCommand {
+    pub action: MidiControlAction,
+    /// Valor normalizado [0, 1] para controles continuos; los botones usan 1.
+    pub value: f32,
+}
+
+/// Tabla de control MIDI editable desde la UI y persistible junto al proyecto.
+///
+/// La tabla sólo se modifica fuera del hilo RT. `resolve` únicamente recorre
+/// bindings ya reservados y devuelve un comando pequeño, sin asignaciones.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MidiControlMap {
+    pub bindings: Vec<MidiBinding>,
+}
+
+impl MidiControlMap {
+    /// Mapa inicial útil para un live set con pads en el canal 10 MIDI.
+    ///
+    /// Es deliberadamente pequeño y explícito; la UI añadirá MIDI Learn para
+    /// que cada usuario pueda cambiarlo sin recompilar ni alterar sus pistas.
+    pub fn live_defaults() -> Self {
+        Self::new(vec![
+            MidiBinding {
+                input: MidiControlInput::Note {
+                    channel: 9,
+                    note: 36,
+                },
+                action: MidiControlAction::TogglePlay,
+            },
+            MidiBinding {
+                input: MidiControlInput::Note {
+                    channel: 9,
+                    note: 37,
+                },
+                action: MidiControlAction::Stop,
+            },
+            MidiBinding {
+                input: MidiControlInput::Note {
+                    channel: 9,
+                    note: 38,
+                },
+                action: MidiControlAction::ToggleRecord,
+            },
+            MidiBinding {
+                input: MidiControlInput::Note {
+                    channel: 9,
+                    note: 39,
+                },
+                action: MidiControlAction::ToggleLoop,
+            },
+            MidiBinding {
+                input: MidiControlInput::Note {
+                    channel: 9,
+                    note: 40,
+                },
+                action: MidiControlAction::PreviousScene,
+            },
+            MidiBinding {
+                input: MidiControlInput::Note {
+                    channel: 9,
+                    note: 41,
+                },
+                action: MidiControlAction::NextScene,
+            },
+            MidiBinding {
+                input: MidiControlInput::ControlChange {
+                    channel: 0,
+                    controller: 7,
+                },
+                action: MidiControlAction::MasterVolume,
+            },
+        ])
+    }
+
+    pub fn new(bindings: Vec<MidiBinding>) -> Self {
+        Self { bindings }
+    }
+
+    pub fn bind(&mut self, input: MidiControlInput, action: MidiControlAction) {
+        if let Some(binding) = self
+            .bindings
+            .iter_mut()
+            .find(|binding| binding.input == input)
+        {
+            binding.action = action;
+        } else {
+            self.bindings.push(MidiBinding { input, action });
+        }
+    }
+
+    /// Convierte un evento normalizado en un comando de sesión.
+    ///
+    /// Note-off y Note-on con velocidad cero no activan botones. Esto evita
+    /// dobles disparos al usar pads o teclados que emiten ambos mensajes.
+    pub fn resolve(&self, event: &NormalizedMidiEvent) -> Option<MidiControlCommand> {
+        let (input, value) = match event {
+            NormalizedMidiEvent::NoteOn {
+                channel,
+                note,
+                velocity,
+                ..
+            } if *velocity > 0 => (
+                MidiControlInput::Note {
+                    channel: *channel,
+                    note: *note,
+                },
+                1.0,
+            ),
+            NormalizedMidiEvent::ControlChange {
+                channel,
+                controller,
+                value,
+                ..
+            } => (
+                MidiControlInput::ControlChange {
+                    channel: *channel,
+                    controller: *controller,
+                },
+                (*value as f32 / 127.0).clamp(0.0, 1.0),
+            ),
+            NormalizedMidiEvent::PitchBend { channel, value, .. } => (
+                MidiControlInput::PitchBend { channel: *channel },
+                ((*value as f32 + 8_192.0) / 16_383.0).clamp(0.0, 1.0),
+            ),
+            _ => return None,
+        };
+
+        self.bindings
+            .iter()
+            .find(|binding| binding.input == input)
+            .map(|binding| MidiControlCommand {
+                action: binding.action,
+                value,
+            })
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct MidiSource {
     pub client: i32,
@@ -97,6 +267,14 @@ pub enum LiveRecordError {
     Alsa(#[from] alsa::Error),
     #[error("error del recorder: {0}")]
     Recorder(#[from] RecorderError),
+}
+
+#[derive(Debug, Error)]
+pub enum LiveControlError {
+    #[error("no se pudo encontrar el puerto MIDI: {0}")]
+    Discovery(#[from] estudio_daw_runtime_diagnostics::DiagnosticsError),
+    #[error("error ALSA durante el control MIDI: {0}")]
+    Alsa(#[from] alsa::Error),
 }
 
 #[derive(Debug, Error)]
@@ -263,6 +441,59 @@ pub fn record_alsa_midi(
     let take = recorder.stop()?;
     println!("Toma finalizada: {} eventos.", take.events.len());
     Ok(take)
+}
+
+/// Ejecuta el mapa de control MIDI sobre una entrada ALSA.
+///
+/// El callback recibe comandos de sesión, no eventos ALSA. Esto permite que
+/// una UI, el transporte o el futuro `CommandBus` reutilicen el mismo lector.
+/// La función vive fuera del callback de audio: el siguiente paso será
+/// publicar sus comandos en un ring bounded hacia el motor RT.
+pub fn run_alsa_midi_control<F>(
+    query: &str,
+    control_map: &MidiControlMap,
+    mut on_command: F,
+) -> Result<(), LiveControlError>
+where
+    F: FnMut(MidiControlCommand),
+{
+    let seq = Seq::open(None, None, true)?;
+    let Some((source, label)) = find_alsa_midi_port(query)? else {
+        return Err(LiveControlError::Discovery(
+            estudio_daw_runtime_diagnostics::DiagnosticsError::PipeWire(format!(
+                "no se encontró puerto MIDI para '{query}'"
+            )),
+        ));
+    };
+    let client_name = CString::new("Estudio DAW MIDI Control").expect("literal sin NUL");
+    seq.set_client_name(&client_name)?;
+    let port_name = CString::new("control-input").expect("literal sin NUL");
+    let local_port = seq.create_simple_port(
+        &port_name,
+        PortCap::WRITE | PortCap::SUBS_WRITE,
+        PortType::MIDI_GENERIC | PortType::APPLICATION,
+    )?;
+    let subscription = alsa::seq::PortSubscribe::empty()?;
+    subscription.set_sender(source);
+    subscription.set_dest(alsa::seq::Addr {
+        client: seq.client_id()?,
+        port: local_port,
+    });
+    seq.subscribe_port(&subscription)?;
+
+    println!("Control MIDI activo desde {label}. Presiona Ctrl+C para salir.");
+    let mut input = seq.input();
+    loop {
+        if input.event_input_pending(true)? > 0 {
+            let event = input.event_input()?;
+            let normalized = normalize_alsa_event(&event);
+            if let Some(command) = control_map.resolve(&normalized) {
+                on_command(command);
+            }
+        } else {
+            thread::sleep(Duration::from_millis(1));
+        }
+    }
 }
 
 /// Reproduce una toma MIDI hacia un destino ALSA MIDI, respetando PPQ y tempo.
@@ -604,6 +835,60 @@ mod tests {
                 port: 0,
             },
         }
+    }
+
+    #[test]
+    fn resolves_transport_pad_without_allocating_a_new_binding() {
+        let map = MidiControlMap::live_defaults();
+        let command = map.resolve(&NormalizedMidiEvent::NoteOn {
+            channel: 9,
+            note: 36,
+            velocity: 100,
+            source: Addr {
+                client: 28,
+                port: 0,
+            },
+        });
+        assert_eq!(
+            command,
+            Some(MidiControlCommand {
+                action: MidiControlAction::TogglePlay,
+                value: 1.0,
+            })
+        );
+    }
+
+    #[test]
+    fn normalizes_cc_and_ignores_note_off() {
+        let mut map = MidiControlMap::default();
+        map.bind(
+            MidiControlInput::ControlChange {
+                channel: 0,
+                controller: 7,
+            },
+            MidiControlAction::MasterVolume,
+        );
+        let command = map.resolve(&NormalizedMidiEvent::ControlChange {
+            channel: 0,
+            controller: 7,
+            value: 64,
+            source: Addr {
+                client: 28,
+                port: 0,
+            },
+        });
+        assert!((command.unwrap().value - 64.0 / 127.0).abs() < f32::EPSILON);
+        assert!(map
+            .resolve(&NormalizedMidiEvent::NoteOff {
+                channel: 0,
+                note: 60,
+                release_velocity: 0,
+                source: Addr {
+                    client: 28,
+                    port: 0
+                },
+            })
+            .is_none());
     }
 
     #[test]
