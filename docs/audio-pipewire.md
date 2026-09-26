@@ -65,6 +65,10 @@ El smoke test busca automáticamente nodos cuyo nombre o descripción contiene
 conserva la autoconexión predeterminada de PipeWire. Latencia medida y
 sincronización duplex serán las siguientes extensiones.
 
+La ruta ya incluye un `EqualizerNode` con un high-pass de 20 Hz antes de la
+salida. Esto verifica la integración real del DSP modular dentro del callback,
+no sólo su compilación aislada.
+
 ## Smoke test
 
 El comando de laboratorio abre el duplex durante tres segundos, imprime los

@@ -4,7 +4,8 @@
 //! del callback. `RenderPlan::process` sólo recorre una lista plana ya
 //! compilada y no resuelve dependencias ni crea buffers temporales.
 
-use estudio_daw_dsp::{DspError, EqBandConfig, Equalizer};
+pub use estudio_daw_dsp::EqBandConfig;
+use estudio_daw_dsp::{DspError, Equalizer};
 use std::cell::UnsafeCell;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use thiserror::Error;

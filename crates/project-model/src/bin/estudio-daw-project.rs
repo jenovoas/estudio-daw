@@ -1,6 +1,6 @@
 use std::{env, fs, path::PathBuf, process::ExitCode};
 
-use estudio_daw_audio_engine::RenderPlanBuilder;
+use estudio_daw_audio_engine::{EqBandConfig, EqualizerNode, RenderPlanBuilder};
 use estudio_daw_audio_platform::{
     run_pipewire_duplex_for_targets, PipeWireStreamConfig, PipeWireTargets,
 };
@@ -302,7 +302,13 @@ fn audio_test_command() -> Result<(), Box<dyn std::error::Error>> {
         .map(|device| device.id);
     println!("AudioBox targets: captura={capture_node:?}, reproducción={playback_node:?}");
     println!("Abriendo smoke test duplex PipeWire durante 3 segundos...");
-    let render_plan = RenderPlanBuilder::new().build()?;
+    let mut equalizer = EqualizerNode::new(48_000.0, 2)?;
+    // Primer nodo DSP real de la ruta AudioBox → salida: elimina DC y
+    // subgraves no musicales sin alterar de forma audible la prueba.
+    equalizer.add_band(EqBandConfig::high_pass(20.0, 0.707))?;
+    let mut render_builder = RenderPlanBuilder::new();
+    render_builder.add_node(equalizer);
+    let render_plan = render_builder.build()?;
     let report = run_pipewire_duplex_for_targets(
         PipeWireStreamConfig::default(),
         render_plan,
