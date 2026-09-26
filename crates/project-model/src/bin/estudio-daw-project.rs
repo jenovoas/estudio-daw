@@ -198,10 +198,11 @@ fn midi_monitor_command(query: Option<String>) -> Result<(), Box<dyn std::error:
 }
 
 fn midi_control_monitor_command(query: Option<String>) -> Result<(), Box<dyn std::error::Error>> {
-    let map = MidiControlMap::live_defaults();
-    println!("Mapa live inicial: pads 36-41 en canal 10; CC7 en canal 1 controla volumen master.");
+    let query = query.unwrap_or_else(|| "KeyLab".into());
+    let map = MidiControlMap::for_port_query(&query);
+    println!("Mapa de control seleccionado para '{query}'.");
     let mut session = LiveSessionState::default();
-    run_alsa_midi_control(query.as_deref().unwrap_or("KeyLab"), &map, |command| {
+    run_alsa_midi_control(&query, &map, |command| {
         session.apply_control(command);
         println!(
             "Sesión: transporte={:?} rec={} loop={} escena={} master={:.3}",

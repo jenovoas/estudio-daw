@@ -126,6 +126,45 @@ impl MidiControlMap {
         ])
     }
 
+    /// Perfil observado en el puerto `KeyLab Essential 49 DAW`.
+    ///
+    /// El KeyLab expone los botones de transporte como notas en el canal 1,
+    /// mientras que los pads del puerto MIDI principal usan el canal 10.
+    pub fn keylab_daw_defaults() -> Self {
+        Self::new(vec![
+            MidiBinding {
+                input: MidiControlInput::Note {
+                    channel: 0,
+                    note: 94,
+                },
+                action: MidiControlAction::TogglePlay,
+            },
+            MidiBinding {
+                input: MidiControlInput::Note {
+                    channel: 0,
+                    note: 93,
+                },
+                action: MidiControlAction::Stop,
+            },
+            MidiBinding {
+                input: MidiControlInput::Note {
+                    channel: 0,
+                    note: 95,
+                },
+                action: MidiControlAction::ToggleRecord,
+            },
+        ])
+    }
+
+    /// Selecciona un perfil inicial según el puerto solicitado.
+    pub fn for_port_query(query: &str) -> Self {
+        if query.to_ascii_lowercase().contains("daw") {
+            Self::keylab_daw_defaults()
+        } else {
+            Self::live_defaults()
+        }
+    }
+
     pub fn new(bindings: Vec<MidiBinding>) -> Self {
         Self { bindings }
     }
@@ -600,7 +639,7 @@ pub fn play_midi_take_live(
     control_query: &str,
 ) -> Result<usize, PlaybackError> {
     let (commands_tx, commands_rx) = mpsc::channel();
-    let control_map = MidiControlMap::live_defaults();
+    let control_map = MidiControlMap::for_port_query(&control_query);
     let control_query = control_query.to_string();
     thread::spawn(move || {
         let result = run_alsa_midi_control(&control_query, &control_map, |command| {
@@ -1013,6 +1052,24 @@ mod tests {
         assert!(state.loop_enabled);
         assert_eq!(state.scene_index, 1);
         assert_eq!(state.master_volume, 0.75);
+    }
+
+    #[test]
+    fn selects_keylab_daw_transport_profile() {
+        let map = MidiControlMap::for_port_query("Arturia KeyLab Essential 49 DAW");
+        let command = map.resolve(&NormalizedMidiEvent::NoteOn {
+            channel: 0,
+            note: 94,
+            velocity: 127,
+            source: Addr {
+                client: 28,
+                port: 1,
+            },
+        });
+        assert_eq!(
+            command.map(|command| command.action),
+            Some(MidiControlAction::TogglePlay)
+        );
     }
 
     #[test]
