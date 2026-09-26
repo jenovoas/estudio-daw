@@ -79,6 +79,14 @@ pub enum AttachTakeError {
     NoMidiTrack,
 }
 
+#[derive(Debug, Error, PartialEq, Eq)]
+pub enum MidiEditError {
+    #[error("no existe el clip MIDI '{0}'")]
+    ClipNotFound(String),
+    #[error("la rejilla de cuantización debe ser mayor que cero")]
+    InvalidGrid,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Note {
     pub midi_key: u8,
@@ -325,6 +333,38 @@ pub fn attach_midi_take(
     Ok(id)
 }
 
+/// Cuantiza únicamente Note On/Off y deja intactos CC, aftertouch, pitch bend
+/// y SysEx para preservar la interpretación expresiva.
+pub fn quantize_midi_clip(
+    project: &mut Project,
+    clip_id: &str,
+    grid_ticks: u64,
+) -> Result<usize, MidiEditError> {
+    if grid_ticks == 0 {
+        return Err(MidiEditError::InvalidGrid);
+    }
+    let clip = project
+        .midi_clips
+        .iter_mut()
+        .find(|clip| clip.id == clip_id)
+        .ok_or_else(|| MidiEditError::ClipNotFound(clip_id.into()))?;
+    let mut changed = 0;
+    for event in &mut clip.take.events {
+        if matches!(
+            event.message,
+            estudio_daw_midi_engine::RecordedMidiMessage::NoteOn { .. }
+                | estudio_daw_midi_engine::RecordedMidiMessage::NoteOff { .. }
+        ) {
+            let quantized = ((event.tick + grid_ticks / 2) / grid_ticks) * grid_ticks;
+            if quantized != event.tick {
+                event.tick = quantized;
+                changed += 1;
+            }
+        }
+    }
+    Ok(changed)
+}
+
 /// Exporta el modelo interno como un contenedor `.dawproject` mínimo.
 ///
 /// Los artefactos de audio, proxies, plugins y análisis no se inventan durante
@@ -547,5 +587,43 @@ mod tests {
             attach_midi_take(&mut project, take, "empty"),
             Err(AttachTakeError::NoMidiTrack)
         );
+    }
+
+    #[test]
+    fn quantizes_notes_but_preserves_controllers() {
+        let mut project = import_dawproject("../../tests/fixtures/dawproject/minimal.dawproject")
+            .unwrap()
+            .project;
+        let take = MidiTake {
+            ppq: 480,
+            tempo_bpm: 92,
+            duration_micros: 1_000_000,
+            events: vec![
+                RecordedMidiEvent {
+                    tick: 113,
+                    micros_since_start: 0,
+                    source: MidiSource { client: 3, port: 0 },
+                    message: RecordedMidiMessage::NoteOn {
+                        channel: 1,
+                        note: 64,
+                        velocity: 100,
+                    },
+                },
+                RecordedMidiEvent {
+                    tick: 117,
+                    micros_since_start: 0,
+                    source: MidiSource { client: 3, port: 0 },
+                    message: RecordedMidiMessage::ControlChange {
+                        channel: 1,
+                        controller: 1,
+                        value: 32,
+                    },
+                },
+            ],
+        };
+        attach_midi_take(&mut project, take, "take").unwrap();
+        assert_eq!(quantize_midi_clip(&mut project, "midi-clip-1", 120), Ok(1));
+        assert_eq!(project.midi_clips[0].take.events[0].tick, 120);
+        assert_eq!(project.midi_clips[0].take.events[1].tick, 117);
     }
 }

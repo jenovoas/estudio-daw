@@ -1,17 +1,19 @@
 use std::{env, fs, path::PathBuf, process::ExitCode};
 
 use estudio_daw_midi_engine::{record_alsa_midi, MidiTake};
-use estudio_daw_project_model::{attach_midi_take, export_dawproject, import_dawproject, Project};
+use estudio_daw_project_model::{
+    attach_midi_take, export_dawproject, import_dawproject, quantize_midi_clip, Project,
+};
 use estudio_daw_runtime_diagnostics::{audio_devices, midi_devices, monitor_alsa_midi, DeviceInfo};
 use std::time::Duration;
 
 fn usage() {
-    eprintln!(
-        concat!(
-            "Uso:\n  estudio-daw-project devices\n  estudio-daw-project midi-monitor [nombre]\n  estudio-daw-project midi-record <segundos> <salida.json> [nombre]\n  estudio-daw-project audio-test\n  estudio-daw-project import <entrada.dawproject> <salida.json>\n  estudio-daw-project export <entrada.json> <salida.dawproject>",
-            "\n  estudio-daw-project attach-take <toma.json> <proyecto.json> <salida.json> [nombre]"
-        )
-    );
+    eprintln!(concat!(
+        "Uso:\n  estudio-daw-project devices\n  estudio-daw-project midi-monitor [nombre]\n  estudio-daw-project midi-record <segundos> <salida.json> [nombre]\n  estudio-daw-project audio-test\n  estudio-daw-project import <entrada.dawproject> <salida.json>\n  estudio-daw-project export <entrada.json> <salida.dawproject>",
+            "\n  estudio-daw-project attach-take <toma.json> <proyecto.json> <salida.json> [nombre]",
+        "\n  estudio-daw-project quantize <proyecto.json> <clip-id> <rejilla-ticks> <salida.json>",
+        "\n  estudio-daw-project midi-summary <proyecto.json>"
+    ));
 }
 
 fn main() -> ExitCode {
@@ -79,6 +81,37 @@ fn main() -> ExitCode {
                 args.next()
                     .map(|value| value.to_string_lossy().into_owned()),
             )
+        }
+        "quantize" => {
+            let Some(project) = args.next() else {
+                usage();
+                return ExitCode::from(2);
+            };
+            let Some(clip_id) = args.next() else {
+                usage();
+                return ExitCode::from(2);
+            };
+            let Some(grid) = args.next() else {
+                usage();
+                return ExitCode::from(2);
+            };
+            let Some(output) = args.next() else {
+                usage();
+                return ExitCode::from(2);
+            };
+            quantize_command(
+                project.into(),
+                clip_id.to_string_lossy().into_owned(),
+                grid.to_string_lossy().into_owned(),
+                output.into(),
+            )
+        }
+        "midi-summary" => {
+            let Some(project) = args.next() else {
+                usage();
+                return ExitCode::from(2);
+            };
+            midi_summary_command(project.into())
         }
         _ => {
             usage();
@@ -179,6 +212,44 @@ fn attach_take_command(
     )?;
     fs::write(&output_path, serde_json::to_string_pretty(&project)?)?;
     println!("Clip MIDI {clip_id} adjuntado a {}", output_path.display());
+    Ok(())
+}
+
+fn quantize_command(
+    project_path: PathBuf,
+    clip_id: String,
+    grid: String,
+    output_path: PathBuf,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let grid: u64 = grid.parse()?;
+    let mut project: Project = serde_json::from_slice(&fs::read(&project_path)?)?;
+    let changed = quantize_midi_clip(&mut project, &clip_id, grid)?;
+    fs::write(&output_path, serde_json::to_string_pretty(&project)?)?;
+    println!(
+        "{} eventos cuantizados en {clip_id}; salida: {}",
+        changed,
+        output_path.display()
+    );
+    Ok(())
+}
+
+fn midi_summary_command(project_path: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
+    let project: Project = serde_json::from_slice(&fs::read(&project_path)?)?;
+    if project.midi_clips.is_empty() {
+        println!("El proyecto no contiene clips MIDI.");
+        return Ok(());
+    }
+    for clip in &project.midi_clips {
+        println!(
+            "{} | {} | pista={} | eventos={} | duración={} ticks | tempo={} BPM",
+            clip.id,
+            clip.name,
+            clip.track_id,
+            clip.take.events.len(),
+            clip.duration_ticks,
+            clip.take.tempo_bpm
+        );
+    }
     Ok(())
 }
 
