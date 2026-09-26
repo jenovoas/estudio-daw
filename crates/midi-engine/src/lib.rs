@@ -589,6 +589,43 @@ pub fn play_midi_take_interactive(take: &MidiTake, query: &str) -> Result<usize,
     play_midi_take_internal(take, query, Some(commands_rx))
 }
 
+/// Reproduce una toma controlada directamente desde el controlador MIDI.
+///
+/// El lector MIDI corre en un hilo auxiliar y sólo publica comandos pequeños
+/// al hilo de reproducción. De esta forma el puerto ALSA no bloquea el reloj
+/// musical ni introduce lógica de dispositivo dentro del futuro callback RT.
+pub fn play_midi_take_live(
+    take: &MidiTake,
+    output_query: &str,
+    control_query: &str,
+) -> Result<usize, PlaybackError> {
+    let (commands_tx, commands_rx) = mpsc::channel();
+    let control_map = MidiControlMap::live_defaults();
+    let control_query = control_query.to_string();
+    thread::spawn(move || {
+        let result = run_alsa_midi_control(&control_query, &control_map, |command| {
+            let playback_command = match command.action {
+                MidiControlAction::TogglePlay => Some(PlaybackCommand::TogglePause),
+                MidiControlAction::Stop => Some(PlaybackCommand::Stop),
+                MidiControlAction::ToggleLoop => Some(PlaybackCommand::ToggleLoop),
+                // La grabación y el volumen se conectarán al CommandBus de
+                // sesión cuando el reproductor deje de ser sólo de takes.
+                MidiControlAction::ToggleRecord
+                | MidiControlAction::NextScene
+                | MidiControlAction::PreviousScene
+                | MidiControlAction::MasterVolume => None,
+            };
+            if let Some(playback_command) = playback_command {
+                let _ = commands_tx.send(playback_command);
+            }
+        });
+        if let Err(error) = result {
+            eprintln!("Control MIDI finalizado: {error}");
+        }
+    });
+    play_midi_take_internal(take, output_query, Some(commands_rx))
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum PlaybackCommand {
     TogglePause,

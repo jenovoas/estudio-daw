@@ -1,8 +1,8 @@
 use std::{env, fs, path::PathBuf, process::ExitCode};
 
 use estudio_daw_midi_engine::{
-    play_midi_take, play_midi_take_interactive, record_alsa_midi, run_alsa_midi_control,
-    LiveSessionState, MidiControlMap, MidiTake,
+    play_midi_take, play_midi_take_interactive, play_midi_take_live, record_alsa_midi,
+    run_alsa_midi_control, LiveSessionState, MidiControlMap, MidiTake,
 };
 use estudio_daw_project_model::{
     attach_midi_take, export_dawproject, import_dawproject, quantize_midi_clip, Project,
@@ -19,6 +19,7 @@ fn usage() {
         "\n  estudio-daw-project quantize <proyecto.json> <clip-id> <rejilla-ticks> <salida.json>",
             "\n  estudio-daw-project midi-summary <proyecto.json>",
             "\n  estudio-daw-project midi-play <toma.json> [destino]",
+            "\n  estudio-daw-project midi-play-live <toma.json> [destino] [control]",
             "\n  estudio-daw-project midi-control-monitor [nombre]",
             "\n  estudio-daw-project project-play <proyecto.json> [clip-id] [destino]",
             "\n  estudio-daw-project midi-outputs"
@@ -134,6 +135,21 @@ fn main() -> ExitCode {
                     .unwrap_or_else(|| "FluidSynth".into()),
             )
         }
+        "midi-play-live" => {
+            let Some(take) = args.next() else {
+                usage();
+                return ExitCode::from(2);
+            };
+            midi_play_live_command(
+                take.into(),
+                args.next()
+                    .map(|value| value.to_string_lossy().into_owned())
+                    .unwrap_or_else(|| "FluidSynth".into()),
+                args.next()
+                    .map(|value| value.to_string_lossy().into_owned())
+                    .unwrap_or_else(|| "KeyLab".into()),
+            )
+        }
         "midi-output" | "midi-outputs" => midi_outputs_command(),
         "midi-control-monitor" => midi_control_monitor_command(
             args.next()
@@ -197,6 +213,18 @@ fn midi_control_monitor_command(query: Option<String>) -> Result<(), Box<dyn std
         );
         println!("  <- {:?}, valor {:.3}", command.action, command.value);
     })?;
+    Ok(())
+}
+
+fn midi_play_live_command(
+    take_path: PathBuf,
+    output_query: String,
+    control_query: String,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let take: MidiTake = serde_json::from_slice(&fs::read(take_path)?)?;
+    println!("Reproducción live: salida MIDI='{output_query}', control MIDI='{control_query}'.");
+    let sent = play_midi_take_live(&take, &output_query, &control_query)?;
+    println!("Eventos enviados: {sent}");
     Ok(())
 }
 

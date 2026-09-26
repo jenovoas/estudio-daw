@@ -63,6 +63,7 @@
   master, con lector ALSA reutilizable y resolución sin asignaciones.
 - [x] Aplicar comandos MIDI a un estado de sesión live con transporte,
   grabación, loop, escena activa y volumen master.
+- [x] Conectar play/pause, stop y loop MIDI con el reproductor de takes.
 - [x] Definir schema inicial de `project.json` para la fixture de interoperabilidad.
 - [ ] Definir entidades Track, Clip, Take, Device, Automation y AnalysisArtifact.
 - [ ] Definir relación original-proxy, timebase, canales y estado de disponibilidad.
