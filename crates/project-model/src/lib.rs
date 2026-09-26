@@ -593,6 +593,82 @@ pub struct Project {
     pub import_provenance: ImportProvenance,
 }
 
+/// Mutación completa y reversible del modelo de proyecto.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ChangeSet {
+    pub label: String,
+    pub before: Project,
+    pub after: Project,
+}
+
+/// Historial de cambios para UI, CLI y futuro scripting.
+///
+/// El historial sólo almacena modelo y referencias a archivos, nunca buffers
+/// de audio. Por eso puede clonarse sin duplicar medios pesados.
+#[derive(Debug, Clone, Default)]
+pub struct ProjectHistory {
+    current: Option<Project>,
+    undo_stack: Vec<ChangeSet>,
+    redo_stack: Vec<ChangeSet>,
+}
+
+impl ProjectHistory {
+    pub fn new(project: Project) -> Self {
+        Self {
+            current: Some(project),
+            undo_stack: Vec::new(),
+            redo_stack: Vec::new(),
+        }
+    }
+
+    pub fn project(&self) -> Option<&Project> {
+        self.current.as_ref()
+    }
+
+    pub fn can_undo(&self) -> bool {
+        !self.undo_stack.is_empty()
+    }
+
+    pub fn can_redo(&self) -> bool {
+        !self.redo_stack.is_empty()
+    }
+
+    /// Ejecuta una operación sobre una copia y la publica atómicamente.
+    pub fn transact<F, E>(&mut self, label: impl Into<String>, operation: F) -> Result<(), E>
+    where
+        F: FnOnce(&mut Project) -> Result<(), E>,
+    {
+        let before = self
+            .current
+            .clone()
+            .expect("el historial siempre tiene proyecto");
+        let mut after = before.clone();
+        operation(&mut after)?;
+        self.undo_stack.push(ChangeSet {
+            label: label.into(),
+            before,
+            after: after.clone(),
+        });
+        self.current = Some(after);
+        self.redo_stack.clear();
+        Ok(())
+    }
+
+    pub fn undo(&mut self) -> Option<&Project> {
+        let change = self.undo_stack.pop()?;
+        self.current = Some(change.before.clone());
+        self.redo_stack.push(change);
+        self.current.as_ref()
+    }
+
+    pub fn redo(&mut self) -> Option<&Project> {
+        let change = self.redo_stack.pop()?;
+        self.current = Some(change.after.clone());
+        self.undo_stack.push(change);
+        self.current.as_ref()
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct MidiClip {
     pub id: String,
@@ -1510,6 +1586,40 @@ mod tests {
         assert_eq!(restored.audio_clips[0].duration_samples, 24_000);
         assert_eq!(restored.audio_clips[0].source_start_samples, 4_800);
         assert_eq!(restored.audio_clips[0].gain_db, -3.0);
+        std::fs::remove_file(original).unwrap();
+    }
+
+    #[test]
+    fn project_history_publishes_transactions_and_supports_undo_redo() {
+        let project = import_dawproject("../../tests/fixtures/dawproject/minimal.dawproject")
+            .unwrap()
+            .project;
+        let audio_id = project
+            .tracks
+            .iter()
+            .find(|track| track.kind == TrackKind::Audio)
+            .unwrap()
+            .id
+            .clone();
+        let original =
+            std::env::temp_dir().join(format!("estudio-daw-history-{}.wav", std::process::id()));
+        std::fs::write(&original, b"audio").unwrap();
+        let source = MediaSource::from_original(&original).unwrap();
+        let mut history = ProjectHistory::new(project);
+
+        history
+            .transact("attach source", |project| {
+                attach_media_source(project, &audio_id, source)
+            })
+            .unwrap();
+        assert!(history.can_undo());
+        assert!(history.project().unwrap().tracks[1].media_source.is_some());
+
+        history.undo();
+        assert!(history.can_redo());
+        assert!(history.project().unwrap().tracks[1].media_source.is_none());
+        history.redo();
+        assert!(history.project().unwrap().tracks[1].media_source.is_some());
         std::fs::remove_file(original).unwrap();
     }
 

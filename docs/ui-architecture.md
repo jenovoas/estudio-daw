@@ -26,4 +26,6 @@ Reglas de diseño:
 
 Las funciones actuales como `attach_media_source`, `add_audio_clip`,
 `trim_audio_clip` y `ensure_track_audio_proxy` son los primeros comandos del
-dominio; el siguiente paso será envolverlas en un `ChangeSet` transaccional.
+dominio. `ProjectHistory::transact()` ya las puede envolver en un
+`ChangeSet` transaccional y ofrece `undo()`/`redo()` para que la UI sólo tenga
+que refrescar su snapshot.
