@@ -6,8 +6,9 @@
 use estudio_daw_midi_engine::MidiTake;
 use quick_xml::{de::from_str, escape::escape};
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::{
-    fs::File,
+    fs::{self, File},
     io::{Cursor, Read, Write},
     path::{Path, PathBuf},
 };
@@ -42,6 +43,9 @@ pub struct MediaSource {
     /// La implementación inicial usa tamaño y fecha; el hash de contenido
     /// completo se añadirá al job de generación de proxies.
     pub original_signature: String,
+    /// Hash de contenido usado por los jobs de proxy y validación fuerte.
+    #[serde(default)]
+    pub original_hash: String,
     #[serde(default)]
     pub proxy: Option<ProxyAsset>,
 }
@@ -50,7 +54,19 @@ pub struct MediaSource {
 pub struct ProxyAsset {
     pub path: PathBuf,
     pub source_signature: String,
+    #[serde(default)]
+    pub source_hash: String,
     pub profile: String,
+}
+
+#[derive(Debug, Error)]
+pub enum ProxyJobError {
+    #[error("no se pudo leer la fuente del proxy: {0}")]
+    Io(#[from] std::io::Error),
+    #[error("la fuente cambió antes de generar el proxy")]
+    SourceChanged,
+    #[error("el proxy generado está vacío")]
+    EmptyOutput,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -78,6 +94,7 @@ impl MediaSource {
         let path = path.into();
         Ok(Self {
             original_signature: media_signature(&path)?,
+            original_hash: content_hash(&path)?,
             original_path: path,
             proxy: None,
         })
@@ -86,7 +103,9 @@ impl MediaSource {
     /// Resuelve la representación sin copiar, re-encodear ni modificar medios.
     pub fn resolve(&self, policy: ProxyPolicy) -> Result<ResolvedMedia, MediaResolveError> {
         let proxy_is_valid = self.proxy.as_ref().is_some_and(|proxy| {
-            proxy.source_signature == self.original_signature && proxy.path.is_file()
+            proxy.source_signature == self.original_signature
+                && (proxy.source_hash.is_empty() || proxy.source_hash == self.original_hash)
+                && proxy.path.is_file()
         });
         match policy {
             ProxyPolicy::Original if self.original_path.is_file() => Ok(ResolvedMedia {
@@ -123,6 +142,56 @@ impl MediaSource {
     }
 }
 
+/// Materializa un proxy de identidad con publicación atómica.
+///
+/// Este primer backend conserva los bytes originales para validar la frontera
+/// de caché y procedencia. Los transcoders (PCM reducido, Opus, FLAC proxy o
+/// thumbnails) se conectarán detrás de la misma operación sin cambiar la
+/// semántica de publicación: escribir temporal, validar y renombrar.
+pub fn generate_proxy(
+    source: &MediaSource,
+    destination: impl AsRef<Path>,
+    profile: impl Into<String>,
+) -> Result<ProxyAsset, ProxyJobError> {
+    let destination = destination.as_ref();
+    let current_hash = content_hash(&source.original_path)?;
+    if !source.original_hash.is_empty() && current_hash != source.original_hash {
+        return Err(ProxyJobError::SourceChanged);
+    }
+    if let Some(parent) = destination
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+    {
+        fs::create_dir_all(parent)?;
+    }
+    let temp = destination.with_file_name(format!(
+        ".{}.tmp-{}",
+        destination
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("proxy"),
+        std::process::id()
+    ));
+    fs::copy(&source.original_path, &temp)?;
+    let metadata = fs::metadata(&temp)?;
+    if metadata.len() == 0 {
+        let _ = fs::remove_file(&temp);
+        return Err(ProxyJobError::EmptyOutput);
+    }
+    let generated_hash = content_hash(&temp)?;
+    if generated_hash != current_hash {
+        let _ = fs::remove_file(&temp);
+        return Err(ProxyJobError::SourceChanged);
+    }
+    fs::rename(&temp, destination)?;
+    Ok(ProxyAsset {
+        path: destination.to_path_buf(),
+        source_signature: media_signature(&source.original_path)?,
+        source_hash: current_hash,
+        profile: profile.into(),
+    })
+}
+
 /// Firma barata para invalidar proxies cuando cambia el archivo fuente.
 pub fn media_signature(path: impl AsRef<Path>) -> Result<String, std::io::Error> {
     let metadata = std::fs::metadata(path.as_ref())?;
@@ -131,6 +200,20 @@ pub fn media_signature(path: impl AsRef<Path>) -> Result<String, std::io::Error>
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default();
     Ok(format!("{}:{}", metadata.len(), modified.as_nanos()))
+}
+
+pub fn content_hash(path: impl AsRef<Path>) -> Result<String, std::io::Error> {
+    let mut file = File::open(path)?;
+    let mut hasher = Sha256::new();
+    let mut buffer = [0_u8; 1024 * 1024];
+    loop {
+        let read = file.read(&mut buffer)?;
+        if read == 0 {
+            break;
+        }
+        hasher.update(&buffer[..read]);
+    }
+    Ok(format!("sha256:{:x}", hasher.finalize()))
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -616,6 +699,7 @@ mod tests {
         source.proxy = Some(ProxyAsset {
             path: proxy.clone(),
             source_signature: source.original_signature.clone(),
+            source_hash: source.original_hash.clone(),
             profile: "audio-preview-f32".into(),
         });
 
@@ -639,6 +723,7 @@ mod tests {
         source.proxy = Some(ProxyAsset {
             path: proxy,
             source_signature: "stale-signature".into(),
+            source_hash: "stale-hash".into(),
             profile: "audio-preview-f32".into(),
         });
 
@@ -653,6 +738,25 @@ mod tests {
                 .representation,
             MediaRepresentation::Original
         );
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn proxy_job_publishes_atomically_and_records_strong_hash() {
+        let root = std::env::temp_dir().join(format!("estudio-daw-job-{}", std::process::id()));
+        let original = root.join("original.wav");
+        let proxy = root.join("cache").join("proxy.wav");
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(&original, b"source-audio").unwrap();
+        let mut source = MediaSource::from_original(&original).unwrap();
+
+        let asset = generate_proxy(&source, &proxy, "identity-test").unwrap();
+        assert_eq!(asset.profile, "identity-test");
+        assert_eq!(asset.source_hash, content_hash(&original).unwrap());
+        assert_eq!(std::fs::read(&proxy).unwrap(), b"source-audio");
+        source.proxy = Some(asset);
+        assert_eq!(source.resolve(ProxyPolicy::Auto).unwrap().path, proxy);
+        assert!(!root.join("cache/.proxy.wav.tmp").exists());
         std::fs::remove_dir_all(root).unwrap();
     }
 

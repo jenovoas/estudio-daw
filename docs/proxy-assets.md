@@ -21,8 +21,11 @@ para proyectos que necesiten invalidación fuerte.
 
 ## Frontera futura
 
-La siguiente capa será `ProxyJob`: leerá `MediaSource`, generará el perfil
-solicitado en caché, validará duración/canales/sample rate y publicará un nuevo
-`ProxyAsset` atómicamente. El editor podrá seguir usando la representación
-anterior mientras el job trabaja, y el render final resolverá explícitamente
-`Original`.
+`generate_proxy()` ya implementa la primera versión del `ProxyJob`: calcula
+SHA-256, copia a un temporal, valida que la fuente no haya cambiado, verifica
+la salida y publica un nuevo `ProxyAsset` mediante rename atómico. El backend
+actual es un materializador de identidad para probar la frontera; los
+transcoders de audio reducirán tamaño y sample rate detrás del mismo contrato.
+
+El editor podrá seguir usando la representación anterior mientras el job
+trabaja, y el render final resolverá explícitamente `Original`.
