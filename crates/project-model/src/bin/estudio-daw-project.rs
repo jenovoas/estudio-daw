@@ -1,6 +1,6 @@
 use std::{env, fs, path::PathBuf, process::ExitCode};
 
-use estudio_daw_midi_engine::{record_alsa_midi, MidiTake};
+use estudio_daw_midi_engine::{play_midi_take, record_alsa_midi, MidiTake};
 use estudio_daw_project_model::{
     attach_midi_take, export_dawproject, import_dawproject, quantize_midi_clip, Project,
 };
@@ -12,7 +12,8 @@ fn usage() {
         "Uso:\n  estudio-daw-project devices\n  estudio-daw-project midi-monitor [nombre]\n  estudio-daw-project midi-record <segundos> <salida.json> [nombre]\n  estudio-daw-project audio-test\n  estudio-daw-project import <entrada.dawproject> <salida.json>\n  estudio-daw-project export <entrada.json> <salida.dawproject>",
             "\n  estudio-daw-project attach-take <toma.json> <proyecto.json> <salida.json> [nombre]",
         "\n  estudio-daw-project quantize <proyecto.json> <clip-id> <rejilla-ticks> <salida.json>",
-        "\n  estudio-daw-project midi-summary <proyecto.json>"
+            "\n  estudio-daw-project midi-summary <proyecto.json>",
+            "\n  estudio-daw-project midi-play <toma.json> [destino]"
     ));
 }
 
@@ -112,6 +113,18 @@ fn main() -> ExitCode {
                 return ExitCode::from(2);
             };
             midi_summary_command(project.into())
+        }
+        "midi-play" => {
+            let Some(take) = args.next() else {
+                usage();
+                return ExitCode::from(2);
+            };
+            midi_play_command(
+                take.into(),
+                args.next()
+                    .map(|value| value.to_string_lossy().into_owned())
+                    .unwrap_or_else(|| "FluidSynth".into()),
+            )
         }
         _ => {
             usage();
@@ -250,6 +263,15 @@ fn midi_summary_command(project_path: PathBuf) -> Result<(), Box<dyn std::error:
             clip.take.tempo_bpm
         );
     }
+    Ok(())
+}
+
+fn midi_play_command(
+    take_path: PathBuf,
+    destination: String,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let take: MidiTake = serde_json::from_slice(&fs::read(&take_path)?)?;
+    play_midi_take(&take, &destination)?;
     Ok(())
 }
 

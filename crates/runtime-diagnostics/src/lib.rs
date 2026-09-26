@@ -303,6 +303,30 @@ pub fn find_alsa_midi_port(query: &str) -> Result<Option<(Addr, String)>, Diagno
     Ok(None)
 }
 
+/// Busca un destino ALSA MIDI que acepte escritura desde una aplicación.
+pub fn find_alsa_midi_output_port(query: &str) -> Result<Option<(Addr, String)>, DiagnosticsError> {
+    let seq = Seq::open(None, None, false)?;
+    let query = query.to_ascii_lowercase();
+    for client in ClientIter::new(&seq) {
+        for port in PortIter::new(&seq, client.get_client()) {
+            let name = port.get_name()?.to_string();
+            let capabilities = port.get_capability();
+            if !capabilities.contains(PortCap::WRITE | PortCap::SUBS_WRITE) {
+                continue;
+            }
+            if name.to_ascii_lowercase().contains(&query)
+                || client.get_name()?.to_ascii_lowercase().contains(&query)
+            {
+                return Ok(Some((
+                    port.addr(),
+                    format!("{}: {}", client.get_name()?, name),
+                )));
+            }
+        }
+    }
+    Ok(None)
+}
+
 /// Conecta un puerto ALSA MIDI a un puerto local y bloquea mostrando eventos.
 pub fn monitor_alsa_midi(query: &str) -> Result<(), DiagnosticsError> {
     let seq = Seq::open(None, None, false)?;

@@ -16,6 +16,7 @@
 - [x] Crear CLI mínima para importar/exportar DAWproject y `project.json`.
 - [x] Integrar una toma MIDI grabada como `MidiClip` en `project.json`.
 - [x] Añadir cuantización no destructiva de Note On/Off en clips MIDI.
+- [x] Añadir reproducción MIDI básica hacia destinos ALSA.
 - [ ] Registrar atribuciones, licencias, dependencias transitivas y estrategia de
   aislamiento antes de portar cualquier código o asset.
 

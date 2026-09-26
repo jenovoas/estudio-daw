@@ -3,9 +3,9 @@
 //! Este primer recorder vive fuera del callback de audio. La integración RT
 //! definitiva recibirá eventos desde un ring bounded preasignado.
 
-use alsa::seq::{PortCap, PortType, Seq};
+use alsa::seq::{EvCtrl, EvNote, Event, EventType, PortCap, PortType, Seq};
 use estudio_daw_runtime_diagnostics::{
-    find_alsa_midi_port, normalize_alsa_event, NormalizedMidiEvent,
+    find_alsa_midi_output_port, find_alsa_midi_port, normalize_alsa_event, NormalizedMidiEvent,
 };
 use serde::{Deserialize, Serialize};
 use std::{
@@ -95,6 +95,16 @@ pub enum LiveRecordError {
     Alsa(#[from] alsa::Error),
     #[error("error del recorder: {0}")]
     Recorder(#[from] RecorderError),
+}
+
+#[derive(Debug, Error)]
+pub enum PlaybackError {
+    #[error("no se encontró un destino MIDI de salida para '{0}'")]
+    DestinationNotFound(String),
+    #[error("no se pudo descubrir la salida MIDI: {0}")]
+    Discovery(#[from] estudio_daw_runtime_diagnostics::DiagnosticsError),
+    #[error("error ALSA durante la reproducción: {0}")]
+    Alsa(#[from] alsa::Error),
 }
 
 pub struct MidiRecorder {
@@ -218,6 +228,135 @@ pub fn record_alsa_midi(
     let take = recorder.stop()?;
     println!("Toma finalizada: {} eventos.", take.events.len());
     Ok(take)
+}
+
+/// Reproduce una toma MIDI hacia un destino ALSA MIDI, respetando PPQ y tempo.
+///
+/// La planificación ocurre fuera del callback de audio. Este primer adaptador
+/// usa eventos directos ALSA; el motor RT reemplazará el sleep por su reloj.
+pub fn play_midi_take(take: &MidiTake, query: &str) -> Result<usize, PlaybackError> {
+    let seq = Seq::open(None, None, false)?;
+    let Some((destination, label)) = find_alsa_midi_output_port(query)? else {
+        return Err(PlaybackError::DestinationNotFound(query.into()));
+    };
+    let client_name = CString::new("Estudio DAW MIDI Player").expect("literal sin NUL");
+    seq.set_client_name(&client_name)?;
+    let port_name = CString::new("playback-output").expect("literal sin NUL");
+    let local_port = seq.create_simple_port(
+        &port_name,
+        PortCap::READ | PortCap::SUBS_READ,
+        PortType::MIDI_GENERIC | PortType::APPLICATION,
+    )?;
+    println!(
+        "Reproduciendo {} eventos hacia {label}...",
+        take.events.len()
+    );
+    let started_at = Instant::now();
+    let mut sent = 0;
+    for event in &take.events {
+        let micros = event.tick.saturating_mul(60_000_000)
+            / u64::from(take.tempo_bpm.max(1))
+            / u64::from(take.ppq.max(1));
+        let target = started_at + Duration::from_micros(micros);
+        let now = Instant::now();
+        if target > now {
+            thread::sleep(target - now);
+        }
+        if let Some(mut alsa_event) = to_alsa_output_event(&event.message) {
+            alsa_event.set_source(local_port);
+            alsa_event.set_dest(destination);
+            alsa_event.set_direct();
+            seq.event_output_direct(&mut alsa_event)?;
+            sent += 1;
+        }
+    }
+    seq.drain_output()?;
+    println!("Reproducción finalizada: {sent} eventos enviados.");
+    Ok(sent)
+}
+
+fn to_alsa_output_event(message: &RecordedMidiMessage) -> Option<Event<'static>> {
+    match message {
+        RecordedMidiMessage::NoteOn {
+            channel,
+            note,
+            velocity,
+        } => Some(Event::new(
+            EventType::Noteon,
+            &EvNote {
+                channel: *channel,
+                note: *note,
+                velocity: *velocity,
+                off_velocity: 0,
+                duration: 0,
+            },
+        )),
+        RecordedMidiMessage::NoteOff {
+            channel,
+            note,
+            release_velocity,
+        } => Some(Event::new(
+            EventType::Noteoff,
+            &EvNote {
+                channel: *channel,
+                note: *note,
+                velocity: 0,
+                off_velocity: *release_velocity,
+                duration: 0,
+            },
+        )),
+        RecordedMidiMessage::KeyPressure {
+            channel,
+            note,
+            pressure,
+        } => Some(Event::new(
+            EventType::Keypress,
+            &EvNote {
+                channel: *channel,
+                note: *note,
+                velocity: *pressure,
+                off_velocity: 0,
+                duration: 0,
+            },
+        )),
+        RecordedMidiMessage::ControlChange {
+            channel,
+            controller,
+            value,
+        } => Some(Event::new(
+            EventType::Controller,
+            &EvCtrl {
+                channel: *channel,
+                param: *controller,
+                value: *value,
+            },
+        )),
+        RecordedMidiMessage::PitchBend { channel, value } => Some(Event::new(
+            EventType::Pitchbend,
+            &EvCtrl {
+                channel: *channel,
+                param: 0,
+                value: *value,
+            },
+        )),
+        RecordedMidiMessage::ChannelPressure { channel, pressure } => Some(Event::new(
+            EventType::Chanpress,
+            &EvCtrl {
+                channel: *channel,
+                param: 0,
+                value: *pressure,
+            },
+        )),
+        RecordedMidiMessage::ProgramChange { channel, program } => Some(Event::new(
+            EventType::Pgmchange,
+            &EvCtrl {
+                channel: *channel,
+                param: 0,
+                value: *program,
+            },
+        )),
+        RecordedMidiMessage::SysEx { .. } | RecordedMidiMessage::Other => None,
+    }
 }
 
 fn convert_event(event: &NormalizedMidiEvent) -> (MidiSource, RecordedMidiMessage) {
