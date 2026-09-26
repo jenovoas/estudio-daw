@@ -406,7 +406,7 @@ fn project_play_command(
     destination: String,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let project: Project = serde_json::from_slice(&fs::read(&project_path)?)?;
-    let clip = match clip_id {
+    let clip = match clip_id.filter(|id| !id.is_empty()) {
         Some(ref id) => project
             .midi_clips
             .iter()
@@ -432,7 +432,7 @@ fn project_play_live_command(
     control: String,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let project: Project = serde_json::from_slice(&fs::read(&project_path)?)?;
-    let clip = match clip_id {
+    let clip = match clip_id.filter(|id| !id.is_empty()) {
         Some(ref id) => project
             .midi_clips
             .iter()

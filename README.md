@@ -612,6 +612,12 @@ cargo run -q -p estudio-daw-project-model --bin estudio-daw-project -- midi-play
 
 # Reproducir un clip que ya pertenece a project.json
 cargo run -q -p estudio-daw-project-model --bin estudio-daw-project -- project-play proyecto.json midi-clip-1 "FLUID Synth"
+
+# Reproducir un clip controlando el transporte desde el puerto DAW del KeyLab
+cargo run -q -p estudio-daw-project-model --bin estudio-daw-project -- project-play-live proyecto.json "" "FluidSynth" "KeyLab Essential 49 DAW"
+
+# Grabar MIDI iniciando y deteniendo con el botón Record del KeyLab
+cargo run -q -p estudio-daw-project-model --bin estudio-daw-project -- midi-record-live mi-toma-live.json "KeyLab Essential 49 MID" "KeyLab Essential 49 DAW"
 ```
 
 Durante `project-play`, la terminal acepta `p` para pausar/reanudar, `s` para
@@ -632,6 +638,7 @@ Después se añadirán clips, escenas, Arrangement View, plugins, escalas, anál
 ## Documentación de planificación
 
 - [Architecture Reset v2](docs/architecture-v2.md)
+- [Control MIDI live](docs/midi-live-control.md)
 - [Propuesta inicial](openspec/changes/bootstrap-opendaw-architecture/proposal.md)
 - [Diseño](openspec/changes/bootstrap-opendaw-architecture/design.md)
 - [Especificación de audio y MIDI](openspec/changes/bootstrap-opendaw-architecture/specs/runtime-audio-midi/spec.md)
