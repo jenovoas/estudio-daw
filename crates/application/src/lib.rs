@@ -9,7 +9,7 @@ pub use estudio_daw_command_bus::{
     DomainEventPayload, DomainSnapshot, ProjectCommand,
 };
 use estudio_daw_command_bus::{CommandDiagnostic, CommandRuntime, DomainCommandBus};
-use estudio_daw_project_model::Project;
+use estudio_daw_project_model::{load_project_json, Project, ProjectJsonError};
 pub use estudio_daw_session::{SessionCommand, TransportSnapshot, TransportState};
 use std::{
     ffi::OsString,
@@ -31,6 +31,8 @@ pub enum ApplicationError {
     Io(#[from] std::io::Error),
     #[error("el proyecto JSON no es válido: {0}")]
     Json(#[from] serde_json::Error),
+    #[error("no se pudo migrar el proyecto JSON: {0}")]
+    ProjectJson(#[from] ProjectJsonError),
     #[error("no se pudo despachar el comando: {0}")]
     Queue(#[from] estudio_daw_command_bus::CommandBusError),
     #[error("comando rechazado ({code}) [{command_id}]: {message}")]
@@ -70,7 +72,7 @@ impl ProjectApplication {
     pub fn open(path: impl AsRef<Path>) -> Result<Self, ApplicationError> {
         let path = path.as_ref();
         let bytes = fs::read(path)?;
-        let project = serde_json::from_slice(&bytes)?;
+        let project = load_project_json(&bytes)?;
         let mut application = Self::new(project);
         application.project_path = Some(path.to_path_buf());
         Ok(application)
@@ -369,6 +371,23 @@ mod tests {
             -6.0
         );
         assert_eq!(fs::read_dir(&directory.0).unwrap().count(), 2);
+    }
+
+    #[test]
+    fn opening_a_legacy_project_migrates_it_before_application_use() {
+        let directory = TestDirectory::new();
+        let project_path = directory.0.join("legacy.json");
+        fs::write(
+            &project_path,
+            br#"{"project_id":"legacy","transport":{"tempo_bpm":90.0,"time_signature":{"numerator":4,"denominator":4}},"tracks":[],"import_provenance":{"format":"internal","format_version":"0","source_file":"","warnings":[]}}"#,
+        )
+        .unwrap();
+
+        let application = ProjectApplication::open(&project_path).unwrap();
+        let project = application.snapshot().project.project;
+        assert_eq!(project.schema_version, "estudio-daw.project.v1");
+        assert!(project.midi_clips.is_empty());
+        assert!(project.audio_clips.is_empty());
     }
 
     #[test]

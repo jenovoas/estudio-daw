@@ -591,8 +591,7 @@ estudio-daw/
 │   ├── application/ ciclo de vida y API común para UI/CLI
 │   ├── ui-shell/    shell de escritorio Tauri y adaptador web
 │   └── cli/       adaptador CLI (ejecutable estudio-daw-project)
-├── python/       workers de análisis
-├── schemas/      contratos versionados
+├── python/       (pendiente) workers aislados de análisis
 ├── docs/         decisiones y documentación
 ├── tests/        pruebas unitarias, audio y MIDI
 ├── examples/     sesiones y scripts
@@ -601,7 +600,11 @@ estudio-daw/
 
 ## Estado
 
-Fase actual: primer vertical slice MIDI funcional en Linux.
+Estado real: prototipo fundacional ejecutable; todavía no es un DAW de producción.
+Existe un shell Tauri, modelo/API de aplicación, MIDI live, grabación de audio
+PipeWire, motor DSP inicial, proxies y contratos de visualización. La integración
+de un instrumento en el motor de audio, la edición visual y los workers de
+análisis siguen en desarrollo.
 
 El flujo probado actualmente es:
 
@@ -641,7 +644,12 @@ interfaz de audio → grabación de guitarra/voz
 proyecto → guardado y reapertura
 ```
 
-Después se añadirán clips, escenas, Arrangement View, plugins, escalas, análisis, scripting, atmósferas, profesor IA e implementación WASM.
+El orden de trabajo y las dependencias por fases se mantienen en
+[`docs/architecture-v2.md`](docs/architecture-v2.md) y en las tareas OpenSpec.
+Entre los bloques grandes aún pendientes están el instrumento nativo conectado
+al audio engine, edición/mixer visual, procesamiento GPU medido, plugins,
+automatización, workers Python (stems, transcripción y análisis musical),
+scripting, profesor IA e implementación WASM.
 
 ## Documentación de planificación
 
@@ -656,6 +664,7 @@ Después se añadirán clips, escenas, Arrangement View, plugins, escalas, anál
 - [Frontera Core/UI](docs/ui-architecture.md)
 - [Shell de escritorio Tauri](crates/ui-shell/tauri.conf.json)
 - [Contrato versionado UI/backend v1](docs/ui-bridge-contract-v1.md)
+- [Migraciones de `project.json`](docs/project-schema-migrations.md)
 - [Propuesta inicial](openspec/changes/bootstrap-opendaw-architecture/proposal.md)
 - [Diseño](openspec/changes/bootstrap-opendaw-architecture/design.md)
 - [Especificación de audio y MIDI](openspec/changes/bootstrap-opendaw-architecture/specs/runtime-audio-midi/spec.md)

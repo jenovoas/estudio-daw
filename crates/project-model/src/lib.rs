@@ -26,6 +26,19 @@ pub enum ProjectError {
     Xml(#[from] quick_xml::DeError),
 }
 
+/// Error de lectura versionada de `project.json`.
+#[derive(Debug, Error)]
+pub enum ProjectJsonError {
+    #[error("JSON de proyecto inválido: {0}")]
+    Json(#[from] serde_json::Error),
+    #[error("la raíz del proyecto debe ser un objeto JSON")]
+    InvalidRoot,
+    #[error("`schema_version` debe ser una cadena")]
+    InvalidVersionType,
+    #[error("versión de proyecto no soportada: {0}")]
+    UnsupportedVersion(String),
+}
+
 /// Política que decide qué representación se usa durante reproducción o
 /// edición. El original nunca se reemplaza ni se modifica por el proxy.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -591,6 +604,51 @@ pub struct Project {
     #[serde(default)]
     pub audio_clips: Vec<AudioClip>,
     pub import_provenance: ImportProvenance,
+}
+
+/// Deserializa y migra un proyecto antes de exponerlo al resto de la aplicación.
+///
+/// Los proyectos previos a `project.v1` podían omitir las colecciones de clips;
+/// se normalizan como listas vacías para conservar el contenido existente. Una
+/// versión futura se rechaza explícitamente para evitar que una versión antigua
+/// guarde el archivo y descarte campos que todavía no entiende.
+pub fn load_project_json(bytes: &[u8]) -> Result<Project, ProjectJsonError> {
+    let mut value: serde_json::Value = serde_json::from_slice(bytes)?;
+    let object = value.as_object_mut().ok_or(ProjectJsonError::InvalidRoot)?;
+
+    let version = match object.get("schema_version") {
+        None => "estudio-daw.project.v0",
+        Some(serde_json::Value::String(version)) => version,
+        Some(_) => return Err(ProjectJsonError::InvalidVersionType),
+    }
+    .to_owned();
+
+    match version.as_str() {
+        "estudio-daw.project.v0" | "0" => {
+            object.insert(
+                "schema_version".into(),
+                serde_json::Value::String("estudio-daw.project.v1".into()),
+            );
+            object
+                .entry("midi_clips")
+                .or_insert_with(|| serde_json::Value::Array(Vec::new()));
+            object
+                .entry("audio_clips")
+                .or_insert_with(|| serde_json::Value::Array(Vec::new()));
+        }
+        "1" => {
+            object.insert(
+                "schema_version".into(),
+                serde_json::Value::String("estudio-daw.project.v1".into()),
+            );
+        }
+        "estudio-daw.project.v1" => {}
+        unsupported => {
+            return Err(ProjectJsonError::UnsupportedVersion(unsupported.into()));
+        }
+    }
+
+    Ok(serde_json::from_value(value)?)
 }
 
 /// Mutación completa y reversible del modelo de proyecto.
@@ -1394,6 +1452,43 @@ fn escape_attr(value: &str) -> String {
 mod tests {
     use super::*;
     use estudio_daw_midi_engine::{MidiSource, RecordedMidiEvent, RecordedMidiMessage};
+
+    #[test]
+    fn migrates_unversioned_project_and_preserves_legacy_content() {
+        let legacy = br#"{
+            "project_id":"legacy-song",
+            "transport":{"tempo_bpm":92.0,"time_signature":{"numerator":4,"denominator":4}},
+            "tracks":[{"id":"track-1","name":"Voice","kind":"audio","notes":[],"audio_channels":2}],
+            "import_provenance":{"format":"estudio-daw","format_version":"legacy","source_file":"","warnings":[]}
+        }"#;
+
+        let project = load_project_json(legacy).unwrap();
+
+        assert_eq!(project.schema_version, "estudio-daw.project.v1");
+        assert_eq!(project.project_id, "legacy-song");
+        assert_eq!(project.tracks[0].name, "Voice");
+        assert!(project.tracks[0].media_source.is_none());
+        assert!(project.midi_clips.is_empty());
+        assert!(project.audio_clips.is_empty());
+    }
+
+    #[test]
+    fn refuses_to_load_a_project_from_a_future_schema() {
+        let future = br#"{"schema_version":"estudio-daw.project.v99"}"#;
+        assert!(matches!(
+            load_project_json(future),
+            Err(ProjectJsonError::UnsupportedVersion(version))
+                if version == "estudio-daw.project.v99"
+        ));
+    }
+
+    #[test]
+    fn refuses_a_non_string_schema_version() {
+        assert!(matches!(
+            load_project_json(br#"{"schema_version":1}"#),
+            Err(ProjectJsonError::InvalidVersionType)
+        ));
+    }
 
     #[test]
     fn imports_minimal_fixture_from_zip() {

@@ -27,9 +27,11 @@
 - [x] Completar Architecture Reset v2 con límites de crates, matriz tecnológica y fases.
 - [x] Registrar estrategia de modular monolith, CommandBus, ChangeSet y fallbacks.
 - [ ] Convertir las decisiones v2 en ADRs individuales con pruebas de aceptación.
-- [ ] Confirmar distribución Linux y backend de audio objetivo.
-- [ ] Registrar modelo exacto del KeyLab Essential y de la interfaz de audio.
-- [ ] Decidir licencia inicial del repositorio.
+- [x] Confirmar Arch Linux y PipeWire como backend prioritario, con JACK/ALSA
+  contemplados como alternativas.
+- [x] Registrar Arturia KeyLab Essential 49 y PreSonus AudioBox USB 96 como
+  hardware objetivo.
+- [x] Decidir licencia inicial del repositorio: AGPL-3.0-or-later.
 - [ ] Definir política de assets, modelos y archivos de audio.
 - [ ] Definir política de originales, proxies, caché y renders finales.
 - [ ] Crear ADR inicial para decisiones irreversibles.
@@ -38,9 +40,12 @@
 
 - [x] Crear workspace Cargo y crate base de modelo/intercambio.
 - [x] Implementar enumeración diagnóstica de dispositivos de audio y MIDI mediante PipeWire.
-- [ ] Implementar stream de audio de prueba.
+- [x] Implementar stream duplex de audio de prueba en PipeWire, con selección de
+  AudioBox, ring preasignado y métricas de captura/salida.
 - [x] Crear módulo DSP modular de ecualización con bandas sin asignaciones en procesamiento.
-- [ ] Leer Note On/Off, velocity, CC, pitch bend y sustain.
+- [x] Normalizar Note On/Off, velocity, CC (incluido CC64 como Control Change) y
+  pitch bend; la semántica específica de pedal sustain queda pendiente del motor
+  de instrumentos.
 - [x] Implementar transporte sample/beat/bar mediante `TransportClock` y PPQ
   fijo de 960.
 - [x] Crear reloj de reproducción determinista independiente del wall-clock.
@@ -120,7 +125,8 @@
 - [ ] Definir relación original-proxy, timebase, canales y estado de disponibilidad.
 - [ ] Implementar comandos y eventos.
 - [ ] Implementar undo/redo agrupado.
-- [ ] Añadir migración de schema.
+- [x] Añadir migración de `project.v0`/`"1"` a `project.v1`, rechazar versiones
+  futuras desconocidas y probar apertura legacy desde la API de aplicación.
 
 ## Worker Python
 
@@ -172,7 +178,7 @@
   desconexión, recrear el emisor, volver a suscribirse y recibir después.
   (El hot-plug automático del monitor queda como evolución del adaptador.)
 - [ ] Test de worker caído durante reproducción.
-- [ ] Test de serialización y migración.
+- [x] Test de serialización y migración de schema al abrir un proyecto legacy.
 - [ ] Test de proxy offline, proxy obsoleto, fuente ausente y render final desde original.
 - [ ] Test de undo de operación del agente.
 - [ ] Prueba vertical: KeyLab → synth → grabación MIDI → reproducción.
