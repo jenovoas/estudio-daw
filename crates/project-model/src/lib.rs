@@ -656,6 +656,18 @@ pub enum MediaAttachError {
     NotAudioTrack(String),
 }
 
+#[derive(Debug, Error)]
+pub enum ProjectMediaError {
+    #[error("no existe la pista '{0}'")]
+    TrackNotFound(String),
+    #[error("la pista '{0}' no es de audio")]
+    NotAudioTrack(String),
+    #[error("la pista '{0}' no tiene una fuente de audio asociada")]
+    MissingSource(String),
+    #[error("falló la generación del proxy: {0}")]
+    Proxy(#[from] ProxyJobError),
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Note {
     pub midi_key: u8,
@@ -886,6 +898,29 @@ pub fn attach_media_source(
     }
     track.media_source = Some(source);
     Ok(())
+}
+
+/// Garantiza el proxy de una pista y actualiza el proyecto sólo tras una
+/// publicación válida en la caché.
+pub fn ensure_track_audio_proxy(
+    project: &mut Project,
+    track_id: &str,
+    cache: &ProxyCacheManager,
+    profile: &AudioProxyProfile,
+) -> Result<ProxyCacheState, ProjectMediaError> {
+    let track = project
+        .tracks
+        .iter_mut()
+        .find(|track| track.id == track_id)
+        .ok_or_else(|| ProjectMediaError::TrackNotFound(track_id.into()))?;
+    if track.kind != TrackKind::Audio {
+        return Err(ProjectMediaError::NotAudioTrack(track_id.into()));
+    }
+    let source = track
+        .media_source
+        .as_mut()
+        .ok_or_else(|| ProjectMediaError::MissingSource(track_id.into()))?;
+    Ok(cache.ensure_audio_proxy(source, profile)?)
 }
 
 /// Adjunta una toma MIDI a la primera pista MIDI disponible.

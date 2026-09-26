@@ -32,6 +32,16 @@ Las pistas de audio contienen ahora un `media_source` opcional dentro del
 modelo `Track`. `attach_media_source()` sólo permite asociarlo a pistas de
 audio; las pistas MIDI permanecen libres de rutas y metadatos de medios.
 
+El flujo CLI completo conserva cada etapa en un archivo nuevo:
+
+```bash
+cargo run -q -p estudio-daw-project-model --bin estudio-daw-project -- \
+  attach-media proyecto.json track-audio toma.wav proyecto-con-audio.json
+
+cargo run -q -p estudio-daw-project-model --bin estudio-daw-project -- \
+  proxy-track proyecto-con-audio.json track-audio .cache/proxies proyecto-final.json
+```
+
 La resolución sólo selecciona una ruta; no copia, modifica ni re-encodea ningún
 archivo. Si el original cambió, la firma del proxy deja de coincidir y el
 proxy se considera obsoleto. La firma inicial es una comprobación barata de

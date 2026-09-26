@@ -10,8 +10,9 @@ use estudio_daw_midi_engine::{
     record_alsa_midi_live, run_alsa_midi_control, MidiControlMap, MidiTake,
 };
 use estudio_daw_project_model::{
-    attach_midi_take, export_dawproject, generate_audio_proxy_ffmpeg, import_dawproject,
-    quantize_midi_clip, AudioProxyProfile, MediaSource, Project,
+    attach_media_source, attach_midi_take, ensure_track_audio_proxy, export_dawproject,
+    generate_audio_proxy_ffmpeg, import_dawproject, quantize_midi_clip, AudioProxyProfile,
+    MediaSource, Project, ProxyCacheManager,
 };
 use estudio_daw_runtime_diagnostics::{
     audio_devices, enumerate_alsa_midi_output_ports, midi_devices, monitor_alsa_midi, DeviceInfo,
@@ -35,6 +36,10 @@ fn usage() {
             "\n  estudio-daw-project audio-record <segundos> <salida.wav>"
             ,
             "\n  estudio-daw-project proxy-audio <entrada> <salida>"
+            ,
+            "\n  estudio-daw-project proxy-track <proyecto.json> <pista> <cache> <salida.json>"
+            ,
+            "\n  estudio-daw-project attach-media <proyecto.json> <pista> <audio> <salida.json>"
     ));
 }
 
@@ -73,6 +78,54 @@ fn main() -> ExitCode {
                 return ExitCode::from(2);
             };
             proxy_audio_command(input.into(), output.into())
+        }
+        "proxy-track" => {
+            let Some(project) = args.next() else {
+                usage();
+                return ExitCode::from(2);
+            };
+            let Some(track_id) = args.next() else {
+                usage();
+                return ExitCode::from(2);
+            };
+            let Some(cache) = args.next() else {
+                usage();
+                return ExitCode::from(2);
+            };
+            let Some(output) = args.next() else {
+                usage();
+                return ExitCode::from(2);
+            };
+            proxy_track_command(
+                project.into(),
+                track_id.to_string_lossy().into_owned(),
+                cache.into(),
+                output.into(),
+            )
+        }
+        "attach-media" => {
+            let Some(project) = args.next() else {
+                usage();
+                return ExitCode::from(2);
+            };
+            let Some(track_id) = args.next() else {
+                usage();
+                return ExitCode::from(2);
+            };
+            let Some(audio) = args.next() else {
+                usage();
+                return ExitCode::from(2);
+            };
+            let Some(output) = args.next() else {
+                usage();
+                return ExitCode::from(2);
+            };
+            attach_media_command(
+                project.into(),
+                track_id.to_string_lossy().into_owned(),
+                audio.into(),
+                output.into(),
+            )
         }
         "midi-record" => {
             let Some(seconds) = args.next() else {
@@ -405,6 +458,44 @@ fn proxy_audio_command(input: PathBuf, output: PathBuf) -> Result<(), Box<dyn st
         asset.path.display(),
         asset.profile,
         asset.source_hash
+    );
+    Ok(())
+}
+
+fn proxy_track_command(
+    project_path: PathBuf,
+    track_id: String,
+    cache_path: PathBuf,
+    output_path: PathBuf,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let mut project: Project = serde_json::from_slice(&fs::read(&project_path)?)?;
+    let manager = ProxyCacheManager::new(cache_path);
+    let profile = AudioProxyProfile::opus_preview();
+    let state = ensure_track_audio_proxy(&mut project, &track_id, &manager, &profile)?;
+    fs::write(&output_path, serde_json::to_vec_pretty(&project)?)?;
+    println!(
+        "Proxy de pista listo: pista={} estado={state:?} proyecto={}",
+        track_id,
+        output_path.display()
+    );
+    Ok(())
+}
+
+fn attach_media_command(
+    project_path: PathBuf,
+    track_id: String,
+    audio_path: PathBuf,
+    output_path: PathBuf,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let mut project: Project = serde_json::from_slice(&fs::read(&project_path)?)?;
+    let source = MediaSource::from_original(&audio_path)?;
+    attach_media_source(&mut project, &track_id, source)?;
+    fs::write(&output_path, serde_json::to_vec_pretty(&project)?)?;
+    println!(
+        "Fuente asociada: pista={} audio={} proyecto={}",
+        track_id,
+        audio_path.display(),
+        output_path.display()
     );
     Ok(())
 }
