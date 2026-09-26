@@ -27,5 +27,14 @@ la salida y publica un nuevo `ProxyAsset` mediante rename atómico. El backend
 actual es un materializador de identidad para probar la frontera; los
 transcoders de audio reducirán tamaño y sample rate detrás del mismo contrato.
 
+Para audio, `proxy-audio` usa el perfil `audio-opus-preview-v1`, transcodifica
+con ffmpeg a Opus/Ogg, valida con ffprobe que la salida sea estéreo a 48 kHz y
+publica el archivo sólo después de esa validación:
+
+```bash
+cargo run -q -p estudio-daw-project-model --bin estudio-daw-project -- \
+  proxy-audio original.wav cache/original-preview.ogg
+```
+
 El editor podrá seguir usando la representación anterior mientras el job
 trabaja, y el render final resolverá explícitamente `Original`.

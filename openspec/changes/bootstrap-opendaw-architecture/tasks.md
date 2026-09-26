@@ -48,8 +48,8 @@
   callback RT.
 - [x] Añadir captura MIDI a un modelo de evento y toma temporal.
 - [x] Implementar `MediaSource`/`ProxyAsset` y política original/proxy/auto.
-- [x] Crear base de jobs de proxy con SHA-256, perfil, validación, publicación
-  atómica y limpieza del temporal.
+- [x] Crear jobs de proxy con SHA-256, perfil de audio Opus, validación ffprobe,
+  publicación atómica y limpieza del temporal.
 - [ ] Definir scheduler híbrido CPU/GPU, presupuestos de transferencia y fallback CPU.
 - [ ] Crear backend de cómputo `wgpu`/Vulkan fuera del callback de audio.
 - [ ] Benchmark CPU/GPU para FFT, convolución, time-stretch, render y análisis.

@@ -10,7 +10,8 @@ use estudio_daw_midi_engine::{
     record_alsa_midi_live, run_alsa_midi_control, MidiControlMap, MidiTake,
 };
 use estudio_daw_project_model::{
-    attach_midi_take, export_dawproject, import_dawproject, quantize_midi_clip, Project,
+    attach_midi_take, export_dawproject, generate_audio_proxy_ffmpeg, import_dawproject,
+    quantize_midi_clip, AudioProxyProfile, MediaSource, Project,
 };
 use estudio_daw_runtime_diagnostics::{
     audio_devices, enumerate_alsa_midi_output_ports, midi_devices, monitor_alsa_midi, DeviceInfo,
@@ -32,6 +33,8 @@ fn usage() {
             "\n  estudio-daw-project midi-outputs"
             ,
             "\n  estudio-daw-project audio-record <segundos> <salida.wav>"
+            ,
+            "\n  estudio-daw-project proxy-audio <entrada> <salida>"
     ));
 }
 
@@ -59,6 +62,17 @@ fn main() -> ExitCode {
                 return ExitCode::from(2);
             };
             audio_record_command(seconds.to_string_lossy().as_ref(), output.into())
+        }
+        "proxy-audio" => {
+            let Some(input) = args.next() else {
+                usage();
+                return ExitCode::from(2);
+            };
+            let Some(output) = args.next() else {
+                usage();
+                return ExitCode::from(2);
+            };
+            proxy_audio_command(input.into(), output.into())
         }
         "midi-record" => {
             let Some(seconds) = args.next() else {
@@ -375,6 +389,19 @@ fn audio_record_command(seconds: &str, output: PathBuf) -> Result<(), Box<dyn st
         capture.dropped_samples,
         report.capture_callbacks,
         report.output_callbacks
+    );
+    Ok(())
+}
+
+fn proxy_audio_command(input: PathBuf, output: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
+    let source = MediaSource::from_original(&input)?;
+    let profile = AudioProxyProfile::opus_preview();
+    let asset = generate_audio_proxy_ffmpeg(&source, &output, &profile)?;
+    println!(
+        "Proxy generado: {} (perfil={}, sha256={})",
+        asset.path.display(),
+        asset.profile,
+        asset.source_hash
     );
     Ok(())
 }

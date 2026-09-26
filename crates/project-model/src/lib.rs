@@ -11,6 +11,7 @@ use std::{
     fs::{self, File},
     io::{Cursor, Read, Write},
     path::{Path, PathBuf},
+    process::Command,
 };
 use thiserror::Error;
 use zip::{write::SimpleFileOptions, ZipArchive, ZipWriter};
@@ -67,6 +68,31 @@ pub enum ProxyJobError {
     SourceChanged,
     #[error("el proxy generado está vacío")]
     EmptyOutput,
+    #[error("el transcoder ffmpeg terminó con error: {0}")]
+    TranscoderFailed(String),
+    #[error("el proxy no cumple el perfil de audio solicitado: {0}")]
+    InvalidAudioOutput(String),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AudioProxyProfile {
+    pub id: String,
+    pub sample_rate: u32,
+    pub channels: u16,
+    pub codec: String,
+    pub bitrate_kbps: u32,
+}
+
+impl AudioProxyProfile {
+    pub fn opus_preview() -> Self {
+        Self {
+            id: "audio-opus-preview-v1".into(),
+            sample_rate: 48_000,
+            channels: 2,
+            codec: "libopus".into(),
+            bitrate_kbps: 128,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -190,6 +216,114 @@ pub fn generate_proxy(
         source_hash: current_hash,
         profile: profile.into(),
     })
+}
+
+/// Genera un proxy de audio ligero con ffmpeg fuera del hilo de audio.
+///
+/// La salida se escribe en un temporal, se valida con ffprobe y sólo entonces
+/// se publica. El original se hashea antes y después de la transcodificación
+/// para impedir que una fuente modificada produzca un proxy aparentemente
+/// válido.
+pub fn generate_audio_proxy_ffmpeg(
+    source: &MediaSource,
+    destination: impl AsRef<Path>,
+    profile: &AudioProxyProfile,
+) -> Result<ProxyAsset, ProxyJobError> {
+    let destination = destination.as_ref();
+    let source_hash = content_hash(&source.original_path)?;
+    if !source.original_hash.is_empty() && source_hash != source.original_hash {
+        return Err(ProxyJobError::SourceChanged);
+    }
+    if let Some(parent) = destination
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+    {
+        fs::create_dir_all(parent)?;
+    }
+    let temp = destination.with_file_name(format!(
+        ".{}.tmp-{}",
+        destination
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("proxy"),
+        std::process::id()
+    ));
+    let output = Command::new("ffmpeg")
+        .args(["-hide_banner", "-loglevel", "error", "-nostdin", "-y", "-i"])
+        .arg(&source.original_path)
+        .args(["-vn", "-ac"])
+        .arg(profile.channels.to_string())
+        .args(["-ar"])
+        .arg(profile.sample_rate.to_string())
+        .args(["-c:a"])
+        .arg(&profile.codec)
+        .args(["-b:a"])
+        .arg(format!("{}k", profile.bitrate_kbps))
+        // El temporal no tiene extensión visible; el perfil actual usa Ogg
+        // como contenedor para Opus y por eso se declara explícitamente.
+        .args(["-f", "ogg"])
+        .arg(&temp)
+        .output()?;
+    if !output.status.success() {
+        let _ = fs::remove_file(&temp);
+        return Err(ProxyJobError::TranscoderFailed(
+            String::from_utf8_lossy(&output.stderr).trim().to_string(),
+        ));
+    }
+    if let Err(error) = validate_audio_proxy(&temp, profile) {
+        let _ = fs::remove_file(&temp);
+        return Err(error);
+    }
+    if content_hash(&source.original_path)? != source_hash {
+        let _ = fs::remove_file(&temp);
+        return Err(ProxyJobError::SourceChanged);
+    }
+    if let Err(error) = fs::rename(&temp, destination) {
+        let _ = fs::remove_file(&temp);
+        return Err(error.into());
+    }
+    Ok(ProxyAsset {
+        path: destination.to_path_buf(),
+        source_signature: media_signature(&source.original_path)?,
+        source_hash,
+        profile: profile.id.clone(),
+    })
+}
+
+fn validate_audio_proxy(path: &Path, profile: &AudioProxyProfile) -> Result<(), ProxyJobError> {
+    let output = Command::new("ffprobe")
+        .args([
+            "-v",
+            "error",
+            "-select_streams",
+            "a:0",
+            "-show_entries",
+            "stream=sample_rate,channels",
+            "-of",
+            "csv=p=0:s=,",
+        ])
+        .arg(path)
+        .output()?;
+    if !output.status.success() {
+        return Err(ProxyJobError::InvalidAudioOutput(
+            String::from_utf8_lossy(&output.stderr).trim().to_string(),
+        ));
+    }
+    let values = String::from_utf8_lossy(&output.stdout);
+    let Some((sample_rate, channels)) = values.trim().split_once(',') else {
+        return Err(ProxyJobError::InvalidAudioOutput(
+            "ffprobe no devolvió sample rate y canales".into(),
+        ));
+    };
+    let valid_rate = sample_rate.parse::<u32>().ok() == Some(profile.sample_rate);
+    let valid_channels = channels.parse::<u16>().ok() == Some(profile.channels);
+    if !valid_rate || !valid_channels {
+        return Err(ProxyJobError::InvalidAudioOutput(format!(
+            "esperado {} Hz / {} canales, obtenido {} Hz / {} canales",
+            profile.sample_rate, profile.channels, sample_rate, channels
+        )));
+    }
+    Ok(())
 }
 
 /// Firma barata para invalidar proxies cuando cambia el archivo fuente.
