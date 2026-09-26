@@ -285,6 +285,31 @@ mod tests {
     }
 
     #[test]
+    fn clock_stays_stable_across_variable_blocks_at_fractional_tempo() {
+        let block_sizes = [64, 96, 127, 256, 511, 1_024, 2_048];
+        let mut one_block = TransportClock::default();
+        let mut many_blocks = TransportClock::default();
+        let mut total_frames = 0_u64;
+        let mut previous_position = 0_u64;
+
+        // Simula callbacks con tamaños distintos durante una sesión larga y a
+        // un tempo que no produce ticks enteros por frame/bloque.
+        for index in 0..100_000 {
+            let frames = block_sizes[index % block_sizes.len()];
+            total_frames += frames;
+            many_blocks.advance_frames(frames, 44_100, 123.456);
+
+            let position = many_blocks.position_ticks();
+            assert!(position >= previous_position, "el reloj no debe retroceder");
+            previous_position = position;
+        }
+
+        one_block.advance_frames(total_frames, 44_100, 123.456);
+        assert_eq!(many_blocks, one_block);
+        assert_eq!(many_blocks.position_ticks(), 2_640_041);
+    }
+
+    #[test]
     fn paused_session_does_not_advance_transport() {
         let mut session = Session::default();
         assert_eq!(session.advance_audio_frames(48_000, 48_000), 0);

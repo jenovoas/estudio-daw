@@ -60,3 +60,18 @@ let mut plan = builder.build()?;
 La integración de entrada/salida PipeWire y los buffers scratch preasignados
 vendrá después. El `RenderPlan` actual valida la arquitectura sin introducir
 todavía una dependencia del sistema de audio.
+
+## Prueba de regresión RT
+
+`cargo test -p estudio-daw-audio-engine --test realtime_no_alloc` ejecuta el
+procesamiento en un binario de integración con un allocator contador. El plan,
+`AudioBlock`, ring SPSC y buffers de salida se construyen y calientan antes de
+activar el contador; luego se repite el procesamiento 1.000 veces. El contador
+es thread-local, de modo que asignaciones del harness en otros hilos no alteran
+el resultado.
+
+Esta prueba cubre el camino síncrono `RenderPlan::process_block()` y el paso por
+el ring preasignado. No sustituye una auditoría del callback PipeWire completo,
+ni detecta operaciones que evadan el allocator global de Rust o que ocurran en
+procesos/threads externos; esa integración se probará al conectar el plan al
+backend.

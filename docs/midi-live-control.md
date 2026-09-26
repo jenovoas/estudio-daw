@@ -102,3 +102,17 @@ y aplicación de comandos al estado live:
 ```bash
 cargo test -p estudio-daw-midi-engine
 ```
+
+La prueba de integración `alsa_hotplug` crea puertos virtuales del secuenciador,
+verifica una nota, elimina el emisor y vuelve a suscribir un emisor recreado.
+No utiliza el controlador físico; se omite con diagnóstico cuando el host no
+dispone de `/dev/snd/seq`:
+
+```bash
+cargo test -p estudio-daw-midi-engine --test alsa_hotplug -- --nocapture
+```
+
+Este test valida el ciclo ALSA de desconectar, redescubrir y suscribirse de
+nuevo; no afirma que los monitores actuales hagan hot-plug automático. La
+reapertura/supervisión automática del lector es una mejora posterior del
+adaptador de plataforma.

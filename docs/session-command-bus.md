@@ -38,6 +38,11 @@ bloques de PipeWire no cambia la posición final. El reloj sólo avanza cuando
 la sesión está en `Playing`; el mismo contrato servirá para reproducción,
 render offline y el futuro adaptador WASM.
 
+La prueba `clock_stays_stable_across_variable_blocks_at_fractional_tempo`
+compara 100.000 callbacks de tamaños variables a 44,1 kHz y 123,456 BPM con un
+bloque único de igual duración. Además comprueba que la posición nunca
+retrocede; ambos caminos deben acabar en el mismo tick entero y resto fraccional.
+
 `SessionCommand` representa intenciones, no mensajes de hardware. Esto permite
 que MIDI, teclado, scripting y profesor IA controlen el mismo estado sin
 duplicar reglas.

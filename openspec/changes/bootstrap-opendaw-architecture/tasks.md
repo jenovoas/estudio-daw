@@ -163,9 +163,14 @@
 
 ## Verificación
 
-- [ ] Test de no asignaciones en el callback de audio.
-- [ ] Test de estabilidad de transporte.
-- [ ] Test de desconexión/reconexión MIDI.
+- [x] Test de no asignaciones en el camino síncrono de procesamiento de audio
+  (`RenderPlan` + ring preasignado); la integración PipeWire completa queda para
+  la prueba vertical del backend.
+- [x] Test de estabilidad del transporte a tempo fraccional con tamaños de
+  callback variables y equivalencia frente a un bloque único.
+- [x] Test de integración ALSA con puerto virtual: recibir antes de la
+  desconexión, recrear el emisor, volver a suscribirse y recibir después.
+  (El hot-plug automático del monitor queda como evolución del adaptador.)
 - [ ] Test de worker caído durante reproducción.
 - [ ] Test de serialización y migración.
 - [ ] Test de proxy offline, proxy obsoleto, fuente ausente y render final desde original.
