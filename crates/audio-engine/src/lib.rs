@@ -1,0 +1,217 @@
+//! Grafo DSP compilado para el motor de audio.
+//!
+//! El builder puede asignar y ordenar nodos libremente porque trabaja fuera
+//! del callback. `RenderPlan::process` sólo recorre una lista plana ya
+//! compilada y no resuelve dependencias ni crea buffers temporales.
+
+use estudio_daw_dsp::{DspError, EqBandConfig, Equalizer};
+use thiserror::Error;
+
+pub trait AudioNode: Send {
+    fn process(&mut self, interleaved: &mut [f32]) -> Result<(), AudioNodeError>;
+}
+
+#[derive(Debug, Error)]
+pub enum AudioNodeError {
+    #[error("el bloque de audio tiene una longitud inválida")]
+    InvalidBlockLength,
+    #[error("fallo DSP: {0}")]
+    Dsp(#[from] DspError),
+}
+
+#[derive(Debug, Error, PartialEq, Eq)]
+pub enum GraphError {
+    #[error("el nodo {0} no existe")]
+    InvalidNode(usize),
+    #[error("el grafo DSP contiene un ciclo")]
+    Cycle,
+}
+
+struct PendingNode {
+    dependencies: Vec<usize>,
+    node: Box<dyn AudioNode>,
+}
+
+/// Builder mutable para una topología de sesión.
+pub struct RenderPlanBuilder {
+    nodes: Vec<PendingNode>,
+}
+
+impl Default for RenderPlanBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl RenderPlanBuilder {
+    pub fn new() -> Self {
+        Self { nodes: Vec::new() }
+    }
+
+    pub fn add_node<N>(&mut self, node: N) -> usize
+    where
+        N: AudioNode + 'static,
+    {
+        let id = self.nodes.len();
+        self.nodes.push(PendingNode {
+            dependencies: Vec::new(),
+            node: Box::new(node),
+        });
+        id
+    }
+
+    /// Declara que `source` debe renderizarse antes de `target`.
+    pub fn connect(&mut self, source: usize, target: usize) -> Result<(), GraphError> {
+        if source >= self.nodes.len() {
+            return Err(GraphError::InvalidNode(source));
+        }
+        let Some(target_node) = self.nodes.get_mut(target) else {
+            return Err(GraphError::InvalidNode(target));
+        };
+        target_node.dependencies.push(source);
+        Ok(())
+    }
+
+    /// Compila el DAG en orden topológico fuera del hilo de audio.
+    pub fn build(self) -> Result<RenderPlan, GraphError> {
+        let node_count = self.nodes.len();
+        let mut indegree: Vec<usize> = self
+            .nodes
+            .iter()
+            .map(|node| node.dependencies.len())
+            .collect();
+        let mut ready: Vec<usize> = indegree
+            .iter()
+            .enumerate()
+            .filter_map(|(id, degree)| (*degree == 0).then_some(id))
+            .collect();
+        let mut order = Vec::with_capacity(node_count);
+
+        while let Some(source) = ready.pop() {
+            order.push(source);
+            for (target, node) in self.nodes.iter().enumerate() {
+                if node.dependencies.contains(&source) {
+                    indegree[target] -= 1;
+                    if indegree[target] == 0 {
+                        ready.push(target);
+                    }
+                }
+            }
+        }
+        if order.len() != node_count {
+            return Err(GraphError::Cycle);
+        }
+
+        let mut nodes: Vec<Option<Box<dyn AudioNode>>> =
+            self.nodes.into_iter().map(|node| Some(node.node)).collect();
+        let ordered_nodes = order
+            .into_iter()
+            .map(|id| nodes[id].take().expect("cada nodo aparece una vez"))
+            .collect();
+        Ok(RenderPlan {
+            nodes: ordered_nodes,
+        })
+    }
+}
+
+/// Plan DSP inmutable en topología, mutable sólo en el estado interno de sus
+/// nodos. El procesamiento no asigna memoria ni calcula dependencias.
+pub struct RenderPlan {
+    nodes: Vec<Box<dyn AudioNode>>,
+}
+
+impl RenderPlan {
+    pub fn process(&mut self, interleaved: &mut [f32]) -> Result<(), AudioNodeError> {
+        for node in &mut self.nodes {
+            node.process(interleaved)?;
+        }
+        Ok(())
+    }
+
+    pub fn node_count(&self) -> usize {
+        self.nodes.len()
+    }
+}
+
+pub struct GainNode {
+    gain: f32,
+}
+
+impl GainNode {
+    pub fn new(gain: f32) -> Self {
+        Self { gain }
+    }
+}
+
+impl AudioNode for GainNode {
+    fn process(&mut self, interleaved: &mut [f32]) -> Result<(), AudioNodeError> {
+        for sample in interleaved {
+            *sample *= self.gain;
+        }
+        Ok(())
+    }
+}
+
+/// Adaptador del ecualizador modular para insertarlo en una pista, bus o
+/// master sin duplicar el DSP.
+pub struct EqualizerNode {
+    equalizer: Equalizer,
+}
+
+impl EqualizerNode {
+    pub fn new(sample_rate_hz: f32, channels: usize) -> Result<Self, DspError> {
+        Ok(Self {
+            equalizer: Equalizer::new(sample_rate_hz, channels)?,
+        })
+    }
+
+    pub fn add_band(&mut self, band: EqBandConfig) -> Result<usize, DspError> {
+        self.equalizer.add_band(band)
+    }
+}
+
+impl AudioNode for EqualizerNode {
+    fn process(&mut self, interleaved: &mut [f32]) -> Result<(), AudioNodeError> {
+        self.equalizer.process_interleaved(interleaved)?;
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn compiles_dag_in_dependency_order() {
+        let mut builder = RenderPlanBuilder::new();
+        let gain_a = builder.add_node(GainNode::new(2.0));
+        let gain_b = builder.add_node(GainNode::new(3.0));
+        builder.connect(gain_a, gain_b).unwrap();
+        let mut plan = builder.build().unwrap();
+        let mut block = [1.0, -1.0];
+        plan.process(&mut block).unwrap();
+        assert_eq!(block, [6.0, -6.0]);
+    }
+
+    #[test]
+    fn rejects_cycles_before_audio_processing() {
+        let mut builder = RenderPlanBuilder::new();
+        let first = builder.add_node(GainNode::new(1.0));
+        let second = builder.add_node(GainNode::new(1.0));
+        builder.connect(first, second).unwrap();
+        builder.connect(second, first).unwrap();
+        assert!(matches!(builder.build(), Err(GraphError::Cycle)));
+    }
+
+    #[test]
+    fn hosts_modular_equalizer_as_a_node() {
+        let mut eq = EqualizerNode::new(48_000.0, 2).unwrap();
+        eq.add_band(EqBandConfig::bell(1_000.0, 3.0, 1.0)).unwrap();
+        let mut plan = RenderPlanBuilder::new();
+        plan.add_node(eq);
+        let mut plan = plan.build().unwrap();
+        let mut block = [0.1; 32];
+        plan.process(&mut block).unwrap();
+        assert!(block.iter().all(|sample| sample.is_finite()));
+    }
+}

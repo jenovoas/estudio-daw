@@ -76,6 +76,8 @@
   MIDI.
 - [x] Ejecutar el flujo MIDI → `CommandBus` → `Session` desde
   `midi-control-monitor`.
+- [x] Crear `audio-engine` con DAG compilado, detección de ciclos y adaptador
+  del ecualizador modular.
 - [x] Definir schema inicial de `project.json` para la fixture de interoperabilidad.
 - [ ] Definir entidades Track, Clip, Take, Device, Automation y AnalysisArtifact.
 - [ ] Definir relación original-proxy, timebase, canales y estado de disponibilidad.

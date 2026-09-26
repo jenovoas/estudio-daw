@@ -6,6 +6,7 @@
 //! preasignados.
 
 use std::f32::consts::PI;
+use thiserror::Error;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EqFilterType {
@@ -63,12 +64,17 @@ impl EqBandConfig {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
 pub enum DspError {
+    #[error("sample rate inválido")]
     InvalidSampleRate,
+    #[error("cantidad de canales inválida")]
     InvalidChannelCount,
+    #[error("índice de banda inválido")]
     InvalidBandIndex,
+    #[error("longitud de bloque inválida")]
     InvalidBlockLength,
+    #[error("parámetro de banda inválido")]
     InvalidBandParameter,
 }
 
