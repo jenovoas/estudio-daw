@@ -23,6 +23,11 @@ perfil y prefijo SHA-256. `ensure_audio_proxy()` reutiliza entradas `Ready` y
 sólo genera una nueva entrada para estados `Missing` o `Stale`; el modelo no se
 actualiza hasta que el archivo fue validado y publicado.
 
+El manifiesto `proxy-manifest.json` se escribe con el mismo patrón temporal y
+rename atómico. `hydrate_source()` permite reconstruir el `ProxyAsset` después
+de reiniciar el DAW y vuelve a clasificarlo como `Ready` o `Stale` según la
+fuente actual.
+
 La resolución sólo selecciona una ruta; no copia, modifica ni re-encodea ningún
 archivo. Si el original cambió, la firma del proxy deja de coincidir y el
 proxy se considera obsoleto. La firma inicial es una comprobación barata de

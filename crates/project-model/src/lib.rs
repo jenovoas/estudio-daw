@@ -74,6 +74,8 @@ pub enum ProxyJobError {
     InvalidAudioOutput(String),
     #[error("ya existe una generación activa para este proxy")]
     AlreadyBuilding,
+    #[error("no se pudo leer o escribir el manifiesto de proxies: {0}")]
+    Manifest(String),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -111,6 +113,22 @@ pub struct ProxyCacheManager {
     root: PathBuf,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ProxyCacheManifest {
+    pub schema_version: String,
+    #[serde(default)]
+    pub entries: Vec<ProxyManifestEntry>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ProxyManifestEntry {
+    pub original_path: PathBuf,
+    pub original_hash: String,
+    pub proxy_path: PathBuf,
+    pub source_signature: String,
+    pub profile: String,
+}
+
 impl ProxyCacheManager {
     pub fn new(root: impl Into<PathBuf>) -> Self {
         Self { root: root.into() }
@@ -118,6 +136,74 @@ impl ProxyCacheManager {
 
     pub fn root(&self) -> &Path {
         &self.root
+    }
+
+    pub fn manifest_path(&self) -> PathBuf {
+        self.root.join("proxy-manifest.json")
+    }
+
+    pub fn load_manifest(&self) -> Result<ProxyCacheManifest, ProxyJobError> {
+        let path = self.manifest_path();
+        if !path.is_file() {
+            return Ok(ProxyCacheManifest {
+                schema_version: "estudio-daw.proxy-manifest.v1".into(),
+                entries: Vec::new(),
+            });
+        }
+        serde_json::from_slice(&fs::read(path)?)
+            .map_err(|error| ProxyJobError::Manifest(error.to_string()))
+    }
+
+    fn save_manifest(&self, manifest: &ProxyCacheManifest) -> Result<(), ProxyJobError> {
+        fs::create_dir_all(&self.root)?;
+        let path = self.manifest_path();
+        let temporary = path.with_file_name(".proxy-manifest.json.tmp");
+        let bytes = serde_json::to_vec_pretty(manifest)
+            .map_err(|error| ProxyJobError::Manifest(error.to_string()))?;
+        fs::write(&temporary, bytes)?;
+        if let Err(error) = fs::rename(&temporary, &path) {
+            let _ = fs::remove_file(&temporary);
+            return Err(error.into());
+        }
+        Ok(())
+    }
+
+    fn record_asset(&self, source: &MediaSource, asset: &ProxyAsset) -> Result<(), ProxyJobError> {
+        let mut manifest = self.load_manifest()?;
+        manifest.entries.retain(|entry| {
+            !(entry.original_path == source.original_path && entry.profile == asset.profile)
+        });
+        manifest.entries.push(ProxyManifestEntry {
+            original_path: source.original_path.clone(),
+            original_hash: source.original_hash.clone(),
+            proxy_path: asset.path.clone(),
+            source_signature: asset.source_signature.clone(),
+            profile: asset.profile.clone(),
+        });
+        self.save_manifest(&manifest)
+    }
+
+    /// Restaura desde el manifiesto el proxy asociado a una fuente y perfil.
+    pub fn hydrate_source(
+        &self,
+        source: &mut MediaSource,
+        profile: &AudioProxyProfile,
+    ) -> Result<ProxyCacheState, ProxyJobError> {
+        let manifest = self.load_manifest()?;
+        if let Some(entry) = manifest.entries.iter().find(|entry| {
+            entry.original_path == source.original_path
+                && entry.original_hash == source.original_hash
+                && entry.profile == profile.id
+        }) {
+            source.proxy = Some(ProxyAsset {
+                path: entry.proxy_path.clone(),
+                source_signature: entry.source_signature.clone(),
+                source_hash: entry.original_hash.clone(),
+                profile: entry.profile.clone(),
+            });
+        }
+        let destination = self.destination_for(source, profile);
+        Ok(source.proxy_cache_state(destination, &profile.id))
     }
 
     /// Devuelve una ubicación estable para un perfil y una fuente concretos.
@@ -152,6 +238,7 @@ impl ProxyCacheManager {
             ProxyCacheState::Missing | ProxyCacheState::Stale => {}
         }
         let asset = generate_audio_proxy_ffmpeg(source, &destination, profile)?;
+        self.record_asset(source, &asset)?;
         source.proxy = Some(asset);
         Ok(ProxyCacheState::Ready)
     }
@@ -1092,6 +1179,44 @@ mod tests {
         assert!(first
             .to_string_lossy()
             .ends_with("audio-opus-preview-v1.ogg"));
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn proxy_manifest_hydrates_ready_entry_after_restart() {
+        let root =
+            std::env::temp_dir().join(format!("estudio-daw-manifest-{}", std::process::id()));
+        let original = root.join("song.wav");
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(&original, b"audio").unwrap();
+        let manager = ProxyCacheManager::new(root.join("cache"));
+        let profile = AudioProxyProfile::opus_preview();
+        let source = MediaSource::from_original(&original).unwrap();
+        let destination = manager.destination_for(&source, &profile);
+        std::fs::create_dir_all(destination.parent().unwrap()).unwrap();
+        std::fs::write(&destination, b"proxy").unwrap();
+        manager
+            .save_manifest(&ProxyCacheManifest {
+                schema_version: "estudio-daw.proxy-manifest.v1".into(),
+                entries: vec![ProxyManifestEntry {
+                    original_path: source.original_path.clone(),
+                    original_hash: source.original_hash.clone(),
+                    proxy_path: destination.clone(),
+                    source_signature: source.original_signature.clone(),
+                    profile: profile.id.clone(),
+                }],
+            })
+            .unwrap();
+
+        let mut restored = MediaSource::from_original(&original).unwrap();
+        assert_eq!(
+            manager.hydrate_source(&mut restored, &profile).unwrap(),
+            ProxyCacheState::Ready
+        );
+        assert_eq!(
+            restored.resolve(ProxyPolicy::Auto).unwrap().path,
+            destination
+        );
         std::fs::remove_dir_all(root).unwrap();
     }
 

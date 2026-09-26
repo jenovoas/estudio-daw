@@ -54,6 +54,8 @@
   exclusión de generaciones concurrentes.
 - [x] Añadir administrador de caché con rutas deterministas y reutilización de
   proxies `ready`.
+- [x] Persistir el manifiesto de proxies con escritura atómica y restaurarlo al
+  cargar una sesión.
 - [ ] Definir scheduler híbrido CPU/GPU, presupuestos de transferencia y fallback CPU.
 - [ ] Crear backend de cómputo `wgpu`/Vulkan fuera del callback de audio.
 - [ ] Benchmark CPU/GPU para FFT, convolución, time-stretch, render y análisis.
