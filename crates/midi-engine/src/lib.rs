@@ -10,6 +10,8 @@ use estudio_daw_runtime_diagnostics::{
 use serde::{Deserialize, Serialize};
 use std::{
     ffi::CString,
+    io::BufRead,
+    sync::mpsc::{self, Receiver},
     thread,
     time::{Duration, Instant},
 };
@@ -105,6 +107,39 @@ pub enum PlaybackError {
     Discovery(#[from] estudio_daw_runtime_diagnostics::DiagnosticsError),
     #[error("error ALSA durante la reproducción: {0}")]
     Alsa(#[from] alsa::Error),
+}
+
+/// Estado mínimo del transporte. Se mantiene independiente de ALSA para que
+/// la futura interfaz gráfica pueda reutilizarlo sin abrir dispositivos.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TransportState {
+    Stopped,
+    Playing,
+    Paused,
+}
+
+impl TransportState {
+    pub fn play(self) -> Self {
+        Self::Playing
+    }
+
+    pub fn pause(self) -> Self {
+        match self {
+            Self::Playing => Self::Paused,
+            other => other,
+        }
+    }
+
+    pub fn resume(self) -> Self {
+        match self {
+            Self::Paused => Self::Playing,
+            other => other,
+        }
+    }
+
+    pub fn stop(self) -> Self {
+        Self::Stopped
+    }
 }
 
 pub struct MidiRecorder {
@@ -235,6 +270,45 @@ pub fn record_alsa_midi(
 /// La planificación ocurre fuera del callback de audio. Este primer adaptador
 /// usa eventos directos ALSA; el motor RT reemplazará el sleep por su reloj.
 pub fn play_midi_take(take: &MidiTake, query: &str) -> Result<usize, PlaybackError> {
+    play_midi_take_internal(take, query, None)
+}
+
+/// Reproduce una toma con controles de transporte desde la terminal.
+///
+/// Controles — todos requieren Enter:
+/// `p` pausa/reanuda, `s` detiene, `l` activa/desactiva loop y `q` sale.
+/// La entrada de teclado vive en otro hilo; el hilo que envía MIDI sólo
+/// consulta un canal de comandos y no bloquea el envío ALSA.
+pub fn play_midi_take_interactive(take: &MidiTake, query: &str) -> Result<usize, PlaybackError> {
+    let (commands_tx, commands_rx) = mpsc::channel();
+    thread::spawn(move || {
+        for line in std::io::stdin().lock().lines().flatten() {
+            let command = match line.trim().to_ascii_lowercase().as_str() {
+                "p" => PlaybackCommand::TogglePause,
+                "s" | "q" => PlaybackCommand::Stop,
+                "l" => PlaybackCommand::ToggleLoop,
+                _ => continue,
+            };
+            if commands_tx.send(command).is_err() || command == PlaybackCommand::Stop {
+                break;
+            }
+        }
+    });
+    play_midi_take_internal(take, query, Some(commands_rx))
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PlaybackCommand {
+    TogglePause,
+    ToggleLoop,
+    Stop,
+}
+
+fn play_midi_take_internal(
+    take: &MidiTake,
+    query: &str,
+    commands: Option<Receiver<PlaybackCommand>>,
+) -> Result<usize, PlaybackError> {
     let seq = Seq::open(None, None, false)?;
     let Some((destination, label)) = find_alsa_midi_output_port(query)? else {
         return Err(PlaybackError::DestinationNotFound(query.into()));
@@ -251,16 +325,62 @@ pub fn play_midi_take(take: &MidiTake, query: &str) -> Result<usize, PlaybackErr
         "Reproduciendo {} eventos hacia {label}...",
         take.events.len()
     );
-    let started_at = Instant::now();
+    if commands.is_some() {
+        println!("Controles: [p] pausa/reanuda  [s] detiene  [l] loop  [q] sale");
+    }
+    let mut state = TransportState::Playing;
+    let mut loop_enabled = false;
+    let mut started_at = Instant::now();
+    let mut accumulated = Duration::ZERO;
+    let mut event_index = 0;
     let mut sent = 0;
-    for event in &take.events {
+    while event_index < take.events.len() {
+        if let Some(commands) = &commands {
+            for command in commands.try_iter() {
+                match command {
+                    PlaybackCommand::TogglePause if state == TransportState::Playing => {
+                        accumulated += started_at.elapsed();
+                        state = state.pause();
+                        println!("Transporte en pausa.");
+                    }
+                    PlaybackCommand::TogglePause if state == TransportState::Paused => {
+                        started_at = Instant::now();
+                        state = state.resume();
+                        println!("Transporte reanudado.");
+                    }
+                    PlaybackCommand::ToggleLoop => {
+                        loop_enabled = !loop_enabled;
+                        println!(
+                            "Loop {}.",
+                            if loop_enabled {
+                                "activado"
+                            } else {
+                                "desactivado"
+                            }
+                        );
+                    }
+                    PlaybackCommand::Stop => {
+                        send_all_notes_off(&seq, local_port, destination)?;
+                        println!("Transporte detenido.");
+                        return Ok(sent);
+                    }
+                    _ => {}
+                }
+            }
+        }
+        if state == TransportState::Paused {
+            thread::sleep(Duration::from_millis(10));
+            continue;
+        }
+        let event = &take.events[event_index];
         let micros = event.tick.saturating_mul(60_000_000)
             / u64::from(take.tempo_bpm.max(1))
             / u64::from(take.ppq.max(1));
-        let target = started_at + Duration::from_micros(micros);
-        let now = Instant::now();
-        if target > now {
-            thread::sleep(target - now);
+        let elapsed = accumulated + started_at.elapsed();
+        let target = Duration::from_micros(micros);
+        if target > elapsed {
+            thread::sleep((target - elapsed).min(Duration::from_millis(10)));
+            continue;
         }
         if let Some(mut alsa_event) = to_alsa_output_event(&event.message) {
             alsa_event.set_source(local_port);
@@ -269,10 +389,40 @@ pub fn play_midi_take(take: &MidiTake, query: &str) -> Result<usize, PlaybackErr
             seq.event_output_direct(&mut alsa_event)?;
             sent += 1;
         }
+        event_index += 1;
+        if event_index == take.events.len() && loop_enabled {
+            event_index = 0;
+            started_at = Instant::now();
+            accumulated = Duration::ZERO;
+            println!("Loop: nueva vuelta.");
+        }
     }
     seq.drain_output()?;
     println!("Reproducción finalizada: {sent} eventos enviados.");
     Ok(sent)
+}
+
+fn send_all_notes_off(
+    seq: &Seq,
+    local_port: i32,
+    destination: alsa::seq::Addr,
+) -> Result<(), PlaybackError> {
+    for channel in 0..16 {
+        let mut event = Event::new(
+            EventType::Controller,
+            &EvCtrl {
+                channel,
+                param: 123,
+                value: 0,
+            },
+        );
+        event.set_source(local_port);
+        event.set_dest(destination);
+        event.set_direct();
+        seq.event_output_direct(&mut event)?;
+    }
+    seq.drain_output()?;
+    Ok(())
 }
 
 fn to_alsa_output_event(message: &RecordedMidiMessage) -> Option<Event<'static>> {
@@ -510,5 +660,14 @@ mod tests {
             Err(RecorderError::NotRecording)
         );
         assert_eq!(recorder.stop(), Err(RecorderError::NotRecording));
+    }
+
+    #[test]
+    fn transport_state_has_predictable_transitions() {
+        assert_eq!(TransportState::Stopped.play(), TransportState::Playing);
+        assert_eq!(TransportState::Playing.pause(), TransportState::Paused);
+        assert_eq!(TransportState::Paused.resume(), TransportState::Playing);
+        assert_eq!(TransportState::Playing.stop(), TransportState::Stopped);
+        assert_eq!(TransportState::Stopped.pause(), TransportState::Stopped);
     }
 }

@@ -1,6 +1,8 @@
 use std::{env, fs, path::PathBuf, process::ExitCode};
 
-use estudio_daw_midi_engine::{play_midi_take, record_alsa_midi, MidiTake};
+use estudio_daw_midi_engine::{
+    play_midi_take, play_midi_take_interactive, record_alsa_midi, MidiTake,
+};
 use estudio_daw_project_model::{
     attach_midi_take, export_dawproject, import_dawproject, quantize_midi_clip, Project,
 };
@@ -318,7 +320,7 @@ fn project_play_command(
             .ok_or("el proyecto no contiene clips MIDI")?,
     };
     println!("Clip seleccionado: {} ({})", clip.id, clip.name);
-    play_midi_take(&clip.take, &destination)?;
+    play_midi_take_interactive(&clip.take, &destination)?;
     Ok(())
 }
 

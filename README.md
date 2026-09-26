@@ -566,7 +566,31 @@ estudio-daw/
 
 ## Estado
 
-Fase actual: visión, PRD, arquitectura y especificación.
+Fase actual: primer vertical slice MIDI funcional en Linux.
+
+El flujo probado actualmente es:
+
+```text
+Arturia KeyLab → ALSA MIDI → toma JSON → MidiClip → FluidSynth → PipeWire
+```
+
+Comandos de laboratorio:
+
+```bash
+# Ver destinos MIDI ALSA
+cargo run -q -p estudio-daw-project-model --bin estudio-daw-project -- midi-outputs
+
+# Reproducir una toma directamente
+cargo run -q -p estudio-daw-project-model --bin estudio-daw-project -- midi-play mi-toma.json "FLUID Synth"
+
+# Reproducir un clip que ya pertenece a project.json
+cargo run -q -p estudio-daw-project-model --bin estudio-daw-project -- project-play proyecto.json midi-clip-1 "FLUID Synth"
+```
+
+Durante `project-play`, la terminal acepta `p` para pausar/reanudar, `s` para
+detener, `l` para activar/desactivar loop y `q` para salir. Cada comando requiere
+presionar Enter. Las operaciones de cuantización generan un archivo nuevo y no
+sobrescriben la toma original.
 
 La primera implementación debe comenzar por un vertical slice:
 
