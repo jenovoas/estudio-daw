@@ -66,6 +66,8 @@
   nativa y adaptador WASM.
 - [x] Añadir `ChangeSet` transaccional y `ProjectHistory` con undo/redo para
   operaciones del dominio.
+- [x] Exponer `ProjectSnapshot` versionado y eventos de commit/undo/redo para
+  actualizar la UI sin acoplarla al modelo interno.
 - [ ] Definir scheduler híbrido CPU/GPU, presupuestos de transferencia y fallback CPU.
 - [ ] Crear backend de cómputo `wgpu`/Vulkan fuera del callback de audio.
 - [ ] Benchmark CPU/GPU para FFT, convolución, time-stretch, render y análisis.

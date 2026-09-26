@@ -601,6 +601,25 @@ pub struct ChangeSet {
     pub after: Project,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ProjectSnapshot {
+    pub revision: u64,
+    pub project: Project,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum ProjectEventKind {
+    Committed { label: String },
+    Undone { label: String },
+    Redone { label: String },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ProjectEvent {
+    pub revision: u64,
+    pub kind: ProjectEventKind,
+}
+
 /// Historial de cambios para UI, CLI y futuro scripting.
 ///
 /// El historial sólo almacena modelo y referencias a archivos, nunca buffers
@@ -610,6 +629,8 @@ pub struct ProjectHistory {
     current: Option<Project>,
     undo_stack: Vec<ChangeSet>,
     redo_stack: Vec<ChangeSet>,
+    revision: u64,
+    events: Vec<ProjectEvent>,
 }
 
 impl ProjectHistory {
@@ -618,6 +639,8 @@ impl ProjectHistory {
             current: Some(project),
             undo_stack: Vec::new(),
             redo_stack: Vec::new(),
+            revision: 0,
+            events: Vec::new(),
         }
     }
 
@@ -631,6 +654,18 @@ impl ProjectHistory {
 
     pub fn can_redo(&self) -> bool {
         !self.redo_stack.is_empty()
+    }
+
+    pub fn snapshot(&self) -> Option<ProjectSnapshot> {
+        self.current.as_ref().map(|project| ProjectSnapshot {
+            revision: self.revision,
+            project: project.clone(),
+        })
+    }
+
+    /// Extrae eventos desde el último polling de la UI.
+    pub fn drain_events(&mut self) -> Vec<ProjectEvent> {
+        std::mem::take(&mut self.events)
     }
 
     /// Ejecuta una operación sobre una copia y la publica atómicamente.
@@ -651,20 +686,44 @@ impl ProjectHistory {
         });
         self.current = Some(after);
         self.redo_stack.clear();
+        self.revision = self.revision.saturating_add(1);
+        self.events.push(ProjectEvent {
+            revision: self.revision,
+            kind: ProjectEventKind::Committed {
+                label: self
+                    .undo_stack
+                    .last()
+                    .expect("change recién añadido")
+                    .label
+                    .clone(),
+            },
+        });
         Ok(())
     }
 
     pub fn undo(&mut self) -> Option<&Project> {
         let change = self.undo_stack.pop()?;
+        let label = change.label.clone();
         self.current = Some(change.before.clone());
         self.redo_stack.push(change);
+        self.revision = self.revision.saturating_add(1);
+        self.events.push(ProjectEvent {
+            revision: self.revision,
+            kind: ProjectEventKind::Undone { label },
+        });
         self.current.as_ref()
     }
 
     pub fn redo(&mut self) -> Option<&Project> {
         let change = self.redo_stack.pop()?;
+        let label = change.label.clone();
         self.current = Some(change.after.clone());
         self.undo_stack.push(change);
+        self.revision = self.revision.saturating_add(1);
+        self.events.push(ProjectEvent {
+            revision: self.revision,
+            kind: ProjectEventKind::Redone { label },
+        });
         self.current.as_ref()
     }
 }
@@ -1620,6 +1679,13 @@ mod tests {
         assert!(history.project().unwrap().tracks[1].media_source.is_none());
         history.redo();
         assert!(history.project().unwrap().tracks[1].media_source.is_some());
+        let events = history.drain_events();
+        assert_eq!(events.len(), 3);
+        assert_eq!(events[0].revision, 1);
+        assert_eq!(events[1].revision, 2);
+        assert_eq!(events[2].revision, 3);
+        assert_eq!(history.snapshot().unwrap().revision, 3);
+        assert!(history.drain_events().is_empty());
         std::fs::remove_file(original).unwrap();
     }
 

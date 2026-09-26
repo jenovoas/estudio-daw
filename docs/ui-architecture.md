@@ -28,4 +28,6 @@ Las funciones actuales como `attach_media_source`, `add_audio_clip`,
 `trim_audio_clip` y `ensure_track_audio_proxy` son los primeros comandos del
 dominio. `ProjectHistory::transact()` ya las puede envolver en un
 `ChangeSet` transaccional y ofrece `undo()`/`redo()` para que la UI sólo tenga
-que refrescar su snapshot.
+que refrescar su snapshot. `ProjectSnapshot` incluye una revisión monotónica y
+`drain_events()` entrega eventos de commit, undo y redo para actualizar sólo
+los paneles afectados.
