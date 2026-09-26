@@ -13,6 +13,40 @@ Definir un motor de audio/MIDI determinista y seguro para tiempo real, capaz de 
 - Los cambios de sesión publican un nuevo plan en un límite seguro de bloque usando doble buffer, RCU o un mecanismo equivalente sin bloqueo.
 - Los feedback loops sólo existen mediante nodos explícitos con estado y límites; un ciclo arbitrario se rechaza antes de activar el plan.
 
+## Arquitectura híbrida CPU/GPU
+
+La aceleración no significa enviar cada bloque de audio a la GPU. El objetivo es
+usar cada procesador donde tenga mejor relación entre coste, latencia y consumo.
+
+- La CPU conserva la responsabilidad del callback de audio, transporte, reloj,
+  MIDI, routing, control de plugins y DSP pequeño de baja latencia.
+- La GPU se usa para trabajos paralelos o de gran volumen: FFT y espectrogramas,
+  convolución larga, oversampling offline, time-stretch, pitch-shift, reducción de
+  ruido, separación de stems, análisis visual, generación de proxies y renders.
+- El primer backend de cómputo será `wgpu`, con Vulkan como ruta prioritaria en
+  Linux y fallback CPU obligatorio. CUDA, ROCm u otros backends podrán existir en
+  workers especializados, pero no serán requisitos del core.
+- El scheduler elegirá CPU o GPU según tamaño del trabajo, deadline, memoria,
+  disponibilidad del dispositivo y coste de transferir datos. La GPU no se usa si
+  la copia CPU↔GPU cuesta más que el cálculo.
+- El callback RT nunca espera una compilación de shader, una transferencia síncrona,
+  una asignación de GPU ni una operación de driver. Los trabajos GPU se preparan
+  fuera del callback y publican resultados mediante buffers versionados.
+- El procesamiento GPU en tiempo real, cuando se implemente, usará buffers
+  persistentes, doble/triple buffering y un deadline explícito por bloque. Si no
+  cumple el deadline, se activa el plan CPU o un resultado degradado seguro.
+- Los plugins externos mantienen su propio modelo de ejecución: el host no fuerza
+  aceleración GPU sobre CLAP/LV2/VST3. La aceleración se aplica en DSP propio,
+  workers y renders que controlamos.
+
+### Presupuesto de transferencia
+
+Cada nodo acelerable declara tamaño de entrada, tamaño de salida, latencia,
+memoria y si admite procesamiento por bloques grandes. El compilador puede fusionar
+operaciones GPU y mantener un recurso residente para evitar viajes innecesarios por
+PCIe. Un benchmark debe comparar CPU, GPU y modo híbrido con el mismo resultado
+numérico y registrar latencia, xruns, uso de memoria y energía.
+
 ## Arena de buffers sin asignaciones
 
 - Al iniciar la sesión se reserva una arena de scratch para el máximo de canales y `MAX_BLOCK_SIZE`.
@@ -62,3 +96,4 @@ Estudio DAW debe separar la fuente maestra de los medios usados para edición y 
 - **Dado** un render final, **cuando** el original está disponible, **entonces** se usa el original y se informa cualquier proxy obsoleto o fuente ausente.
 - **Dado** un KeyLab y una AudioBox conectados, **cuando** se seleccionan sus perfiles, **entonces** los controles y entradas disponibles pueden mapearse, monitorizarse y probarse desde diagnóstico.
 - El benchmark registra tamaño de bloque, sample rate, xruns, latencia I/O y round-trip, con objetivo inicial <5 ms bajo una configuración documentada.
+- El benchmark compara rutas CPU/GPU/híbridas para FFT, convolución, render offline y análisis, incluyendo el coste de transferencia.

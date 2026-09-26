@@ -130,6 +130,25 @@ El motor debe soportar:
 - freeze, bounce y render offline;
 - exportación de mezcla, stems y múltiples formatos.
 
+### Arquitectura híbrida CPU/GPU
+
+Estudio DAW usará CPU y GPU de forma especializada, con fallback CPU completo.
+La CPU será responsable del callback de audio, transporte, MIDI, routing y DSP
+pequeño de baja latencia. La GPU se reservará para cargas paralelas o pesadas:
+
+- FFT, espectrogramas y visualización de formas de onda;
+- convolución larga y oversampling offline;
+- time-stretch, pitch-shift y procesamiento espectral;
+- limpieza de audio y separación de stems;
+- generación de proxies y renders offline;
+- análisis musical y operaciones sobre buffers grandes.
+
+La primera abstracción prevista es `wgpu`, usando Vulkan en Linux cuando esté
+disponible. Ningún nodo GPU podrá bloquear el callback de audio: los buffers se
+preparan fuera del hilo RT, el scheduler compara el coste de transferencia y cada
+operación conserva una ruta CPU segura. El objetivo es reducir el coste total del
+proyecto, no trasladar trabajo a la GPU cuando la transferencia resulte más cara.
+
 ### Plugins
 
 Estudio DAW será principalmente un host extensible, no una reimplementación inmediata de todo el catálogo de instrumentos y efectos.
