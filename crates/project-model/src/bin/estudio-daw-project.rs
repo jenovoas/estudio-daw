@@ -1,7 +1,9 @@
 use std::{env, fs, path::PathBuf, process::ExitCode};
 
 use estudio_daw_audio_engine::RenderPlanBuilder;
-use estudio_daw_audio_platform::{run_pipewire_duplex_for, PipeWireStreamConfig};
+use estudio_daw_audio_platform::{
+    run_pipewire_duplex_for_targets, PipeWireStreamConfig, PipeWireTargets,
+};
 use estudio_daw_midi_engine::{
     play_midi_take, play_midi_take_interactive, play_midi_take_live, record_alsa_midi,
     record_alsa_midi_live, run_alsa_midi_control, MidiControlMap, MidiTake,
@@ -274,16 +276,41 @@ fn midi_play_live_command(
 
 fn audio_test_command() -> Result<(), Box<dyn std::error::Error>> {
     println!("Dispositivos de audio PipeWire:");
-    match audio_devices() {
-        Ok(devices) => print_devices(&devices),
-        Err(error) => eprintln!("Diagnóstico PipeWire no disponible: {error}"),
-    }
+    let devices = match audio_devices() {
+        Ok(devices) => {
+            print_devices(&devices);
+            devices
+        }
+        Err(error) => {
+            eprintln!("Diagnóstico PipeWire no disponible: {error}");
+            Vec::new()
+        }
+    };
+    let audiobox = |device: &&DeviceInfo| {
+        let text = format!("{} {}", device.name, device.description).to_ascii_lowercase();
+        text.contains("audiobox")
+    };
+    let capture_node = devices
+        .iter()
+        .find(|device| {
+            device.media_class.to_ascii_lowercase().contains("source") && audiobox(device)
+        })
+        .map(|device| device.id);
+    let playback_node = devices
+        .iter()
+        .find(|device| device.media_class.to_ascii_lowercase().contains("sink") && audiobox(device))
+        .map(|device| device.id);
+    println!("AudioBox targets: captura={capture_node:?}, reproducción={playback_node:?}");
     println!("Abriendo smoke test duplex PipeWire durante 3 segundos...");
     let render_plan = RenderPlanBuilder::new().build()?;
-    let report = run_pipewire_duplex_for(
+    let report = run_pipewire_duplex_for_targets(
         PipeWireStreamConfig::default(),
         render_plan,
         Duration::from_secs(3),
+        PipeWireTargets {
+            capture_node,
+            playback_node,
+        },
     )?;
     println!(
         "Callbacks: captura={} salida={}; muestras descartadas={} silencio de salida={}",

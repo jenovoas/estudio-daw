@@ -20,6 +20,12 @@ pub struct PipeWireStreamConfig {
     pub max_buffer_frames: usize,
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct PipeWireTargets {
+    pub capture_node: Option<u64>,
+    pub playback_node: Option<u64>,
+}
+
 impl Default for PipeWireStreamConfig {
     fn default() -> Self {
         Self {
@@ -151,7 +157,7 @@ pub fn run_pipewire_duplex(
     config: PipeWireStreamConfig,
     render_plan: RenderPlan,
 ) -> Result<(), PipeWireError> {
-    run_pipewire_duplex_internal(config, render_plan, None).map(|_| ())
+    run_pipewire_duplex_internal(config, render_plan, None, PipeWireTargets::default()).map(|_| ())
 }
 
 /// Ejecuta el duplex durante una duración finita y devuelve métricas de la
@@ -162,13 +168,23 @@ pub fn run_pipewire_duplex_for(
     render_plan: RenderPlan,
     duration: Duration,
 ) -> Result<PipeWireDuplexReport, PipeWireError> {
-    run_pipewire_duplex_internal(config, render_plan, Some(duration))
+    run_pipewire_duplex_for_targets(config, render_plan, duration, PipeWireTargets::default())
+}
+
+pub fn run_pipewire_duplex_for_targets(
+    config: PipeWireStreamConfig,
+    render_plan: RenderPlan,
+    duration: Duration,
+    targets: PipeWireTargets,
+) -> Result<PipeWireDuplexReport, PipeWireError> {
+    run_pipewire_duplex_internal(config, render_plan, Some(duration), targets)
 }
 
 fn run_pipewire_duplex_internal(
     config: PipeWireStreamConfig,
     mut render_plan: RenderPlan,
     duration: Option<Duration>,
+    targets: PipeWireTargets,
 ) -> Result<PipeWireDuplexReport, PipeWireError> {
     let config = config.validate()?;
     pw::init();
@@ -183,16 +199,17 @@ fn run_pipewire_duplex_internal(
     let output_callbacks = Arc::new(AtomicU64::new(0));
     let output_silence_samples = Arc::new(AtomicU64::new(0));
 
-    let capture_stream = pw::stream::StreamBox::new(
-        &core,
-        "estudio-daw-input",
-        properties! {
-            *pw::keys::MEDIA_TYPE => "Audio",
-            *pw::keys::MEDIA_CATEGORY => "Capture",
-            *pw::keys::MEDIA_ROLE => "Music",
-            *pw::keys::AUDIO_CHANNELS => config.channels.to_string(),
-        },
-    )?;
+    let mut capture_properties = properties! {
+        *pw::keys::MEDIA_TYPE => "Audio",
+        *pw::keys::MEDIA_CATEGORY => "Capture",
+        *pw::keys::MEDIA_ROLE => "Music",
+        *pw::keys::AUDIO_CHANNELS => config.channels.to_string(),
+    };
+    if let Some(node) = targets.capture_node {
+        capture_properties.insert(*pw::keys::TARGET_OBJECT, node.to_string());
+    }
+    let capture_stream =
+        pw::stream::StreamBox::new(&core, "estudio-daw-input", capture_properties)?;
     let capture_ring = Arc::clone(&ring);
     let capture_callbacks_counter = Arc::clone(&capture_callbacks);
     let capture_dropped_counter = Arc::clone(&capture_dropped_samples);
@@ -217,16 +234,16 @@ fn run_pipewire_duplex_internal(
         })
         .register()?;
 
-    let output_stream = pw::stream::StreamBox::new(
-        &core,
-        "estudio-daw-output",
-        properties! {
-            *pw::keys::MEDIA_TYPE => "Audio",
-            *pw::keys::MEDIA_CATEGORY => "Playback",
-            *pw::keys::MEDIA_ROLE => "Music",
-            *pw::keys::AUDIO_CHANNELS => config.channels.to_string(),
-        },
-    )?;
+    let mut output_properties = properties! {
+        *pw::keys::MEDIA_TYPE => "Audio",
+        *pw::keys::MEDIA_CATEGORY => "Playback",
+        *pw::keys::MEDIA_ROLE => "Music",
+        *pw::keys::AUDIO_CHANNELS => config.channels.to_string(),
+    };
+    if let Some(node) = targets.playback_node {
+        output_properties.insert(*pw::keys::TARGET_OBJECT, node.to_string());
+    }
+    let output_stream = pw::stream::StreamBox::new(&core, "estudio-daw-output", output_properties)?;
     let output_ring = Arc::clone(&ring);
     let output_callbacks_counter = Arc::clone(&output_callbacks);
     let output_silence_counter = Arc::clone(&output_silence_samples);

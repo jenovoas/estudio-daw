@@ -7,5 +7,5 @@ description = "Linux audio backends for Estudio DAW"
 
 [dependencies]
 estudio-daw-audio-engine = { path = "../audio-engine" }
-pipewire = "0.10.1"
+pipewire = { version = "0.10.1", features = ["v0_3_44"] }
 thiserror = "2"

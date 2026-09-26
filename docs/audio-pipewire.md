@@ -58,13 +58,10 @@ produce más muestras que el espacio disponible, `push()` devuelve sólo las
 muestras aceptadas y no bloquea el hilo de audio. Los contadores de overflow y
 la medición de xruns se añadirán en la capa de diagnóstico.
 
-La selección explícita de nodos, latencia medida y sincronización duplex serán
-las siguientes extensiones.
-
-El smoke test usa temporalmente la autoconexión de PipeWire. Por eso puede
-seleccionar el micrófono y salida predeterminados del sistema en vez de la
-AudioBox. El siguiente paso añadirá `target.object`/selección por node id para
-forzar `AudioBox USB 96` como entrada y salida.
+El smoke test busca automáticamente nodos cuyo nombre o descripción contiene
+`AudioBox` y pasa sus ids mediante `target.object`. Si no encuentra esos nodos,
+conserva la autoconexión predeterminada de PipeWire. Latencia medida y
+sincronización duplex serán las siguientes extensiones.
 
 ## Smoke test
 
