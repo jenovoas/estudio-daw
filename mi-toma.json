@@ -1,0 +1,1881 @@
+{
+  "ppq": 480,
+  "tempo_bpm": 120,
+  "duration_micros": 10000029,
+  "events": [
+    {
+      "tick": 789,
+      "micros_since_start": 822090,
+      "source": {
+        "client": 28,
+        "port": 0
+      },
+      "message": {
+        "NoteOn": {
+          "channel": 0,
+          "note": 57,
+          "velocity": 18
+        }
+      }
+    },
+    {
+      "tick": 881,
+      "micros_since_start": 917637,
+      "source": {
+        "client": 28,
+        "port": 0
+      },
+      "message": {
+        "NoteOn": {
+          "channel": 0,
+          "note": 59,
+          "velocity": 82
+        }
+      }
+    },
+    {
+      "tick": 902,
+      "micros_since_start": 939383,
+      "source": {
+        "client": 28,
+        "port": 0
+      },
+      "message": {
+        "NoteOff": {
+          "channel": 0,
+          "note": 57,
+          "release_velocity": 0
+        }
+      }
+    },
+    {
+      "tick": 1107,
+      "micros_since_start": 1153579,
+      "source": {
+        "client": 28,
+        "port": 0
+      },
+      "message": {
+        "NoteOff": {
+          "channel": 0,
+          "note": 59,
+          "release_velocity": 0
+        }
+      }
+    },
+    {
+      "tick": 1307,
+      "micros_since_start": 1361089,
+      "source": {
+        "client": 28,
+        "port": 0
+      },
+      "message": {
+        "NoteOn": {
+          "channel": 0,
+          "note": 55,
+          "velocity": 40
+        }
+      }
+    },
+    {
+      "tick": 1600,
+      "micros_since_start": 1666922,
+      "source": {
+        "client": 28,
+        "port": 0
+      },
+      "message": {
+        "NoteOff": {
+          "channel": 0,
+          "note": 55,
+          "release_velocity": 0
+        }
+      }
+    },
+    {
+      "tick": 1897,
+      "micros_since_start": 1975819,
+      "source": {
+        "client": 28,
+        "port": 0
+      },
+      "message": {
+        "NoteOn": {
+          "channel": 0,
+          "note": 77,
+          "velocity": 104
+        }
+      }
+    },
+    {
+      "tick": 2223,
+      "micros_since_start": 2315134,
+      "source": {
+        "client": 28,
+        "port": 0
+      },
+      "message": {
+        "NoteOff": {
+          "channel": 0,
+          "note": 77,
+          "release_velocity": 0
+        }
+      }
+    },
+    {
+      "tick": 2335,
+      "micros_since_start": 2432797,
+      "source": {
+        "client": 28,
+        "port": 0
+      },
+      "message": {
+        "NoteOn": {
+          "channel": 0,
+          "note": 50,
+          "velocity": 85
+        }
+      }
+    },
+    {
+      "tick": 2626,
+      "micros_since_start": 2735054,
+      "source": {
+        "client": 28,
+        "port": 0
+      },
+      "message": {
+        "NoteOn": {
+          "channel": 0,
+          "note": 74,
+          "velocity": 36
+        }
+      }
+    },
+    {
+      "tick": 2635,
+      "micros_since_start": 2744634,
+      "source": {
+        "client": 28,
+        "port": 0
+      },
+      "message": {
+        "NoteOn": {
+          "channel": 0,
+          "note": 76,
+          "velocity": 33
+        }
+      }
+    },
+    {
+      "tick": 2703,
+      "micros_since_start": 2815860,
+      "source": {
+        "client": 28,
+        "port": 0
+      },
+      "message": {
+        "NoteOff": {
+          "channel": 0,
+          "note": 50,
+          "release_velocity": 0
+        }
+      }
+    },
+    {
+      "tick": 2749,
+      "micros_since_start": 2863750,
+      "source": {
+        "client": 28,
+        "port": 0
+      },
+      "message": {
+        "NoteOn": {
+          "channel": 0,
+          "note": 52,
+          "velocity": 92
+        }
+      }
+    },
+    {
+      "tick": 2857,
+      "micros_since_start": 2975645,
+      "source": {
+        "client": 28,
+        "port": 0
+      },
+      "message": {
+        "NoteOff": {
+          "channel": 0,
+          "note": 76,
+          "release_velocity": 0
+        }
+      }
+    },
+    {
+      "tick": 2857,
+      "micros_since_start": 2975647,
+      "source": {
+        "client": 28,
+        "port": 0
+      },
+      "message": {
+        "NoteOff": {
+          "channel": 0,
+          "note": 74,
+          "release_velocity": 0
+        }
+      }
+    },
+    {
+      "tick": 2871,
+      "micros_since_start": 2990888,
+      "source": {
+        "client": 28,
+        "port": 0
+      },
+      "message": {
+        "NoteOn": {
+          "channel": 0,
+          "note": 53,
+          "velocity": 96
+        }
+      }
+    },
+    {
+      "tick": 2967,
+      "micros_since_start": 3090439,
+      "source": {
+        "client": 28,
+        "port": 0
+      },
+      "message": {
+        "NoteOff": {
+          "channel": 0,
+          "note": 52,
+          "release_velocity": 0
+        }
+      }
+    },
+    {
+      "tick": 3188,
+      "micros_since_start": 3320876,
+      "source": {
+        "client": 28,
+        "port": 0
+      },
+      "message": {
+        "NoteOff": {
+          "channel": 0,
+          "note": 53,
+          "release_velocity": 0
+        }
+      }
+    },
+    {
+      "tick": 3200,
+      "micros_since_start": 3333606,
+      "source": {
+        "client": 28,
+        "port": 0
+      },
+      "message": {
+        "NoteOn": {
+          "channel": 0,
+          "note": 81,
+          "velocity": 35
+        }
+      }
+    },
+    {
+      "tick": 3273,
+      "micros_since_start": 3409339,
+      "source": {
+        "client": 28,
+        "port": 0
+      },
+      "message": {
+        "NoteOn": {
+          "channel": 0,
+          "note": 47,
+          "velocity": 53
+        }
+      }
+    },
+    {
+      "tick": 3386,
+      "micros_since_start": 3526847,
+      "source": {
+        "client": 28,
+        "port": 0
+      },
+      "message": {
+        "NoteOff": {
+          "channel": 0,
+          "note": 81,
+          "release_velocity": 0
+        }
+      }
+    },
+    {
+      "tick": 3638,
+      "micros_since_start": 3789311,
+      "source": {
+        "client": 28,
+        "port": 0
+      },
+      "message": {
+        "NoteOff": {
+          "channel": 0,
+          "note": 47,
+          "release_velocity": 0
+        }
+      }
+    },
+    {
+      "tick": 3644,
+      "micros_since_start": 3795793,
+      "source": {
+        "client": 28,
+        "port": 0
+      },
+      "message": {
+        "NoteOn": {
+          "channel": 0,
+          "note": 73,
+          "velocity": 119
+        }
+      }
+    },
+    {
+      "tick": 3680,
+      "micros_since_start": 3833467,
+      "source": {
+        "client": 28,
+        "port": 0
+      },
+      "message": {
+        "NoteOn": {
+          "channel": 0,
+          "note": 72,
+          "velocity": 38
+        }
+      }
+    },
+    {
+      "tick": 3694,
+      "micros_since_start": 3847408,
+      "source": {
+        "client": 28,
+        "port": 0
+      },
+      "message": {
+        "NoteOn": {
+          "channel": 0,
+          "note": 70,
+          "velocity": 51
+        }
+      }
+    },
+    {
+      "tick": 3809,
+      "micros_since_start": 3967682,
+      "source": {
+        "client": 28,
+        "port": 0
+      },
+      "message": {
+        "NoteOff": {
+          "channel": 0,
+          "note": 73,
+          "release_velocity": 0
+        }
+      }
+    },
+    {
+      "tick": 3824,
+      "micros_since_start": 3983794,
+      "source": {
+        "client": 28,
+        "port": 0
+      },
+      "message": {
+        "NoteOff": {
+          "channel": 0,
+          "note": 72,
+          "release_velocity": 0
+        }
+      }
+    },
+    {
+      "tick": 3860,
+      "micros_since_start": 4021126,
+      "source": {
+        "client": 28,
+        "port": 0
+      },
+      "message": {
+        "NoteOn": {
+          "channel": 0,
+          "note": 40,
+          "velocity": 87
+        }
+      }
+    },
+    {
+      "tick": 3927,
+      "micros_since_start": 4090139,
+      "source": {
+        "client": 28,
+        "port": 0
+      },
+      "message": {
+        "NoteOn": {
+          "channel": 0,
+          "note": 50,
+          "velocity": 33
+        }
+      }
+    },
+    {
+      "tick": 3954,
+      "micros_since_start": 4118309,
+      "source": {
+        "client": 28,
+        "port": 0
+      },
+      "message": {
+        "NoteOn": {
+          "channel": 0,
+          "note": 48,
+          "velocity": 26
+        }
+      }
+    },
+    {
+      "tick": 3964,
+      "micros_since_start": 4129126,
+      "source": {
+        "client": 28,
+        "port": 0
+      },
+      "message": {
+        "NoteOff": {
+          "channel": 0,
+          "note": 70,
+          "release_velocity": 0
+        }
+      }
+    },
+    {
+      "tick": 4104,
+      "micros_since_start": 4275120,
+      "source": {
+        "client": 28,
+        "port": 0
+      },
+      "message": {
+        "NoteOff": {
+          "channel": 0,
+          "note": 48,
+          "release_velocity": 0
+        }
+      }
+    },
+    {
+      "tick": 4111,
+      "micros_since_start": 4282649,
+      "source": {
+        "client": 28,
+        "port": 0
+      },
+      "message": {
+        "NoteOff": {
+          "channel": 0,
+          "note": 50,
+          "release_velocity": 0
+        }
+      }
+    },
+    {
+      "tick": 4125,
+      "micros_since_start": 4296593,
+      "source": {
+        "client": 28,
+        "port": 0
+      },
+      "message": {
+        "NoteOn": {
+          "channel": 0,
+          "note": 67,
+          "velocity": 87
+        }
+      }
+    },
+    {
+      "tick": 4129,
+      "micros_since_start": 4300909,
+      "source": {
+        "client": 28,
+        "port": 0
+      },
+      "message": {
+        "NoteOn": {
+          "channel": 0,
+          "note": 69,
+          "velocity": 81
+        }
+      }
+    },
+    {
+      "tick": 4187,
+      "micros_since_start": 4361163,
+      "source": {
+        "client": 28,
+        "port": 0
+      },
+      "message": {
+        "NoteOff": {
+          "channel": 0,
+          "note": 40,
+          "release_velocity": 0
+        }
+      }
+    },
+    {
+      "tick": 4282,
+      "micros_since_start": 4460097,
+      "source": {
+        "client": 28,
+        "port": 0
+      },
+      "message": {
+        "NoteOn": {
+          "channel": 0,
+          "note": 48,
+          "velocity": 28
+        }
+      }
+    },
+    {
+      "tick": 4325,
+      "micros_since_start": 4504958,
+      "source": {
+        "client": 28,
+        "port": 0
+      },
+      "message": {
+        "NoteOn": {
+          "channel": 0,
+          "note": 38,
+          "velocity": 67
+        }
+      }
+    },
+    {
+      "tick": 4327,
+      "micros_since_start": 4507068,
+      "source": {
+        "client": 28,
+        "port": 0
+      },
+      "message": {
+        "NoteOff": {
+          "channel": 0,
+          "note": 69,
+          "release_velocity": 0
+        }
+      }
+    },
+    {
+      "tick": 4327,
+      "micros_since_start": 4507069,
+      "source": {
+        "client": 28,
+        "port": 0
+      },
+      "message": {
+        "NoteOff": {
+          "channel": 0,
+          "note": 67,
+          "release_velocity": 0
+        }
+      }
+    },
+    {
+      "tick": 4350,
+      "micros_since_start": 4531467,
+      "source": {
+        "client": 28,
+        "port": 0
+      },
+      "message": {
+        "NoteOn": {
+          "channel": 0,
+          "note": 36,
+          "velocity": 34
+        }
+      }
+    },
+    {
+      "tick": 4399,
+      "micros_since_start": 4582333,
+      "source": {
+        "client": 28,
+        "port": 0
+      },
+      "message": {
+        "NoteOff": {
+          "channel": 0,
+          "note": 48,
+          "release_velocity": 0
+        }
+      }
+    },
+    {
+      "tick": 4453,
+      "micros_since_start": 4638496,
+      "source": {
+        "client": 28,
+        "port": 0
+      },
+      "message": {
+        "NoteOn": {
+          "channel": 0,
+          "note": 79,
+          "velocity": 99
+        }
+      }
+    },
+    {
+      "tick": 4588,
+      "micros_since_start": 4779400,
+      "source": {
+        "client": 28,
+        "port": 0
+      },
+      "message": {
+        "NoteOff": {
+          "channel": 0,
+          "note": 38,
+          "release_velocity": 0
+        }
+      }
+    },
+    {
+      "tick": 4591,
+      "micros_since_start": 4782609,
+      "source": {
+        "client": 28,
+        "port": 0
+      },
+      "message": {
+        "NoteOff": {
+          "channel": 0,
+          "note": 36,
+          "release_velocity": 0
+        }
+      }
+    },
+    {
+      "tick": 4609,
+      "micros_since_start": 4800750,
+      "source": {
+        "client": 28,
+        "port": 0
+      },
+      "message": {
+        "NoteOff": {
+          "channel": 0,
+          "note": 79,
+          "release_velocity": 0
+        }
+      }
+    },
+    {
+      "tick": 4637,
+      "micros_since_start": 4830430,
+      "source": {
+        "client": 28,
+        "port": 0
+      },
+      "message": {
+        "NoteOn": {
+          "channel": 0,
+          "note": 45,
+          "velocity": 43
+        }
+      }
+    },
+    {
+      "tick": 4771,
+      "micros_since_start": 4969442,
+      "source": {
+        "client": 28,
+        "port": 0
+      },
+      "message": {
+        "NoteOn": {
+          "channel": 0,
+          "note": 82,
+          "velocity": 96
+        }
+      }
+    },
+    {
+      "tick": 4939,
+      "micros_since_start": 5144326,
+      "source": {
+        "client": 28,
+        "port": 0
+      },
+      "message": {
+        "NoteOff": {
+          "channel": 0,
+          "note": 82,
+          "release_velocity": 0
+        }
+      }
+    },
+    {
+      "tick": 5017,
+      "micros_since_start": 5225940,
+      "source": {
+        "client": 28,
+        "port": 0
+      },
+      "message": {
+        "NoteOff": {
+          "channel": 0,
+          "note": 45,
+          "release_velocity": 0
+        }
+      }
+    },
+    {
+      "tick": 5489,
+      "micros_since_start": 5717390,
+      "source": {
+        "client": 28,
+        "port": 0
+      },
+      "message": {
+        "PitchBend": {
+          "channel": 0,
+          "value": 258
+        }
+      }
+    },
+    {
+      "tick": 5503,
+      "micros_since_start": 5732228,
+      "source": {
+        "client": 28,
+        "port": 0
+      },
+      "message": {
+        "PitchBend": {
+          "channel": 0,
+          "value": 393
+        }
+      }
+    },
+    {
+      "tick": 5513,
+      "micros_since_start": 5742791,
+      "source": {
+        "client": 28,
+        "port": 0
+      },
+      "message": {
+        "PitchBend": {
+          "channel": 0,
+          "value": 528
+        }
+      }
+    },
+    {
+      "tick": 5519,
+      "micros_since_start": 5749131,
+      "source": {
+        "client": 28,
+        "port": 0
+      },
+      "message": {
+        "ControlChange": {
+          "channel": 0,
+          "controller": 1,
+          "value": 52
+        }
+      }
+    },
+    {
+      "tick": 5523,
+      "micros_since_start": 5753380,
+      "source": {
+        "client": 28,
+        "port": 0
+      },
+      "message": {
+        "PitchBend": {
+          "channel": 0,
+          "value": 662
+        }
+      }
+    },
+    {
+      "tick": 5528,
+      "micros_since_start": 5758627,
+      "source": {
+        "client": 28,
+        "port": 0
+      },
+      "message": {
+        "ControlChange": {
+          "channel": 0,
+          "controller": 1,
+          "value": 53
+        }
+      }
+    },
+    {
+      "tick": 5532,
+      "micros_since_start": 5762860,
+      "source": {
+        "client": 28,
+        "port": 0
+      },
+      "message": {
+        "PitchBend": {
+          "channel": 0,
+          "value": 896
+        }
+      }
+    },
+    {
+      "tick": 5535,
+      "micros_since_start": 5766036,
+      "source": {
+        "client": 28,
+        "port": 0
+      },
+      "message": {
+        "ControlChange": {
+          "channel": 0,
+          "controller": 1,
+          "value": 55
+        }
+      }
+    },
+    {
+      "tick": 5538,
+      "micros_since_start": 5769224,
+      "source": {
+        "client": 28,
+        "port": 0
+      },
+      "message": {
+        "PitchBend": {
+          "channel": 0,
+          "value": 1031
+        }
+      }
+    },
+    {
+      "tick": 5544,
+      "micros_since_start": 5774559,
+      "source": {
+        "client": 28,
+        "port": 0
+      },
+      "message": {
+        "PitchBend": {
+          "channel": 0,
+          "value": 1165
+        }
+      }
+    },
+    {
+      "tick": 5547,
+      "micros_since_start": 5777776,
+      "source": {
+        "client": 28,
+        "port": 0
+      },
+      "message": {
+        "ControlChange": {
+          "channel": 0,
+          "controller": 1,
+          "value": 56
+        }
+      }
+    },
+    {
+      "tick": 5548,
+      "micros_since_start": 5778843,
+      "source": {
+        "client": 28,
+        "port": 0
+      },
+      "message": {
+        "PitchBend": {
+          "channel": 0,
+          "value": 1300
+        }
+      }
+    },
+    {
+      "tick": 5552,
+      "micros_since_start": 5783141,
+      "source": {
+        "client": 28,
+        "port": 0
+      },
+      "message": {
+        "PitchBend": {
+          "channel": 0,
+          "value": 1437
+        }
+      }
+    },
+    {
+      "tick": 5556,
+      "micros_since_start": 5787402,
+      "source": {
+        "client": 28,
+        "port": 0
+      },
+      "message": {
+        "PitchBend": {
+          "channel": 0,
+          "value": 1668
+        }
+      }
+    },
+    {
+      "tick": 5559,
+      "micros_since_start": 5790596,
+      "source": {
+        "client": 28,
+        "port": 0
+      },
+      "message": {
+        "PitchBend": {
+          "channel": 0,
+          "value": 1806
+        }
+      }
+    },
+    {
+      "tick": 5562,
+      "micros_since_start": 5793788,
+      "source": {
+        "client": 28,
+        "port": 0
+      },
+      "message": {
+        "ControlChange": {
+          "channel": 0,
+          "controller": 1,
+          "value": 57
+        }
+      }
+    },
+    {
+      "tick": 5563,
+      "micros_since_start": 5794844,
+      "source": {
+        "client": 28,
+        "port": 0
+      },
+      "message": {
+        "PitchBend": {
+          "channel": 0,
+          "value": 1940
+        }
+      }
+    },
+    {
+      "tick": 5566,
+      "micros_since_start": 5798054,
+      "source": {
+        "client": 28,
+        "port": 0
+      },
+      "message": {
+        "PitchBend": {
+          "channel": 0,
+          "value": 2078
+        }
+      }
+    },
+    {
+      "tick": 5569,
+      "micros_since_start": 5801247,
+      "source": {
+        "client": 28,
+        "port": 0
+      },
+      "message": {
+        "PitchBend": {
+          "channel": 0,
+          "value": 2311
+        }
+      }
+    },
+    {
+      "tick": 5574,
+      "micros_since_start": 5806572,
+      "source": {
+        "client": 28,
+        "port": 0
+      },
+      "message": {
+        "PitchBend": {
+          "channel": 0,
+          "value": 2446
+        }
+      }
+    },
+    {
+      "tick": 5581,
+      "micros_since_start": 5813980,
+      "source": {
+        "client": 28,
+        "port": 0
+      },
+      "message": {
+        "ControlChange": {
+          "channel": 0,
+          "controller": 1,
+          "value": 58
+        }
+      }
+    },
+    {
+      "tick": 5597,
+      "micros_since_start": 5830207,
+      "source": {
+        "client": 28,
+        "port": 0
+      },
+      "message": {
+        "PitchBend": {
+          "channel": 0,
+          "value": 2308
+        }
+      }
+    },
+    {
+      "tick": 5601,
+      "micros_since_start": 5834530,
+      "source": {
+        "client": 28,
+        "port": 0
+      },
+      "message": {
+        "PitchBend": {
+          "channel": 0,
+          "value": 2073
+        }
+      }
+    },
+    {
+      "tick": 5605,
+      "micros_since_start": 5838748,
+      "source": {
+        "client": 28,
+        "port": 0
+      },
+      "message": {
+        "PitchBend": {
+          "channel": 0,
+          "value": 1938
+        }
+      }
+    },
+    {
+      "tick": 5608,
+      "micros_since_start": 5841911,
+      "source": {
+        "client": 28,
+        "port": 0
+      },
+      "message": {
+        "PitchBend": {
+          "channel": 0,
+          "value": 1801
+        }
+      }
+    },
+    {
+      "tick": 5612,
+      "micros_since_start": 5846142,
+      "source": {
+        "client": 28,
+        "port": 0
+      },
+      "message": {
+        "PitchBend": {
+          "channel": 0,
+          "value": 1664
+        }
+      }
+    },
+    {
+      "tick": 5615,
+      "micros_since_start": 5849327,
+      "source": {
+        "client": 28,
+        "port": 0
+      },
+      "message": {
+        "PitchBend": {
+          "channel": 0,
+          "value": 1428
+        }
+      }
+    },
+    {
+      "tick": 5619,
+      "micros_since_start": 5853579,
+      "source": {
+        "client": 28,
+        "port": 0
+      },
+      "message": {
+        "PitchBend": {
+          "channel": 0,
+          "value": 1289
+        }
+      }
+    },
+    {
+      "tick": 5622,
+      "micros_since_start": 5856742,
+      "source": {
+        "client": 28,
+        "port": 0
+      },
+      "message": {
+        "PitchBend": {
+          "channel": 0,
+          "value": 1154
+        }
+      }
+    },
+    {
+      "tick": 5624,
+      "micros_since_start": 5858853,
+      "source": {
+        "client": 28,
+        "port": 0
+      },
+      "message": {
+        "PitchBend": {
+          "channel": 0,
+          "value": 923
+        }
+      }
+    },
+    {
+      "tick": 5629,
+      "micros_since_start": 5863099,
+      "source": {
+        "client": 28,
+        "port": 0
+      },
+      "message": {
+        "PitchBend": {
+          "channel": 0,
+          "value": 786
+        }
+      }
+    },
+    {
+      "tick": 5632,
+      "micros_since_start": 5866278,
+      "source": {
+        "client": 28,
+        "port": 0
+      },
+      "message": {
+        "PitchBend": {
+          "channel": 0,
+          "value": 649
+        }
+      }
+    },
+    {
+      "tick": 5633,
+      "micros_since_start": 5867365,
+      "source": {
+        "client": 28,
+        "port": 0
+      },
+      "message": {
+        "ControlChange": {
+          "channel": 0,
+          "controller": 1,
+          "value": 59
+        }
+      }
+    },
+    {
+      "tick": 5635,
+      "micros_since_start": 5869492,
+      "source": {
+        "client": 28,
+        "port": 0
+      },
+      "message": {
+        "PitchBend": {
+          "channel": 0,
+          "value": 514
+        }
+      }
+    },
+    {
+      "tick": 5638,
+      "micros_since_start": 5872628,
+      "source": {
+        "client": 28,
+        "port": 0
+      },
+      "message": {
+        "PitchBend": {
+          "channel": 0,
+          "value": 283
+        }
+      }
+    },
+    {
+      "tick": 5641,
+      "micros_since_start": 5875798,
+      "source": {
+        "client": 28,
+        "port": 0
+      },
+      "message": {
+        "PitchBend": {
+          "channel": 0,
+          "value": 148
+        }
+      }
+    },
+    {
+      "tick": 5645,
+      "micros_since_start": 5880049,
+      "source": {
+        "client": 28,
+        "port": 0
+      },
+      "message": {
+        "PitchBend": {
+          "channel": 0,
+          "value": 0
+        }
+      }
+    },
+    {
+      "tick": 5930,
+      "micros_since_start": 6177516,
+      "source": {
+        "client": 28,
+        "port": 0
+      },
+      "message": {
+        "SysEx": {
+          "bytes": [
+            240,
+            0,
+            32,
+            107,
+            127,
+            66,
+            2,
+            0,
+            0,
+            21,
+            127,
+            247
+          ]
+        }
+      }
+    },
+    {
+      "tick": 6003,
+      "micros_since_start": 6252636,
+      "source": {
+        "client": 28,
+        "port": 0
+      },
+      "message": {
+        "SysEx": {
+          "bytes": [
+            240,
+            0,
+            32,
+            107,
+            127,
+            66,
+            2,
+            0,
+            0,
+            20,
+            127,
+            247
+          ]
+        }
+      }
+    },
+    {
+      "tick": 6127,
+      "micros_since_start": 6381888,
+      "source": {
+        "client": 28,
+        "port": 0
+      },
+      "message": {
+        "SysEx": {
+          "bytes": [
+            240,
+            0,
+            32,
+            107,
+            127,
+            66,
+            2,
+            0,
+            0,
+            20,
+            0,
+            247
+          ]
+        }
+      }
+    },
+    {
+      "tick": 6279,
+      "micros_since_start": 6541061,
+      "source": {
+        "client": 28,
+        "port": 0
+      },
+      "message": {
+        "SysEx": {
+          "bytes": [
+            240,
+            0,
+            32,
+            107,
+            127,
+            66,
+            5,
+            5,
+            247
+          ]
+        }
+      }
+    },
+    {
+      "tick": 6662,
+      "micros_since_start": 6940076,
+      "source": {
+        "client": 28,
+        "port": 0
+      },
+      "message": {
+        "SysEx": {
+          "bytes": [
+            240,
+            0,
+            32,
+            107,
+            127,
+            66,
+            5,
+            2,
+            247
+          ]
+        }
+      }
+    },
+    {
+      "tick": 6936,
+      "micros_since_start": 7224723,
+      "source": {
+        "client": 28,
+        "port": 0
+      },
+      "message": {
+        "ControlChange": {
+          "channel": 0,
+          "controller": 118,
+          "value": 127
+        }
+      }
+    },
+    {
+      "tick": 6937,
+      "micros_since_start": 7225784,
+      "source": {
+        "client": 28,
+        "port": 0
+      },
+      "message": {
+        "SysEx": {
+          "bytes": [
+            240,
+            0,
+            32,
+            107,
+            127,
+            66,
+            5,
+            1,
+            247
+          ]
+        }
+      }
+    },
+    {
+      "tick": 6947,
+      "micros_since_start": 7236402,
+      "source": {
+        "client": 28,
+        "port": 0
+      },
+      "message": {
+        "SysEx": {
+          "bytes": [
+            240,
+            0,
+            32,
+            107,
+            127,
+            66,
+            5,
+            2,
+            247
+          ]
+        }
+      }
+    },
+    {
+      "tick": 7217,
+      "micros_since_start": 7517839,
+      "source": {
+        "client": 28,
+        "port": 0
+      },
+      "message": {
+        "ControlChange": {
+          "channel": 0,
+          "controller": 118,
+          "value": 127
+        }
+      }
+    },
+    {
+      "tick": 7217,
+      "micros_since_start": 7517843,
+      "source": {
+        "client": 28,
+        "port": 0
+      },
+      "message": {
+        "SysEx": {
+          "bytes": [
+            240,
+            0,
+            32,
+            107,
+            127,
+            66,
+            5,
+            1,
+            247
+          ]
+        }
+      }
+    },
+    {
+      "tick": 7290,
+      "micros_since_start": 7593478,
+      "source": {
+        "client": 28,
+        "port": 0
+      },
+      "message": {
+        "SysEx": {
+          "bytes": [
+            240,
+            0,
+            32,
+            107,
+            127,
+            66,
+            5,
+            2,
+            247
+          ]
+        }
+      }
+    },
+    {
+      "tick": 7471,
+      "micros_since_start": 7782466,
+      "source": {
+        "client": 28,
+        "port": 0
+      },
+      "message": {
+        "NoteOn": {
+          "channel": 0,
+          "note": 72,
+          "velocity": 74
+        }
+      }
+    },
+    {
+      "tick": 7760,
+      "micros_since_start": 8082986,
+      "source": {
+        "client": 28,
+        "port": 0
+      },
+      "message": {
+        "NoteOff": {
+          "channel": 0,
+          "note": 72,
+          "release_velocity": 0
+        }
+      }
+    },
+    {
+      "tick": 7872,
+      "micros_since_start": 8200303,
+      "source": {
+        "client": 28,
+        "port": 0
+      },
+      "message": {
+        "ControlChange": {
+          "channel": 0,
+          "controller": 118,
+          "value": 127
+        }
+      }
+    },
+    {
+      "tick": 7872,
+      "micros_since_start": 8200308,
+      "source": {
+        "client": 28,
+        "port": 0
+      },
+      "message": {
+        "SysEx": {
+          "bytes": [
+            240,
+            0,
+            32,
+            107,
+            127,
+            66,
+            5,
+            1,
+            247
+          ]
+        }
+      }
+    },
+    {
+      "tick": 8517,
+      "micros_since_start": 8871475,
+      "source": {
+        "client": 28,
+        "port": 0
+      },
+      "message": {
+        "NoteOn": {
+          "channel": 0,
+          "note": 50,
+          "velocity": 71
+        }
+      }
+    },
+    {
+      "tick": 8524,
+      "micros_since_start": 8878886,
+      "source": {
+        "client": 28,
+        "port": 0
+      },
+      "message": {
+        "NoteOn": {
+          "channel": 0,
+          "note": 48,
+          "velocity": 58
+        }
+      }
+    },
+    {
+      "tick": 8551,
+      "micros_since_start": 8907485,
+      "source": {
+        "client": 28,
+        "port": 0
+      },
+      "message": {
+        "NoteOn": {
+          "channel": 0,
+          "note": 69,
+          "velocity": 32
+        }
+      }
+    },
+    {
+      "tick": 8650,
+      "micros_since_start": 9010699,
+      "source": {
+        "client": 28,
+        "port": 0
+      },
+      "message": {
+        "NoteOff": {
+          "channel": 0,
+          "note": 48,
+          "release_velocity": 0
+        }
+      }
+    },
+    {
+      "tick": 8660,
+      "micros_since_start": 9020430,
+      "source": {
+        "client": 28,
+        "port": 0
+      },
+      "message": {
+        "NoteOff": {
+          "channel": 0,
+          "note": 69,
+          "release_velocity": 0
+        }
+      }
+    },
+    {
+      "tick": 8752,
+      "micros_since_start": 9116372,
+      "source": {
+        "client": 28,
+        "port": 0
+      },
+      "message": {
+        "NoteOn": {
+          "channel": 0,
+          "note": 43,
+          "velocity": 107
+        }
+      }
+    },
+    {
+      "tick": 8798,
+      "micros_since_start": 9165038,
+      "source": {
+        "client": 28,
+        "port": 0
+      },
+      "message": {
+        "NoteOff": {
+          "channel": 0,
+          "note": 50,
+          "release_velocity": 0
+        }
+      }
+    },
+    {
+      "tick": 9053,
+      "micros_since_start": 9429919,
+      "source": {
+        "client": 28,
+        "port": 0
+      },
+      "message": {
+        "NoteOn": {
+          "channel": 0,
+          "note": 50,
+          "velocity": 88
+        }
+      }
+    },
+    {
+      "tick": 9073,
+      "micros_since_start": 9451045,
+      "source": {
+        "client": 28,
+        "port": 0
+      },
+      "message": {
+        "NoteOff": {
+          "channel": 0,
+          "note": 43,
+          "release_velocity": 0
+        }
+      }
+    },
+    {
+      "tick": 9239,
+      "micros_since_start": 9623896,
+      "source": {
+        "client": 28,
+        "port": 0
+      },
+      "message": {
+        "NoteOff": {
+          "channel": 0,
+          "note": 50,
+          "release_velocity": 0
+        }
+      }
+    },
+    {
+      "tick": 9312,
+      "micros_since_start": 9700165,
+      "source": {
+        "client": 28,
+        "port": 0
+      },
+      "message": {
+        "NoteOn": {
+          "channel": 0,
+          "note": 43,
+          "velocity": 102
+        }
+      }
+    },
+    {
+      "tick": 9315,
+      "micros_since_start": 9703404,
+      "source": {
+        "client": 28,
+        "port": 0
+      },
+      "message": {
+        "NoteOn": {
+          "channel": 0,
+          "note": 45,
+          "velocity": 101
+        }
+      }
+    },
+    {
+      "tick": 9369,
+      "micros_since_start": 9759342,
+      "source": {
+        "client": 28,
+        "port": 0
+      },
+      "message": {
+        "NoteOn": {
+          "channel": 0,
+          "note": 79,
+          "velocity": 45
+        }
+      }
+    },
+    {
+      "tick": 9425,
+      "micros_since_start": 9817860,
+      "source": {
+        "client": 28,
+        "port": 0
+      },
+      "message": {
+        "NoteOff": {
+          "channel": 0,
+          "note": 79,
+          "release_velocity": 0
+        }
+      }
+    },
+    {
+      "tick": 9438,
+      "micros_since_start": 9831663,
+      "source": {
+        "client": 28,
+        "port": 0
+      },
+      "message": {
+        "NoteOff": {
+          "channel": 0,
+          "note": 45,
+          "release_velocity": 0
+        }
+      }
+    },
+    {
+      "tick": 9440,
+      "micros_since_start": 9833788,
+      "source": {
+        "client": 28,
+        "port": 0
+      },
+      "message": {
+        "NoteOff": {
+          "channel": 0,
+          "note": 43,
+          "release_velocity": 0
+        }
+      }
+    },
+    {
+      "tick": 9552,
+      "micros_since_start": 9950252,
+      "source": {
+        "client": 28,
+        "port": 0
+      },
+      "message": {
+        "NoteOn": {
+          "channel": 0,
+          "note": 79,
+          "velocity": 35
+        }
+      }
+    },
+    {
+      "tick": 9564,
+      "micros_since_start": 9962980,
+      "source": {
+        "client": 28,
+        "port": 0
+      },
+      "message": {
+        "NoteOn": {
+          "channel": 0,
+          "note": 43,
+          "velocity": 80
+        }
+      }
+    },
+    {
+      "tick": 9571,
+      "micros_since_start": 9969357,
+      "source": {
+        "client": 28,
+        "port": 0
+      },
+      "message": {
+        "NoteOn": {
+          "channel": 0,
+          "note": 45,
+          "velocity": 62
+        }
+      }
+    }
+  ]
+}
