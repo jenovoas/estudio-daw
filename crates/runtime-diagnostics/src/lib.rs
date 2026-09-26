@@ -27,6 +27,144 @@ pub struct DeviceInfo {
     pub description: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum NormalizedMidiEvent {
+    NoteOn {
+        channel: u8,
+        note: u8,
+        velocity: u8,
+        source: Addr,
+    },
+    NoteOff {
+        channel: u8,
+        note: u8,
+        release_velocity: u8,
+        source: Addr,
+    },
+    KeyPressure {
+        channel: u8,
+        note: u8,
+        pressure: u8,
+        source: Addr,
+    },
+    ControlChange {
+        channel: u8,
+        controller: u32,
+        value: i32,
+        source: Addr,
+    },
+    PitchBend {
+        channel: u8,
+        value: i32,
+        source: Addr,
+    },
+    ChannelPressure {
+        channel: u8,
+        pressure: i32,
+        source: Addr,
+    },
+    ProgramChange {
+        channel: u8,
+        program: i32,
+        source: Addr,
+    },
+    SysEx {
+        bytes: Vec<u8>,
+        source: Addr,
+    },
+    Other {
+        event_type: EventType,
+        source: Addr,
+    },
+}
+
+/// Convierte eventos ALSA a un contrato independiente del backend, preservando
+/// canal, fuente y datos expresivos como aftertouch y SysEx.
+pub fn normalize_alsa_event(event: &alsa::seq::Event<'_>) -> NormalizedMidiEvent {
+    let source = event.get_source();
+    match event.get_type() {
+        EventType::Noteon => {
+            let note = event
+                .get_data::<EvNote>()
+                .expect("Noteon tiene datos EvNote");
+            NormalizedMidiEvent::NoteOn {
+                channel: note.channel,
+                note: note.note,
+                velocity: note.velocity,
+                source,
+            }
+        }
+        EventType::Noteoff => {
+            let note = event
+                .get_data::<EvNote>()
+                .expect("Noteoff tiene datos EvNote");
+            NormalizedMidiEvent::NoteOff {
+                channel: note.channel,
+                note: note.note,
+                release_velocity: note.off_velocity,
+                source,
+            }
+        }
+        EventType::Keypress => {
+            let note = event
+                .get_data::<EvNote>()
+                .expect("Keypress tiene datos EvNote");
+            NormalizedMidiEvent::KeyPressure {
+                channel: note.channel,
+                note: note.note,
+                pressure: note.velocity,
+                source,
+            }
+        }
+        EventType::Controller => {
+            let control = event
+                .get_data::<EvCtrl>()
+                .expect("Controller tiene datos EvCtrl");
+            NormalizedMidiEvent::ControlChange {
+                channel: control.channel,
+                controller: control.param,
+                value: control.value,
+                source,
+            }
+        }
+        EventType::Pitchbend => {
+            let control = event
+                .get_data::<EvCtrl>()
+                .expect("Pitchbend tiene datos EvCtrl");
+            NormalizedMidiEvent::PitchBend {
+                channel: control.channel,
+                value: control.value,
+                source,
+            }
+        }
+        EventType::Chanpress => {
+            let control = event
+                .get_data::<EvCtrl>()
+                .expect("Chanpress tiene datos EvCtrl");
+            NormalizedMidiEvent::ChannelPressure {
+                channel: control.channel,
+                pressure: control.value,
+                source,
+            }
+        }
+        EventType::Pgmchange => {
+            let control = event
+                .get_data::<EvCtrl>()
+                .expect("Pgmchange tiene datos EvCtrl");
+            NormalizedMidiEvent::ProgramChange {
+                channel: control.channel,
+                program: control.value,
+                source,
+            }
+        }
+        EventType::Sysex => NormalizedMidiEvent::SysEx {
+            bytes: event.get_ext().unwrap_or_default().to_vec(),
+            source,
+        },
+        event_type => NormalizedMidiEvent::Other { event_type, source },
+    }
+}
+
 pub fn enumerate_pipewire() -> Result<Vec<DeviceInfo>, DiagnosticsError> {
     let output = Command::new("pw-dump").output()?;
     if !output.status.success() {
@@ -192,34 +330,7 @@ pub fn monitor_alsa_midi(query: &str) -> Result<(), DiagnosticsError> {
     let mut input = seq.input();
     loop {
         let event = input.event_input()?;
-        match event.get_type() {
-            EventType::Noteon | EventType::Noteoff | EventType::Keypress => {
-                if let Some(note) = event.get_data::<EvNote>() {
-                    println!(
-                        "{:?} ch={} note={} velocity={}",
-                        event.get_type(),
-                        note.channel + 1,
-                        note.note,
-                        note.velocity
-                    );
-                }
-            }
-            EventType::Controller
-            | EventType::Pitchbend
-            | EventType::Chanpress
-            | EventType::Pgmchange => {
-                if let Some(control) = event.get_data::<EvCtrl>() {
-                    println!(
-                        "{:?} ch={} param={} value={}",
-                        event.get_type(),
-                        control.channel + 1,
-                        control.param,
-                        control.value
-                    );
-                }
-            }
-            event_type => println!("{:?} source={:?}", event_type, event.get_source()),
-        }
+        println!("{:?}", normalize_alsa_event(&event));
     }
 }
 
