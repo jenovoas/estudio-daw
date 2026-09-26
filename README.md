@@ -586,6 +586,7 @@ estudio-daw/
 │   ├── session/   estado de sesión y CommandBus bounded
 │   ├── midi-engine/
 │   ├── audio-engine/ grafo DSP y RenderPlan
+│   ├── synth/       instrumento MIDI nativo experimental
 │   ├── dsp/       procesamiento DSP modular
 │   ├── command-bus/ comandos de dominio versionados
 │   ├── application/ ciclo de vida y API común para UI/CLI
@@ -602,9 +603,10 @@ estudio-daw/
 
 Estado real: prototipo fundacional ejecutable; todavía no es un DAW de producción.
 Existe un shell Tauri, modelo/API de aplicación, MIDI live, grabación de audio
-PipeWire, motor DSP inicial, proxies y contratos de visualización. La integración
-de un instrumento en el motor de audio, la edición visual y los workers de
-análisis siguen en desarrollo.
+PipeWire, motor DSP inicial, proxies, contratos de visualización y un sinte
+sinusoidal polifónico conectado al `RenderPlan`. La edición visual y los workers
+de análisis siguen en desarrollo; el sinte es un instrumento de validación, no
+un banco de sonidos completo.
 
 El flujo probado actualmente es:
 
@@ -665,6 +667,7 @@ scripting, profesor IA e implementación WASM.
 - [Shell de escritorio Tauri](crates/ui-shell/tauri.conf.json)
 - [Contrato versionado UI/backend v1](docs/ui-bridge-contract-v1.md)
 - [Migraciones de `project.json`](docs/project-schema-migrations.md)
+- [Primer instrumento MIDI nativo](docs/native-instrument.md)
 - [Propuesta inicial](openspec/changes/bootstrap-opendaw-architecture/proposal.md)
 - [Diseño](openspec/changes/bootstrap-opendaw-architecture/design.md)
 - [Especificación de audio y MIDI](openspec/changes/bootstrap-opendaw-architecture/specs/runtime-audio-midi/spec.md)

@@ -2,19 +2,30 @@
 //! Las mutaciones del proyecto pasan por `estudio-daw-command-bus`; aquí no se
 //! replica la lógica de edición que también necesitarán la UI y el scripting.
 
-use std::{env, fs, path::PathBuf, process::ExitCode};
+use std::{
+    env, fs,
+    path::PathBuf,
+    process::ExitCode,
+    sync::{
+        atomic::{AtomicBool, AtomicUsize, Ordering},
+        mpsc, Arc,
+    },
+    thread,
+    time::{Duration, Instant},
+};
 
 use estudio_daw_application::{
     CommandEnvelope, CommandMetadata, DomainCommand, ProjectApplication, ProjectCommand,
 };
-use estudio_daw_audio_engine::{EqBandConfig, EqualizerNode, RenderPlanBuilder};
+use estudio_daw_audio_engine::{EqBandConfig, EqualizerNode, GainNode, RenderPlanBuilder};
 use estudio_daw_audio_platform::{
     run_pipewire_duplex_for_targets, run_pipewire_duplex_for_targets_with_capture,
     PipeWireStreamConfig, PipeWireTargets, WavCaptureRecorder,
 };
 use estudio_daw_midi_engine::{
     play_midi_take, play_midi_take_interactive, play_midi_take_live, record_alsa_midi,
-    record_alsa_midi_live, run_alsa_midi_control, MidiControlMap, MidiTake,
+    record_alsa_midi_live, run_alsa_midi_control, run_alsa_midi_input_until, MidiControlMap,
+    MidiRecorder, MidiTake, RecordedMidiMessage, DEFAULT_PPQ,
 };
 use estudio_daw_project_model::{
     ensure_track_audio_proxy, export_dawproject, generate_audio_proxy_ffmpeg, import_dawproject,
@@ -22,9 +33,10 @@ use estudio_daw_project_model::{
 };
 use estudio_daw_runtime_diagnostics::{
     audio_devices, enumerate_alsa_midi_output_ports, midi_devices, monitor_alsa_midi, DeviceInfo,
+    NormalizedMidiEvent,
 };
 use estudio_daw_session::{CommandBus as SessionCommandBus, Session};
-use std::time::Duration;
+use estudio_daw_synth::{midi_event_queue, SineSynthNode, SynthEventReceiver, SynthMidiEvent};
 
 fn usage() {
     eprintln!(concat!(
@@ -40,6 +52,10 @@ fn usage() {
             "\n  estudio-daw-project midi-outputs"
             ,
             "\n  estudio-daw-project audio-record <segundos> <salida.wav>"
+            ,
+            "\n  estudio-daw-project midi-synth-live <segundos> <salida-toma.json> [entrada]"
+            ,
+            "\n  estudio-daw-project midi-synth-play <toma.json>"
             ,
             "\n  estudio-daw-project proxy-audio <entrada> <salida>"
             ,
@@ -75,6 +91,30 @@ fn main() -> ExitCode {
                 return ExitCode::from(2);
             };
             audio_record_command(seconds.to_string_lossy().as_ref(), output.into())
+        }
+        "midi-synth-live" => {
+            let Some(seconds) = args.next() else {
+                usage();
+                return ExitCode::from(2);
+            };
+            let Some(take_output) = args.next() else {
+                usage();
+                return ExitCode::from(2);
+            };
+            midi_synth_live_command(
+                seconds.to_string_lossy().as_ref(),
+                take_output.into(),
+                args.next()
+                    .map(|value| value.to_string_lossy().into_owned())
+                    .unwrap_or_else(|| "KeyLab Essential 49 MID".into()),
+            )
+        }
+        "midi-synth-play" => {
+            let Some(take) = args.next() else {
+                usage();
+                return ExitCode::from(2);
+            };
+            midi_synth_play_command(take.into())
         }
         "proxy-audio" => {
             let Some(input) = args.next() else {
@@ -443,6 +483,222 @@ fn audio_test_command() -> Result<(), Box<dyn std::error::Error>> {
         report.output_silence_samples
     );
     Ok(())
+}
+
+/// Construye el DAG mínimo de una voz de instrumento, insert DSP y master.
+/// Todos los nodos y buffers se preparan antes de que PipeWire ejecute callbacks.
+fn build_synth_render_plan(
+    config: PipeWireStreamConfig,
+    receiver: SynthEventReceiver,
+) -> Result<estudio_daw_audio_engine::RenderPlan, Box<dyn std::error::Error>> {
+    let synth = SineSynthNode::new(config.sample_rate, config.channels as usize, receiver)?;
+    let mut equalizer = EqualizerNode::new(config.sample_rate as f32, config.channels as usize)?;
+    equalizer.add_band(EqBandConfig::high_pass(20.0, 0.707))?;
+
+    let mut builder = RenderPlanBuilder::new();
+    let instrument = builder.add_node(synth);
+    let insert = builder.add_node(equalizer);
+    let master = builder.add_node(GainNode::new(0.8));
+    builder.connect(instrument, insert)?;
+    builder.connect(insert, master)?;
+    Ok(builder.build()?)
+}
+
+/// Escucha y graba MIDI desde el KeyLab mientras el instrumento nativo toca por
+/// PipeWire. El thread MIDI sólo publica eventos a la cola SPSC; nunca entra al
+/// callback ni comparte estado mutable del sinte.
+fn midi_synth_live_command(
+    seconds: &str,
+    take_output: PathBuf,
+    midi_query: String,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let seconds: f64 = seconds.parse()?;
+    if !(seconds.is_finite() && seconds > 0.0) {
+        return Err("los segundos deben ser un número positivo".into());
+    }
+
+    let config = PipeWireStreamConfig::default();
+    let devices = audio_devices()?;
+    let targets = audiobox_targets(&devices);
+    let (mut sender, receiver) = midi_event_queue();
+    let render_plan = build_synth_render_plan(config, receiver)?;
+    let stop = Arc::new(AtomicBool::new(false));
+    let dropped_events = Arc::new(AtomicUsize::new(0));
+    let (ready_tx, ready_rx) = mpsc::sync_channel::<Result<String, String>>(1);
+    let worker_stop = Arc::clone(&stop);
+    let worker_dropped = Arc::clone(&dropped_events);
+    let worker_query = midi_query.clone();
+    let listener = thread::Builder::new()
+        .name("estudio-midi-instrument".into())
+        .spawn(move || {
+            let mut recorder = MidiRecorder::new(120, DEFAULT_PPQ);
+            let ready_error_tx = ready_tx.clone();
+            if let Err(error) = recorder.start() {
+                let message = error.to_string();
+                let _ = ready_tx.send(Err(message.clone()));
+                return Err(message);
+            }
+            let mut recorder_error = None;
+            let listen_result = run_alsa_midi_input_until(
+                &worker_query,
+                &worker_stop,
+                move |label, _local_port| {
+                    let _ = ready_tx.send(Ok(label));
+                },
+                |event| {
+                    if let Some(synth_event) = synth_event_from_input(event) {
+                        if !sender.try_send(synth_event) {
+                            worker_dropped.fetch_add(1, Ordering::Relaxed);
+                        }
+                    }
+                    // El recorder corre en este thread fuera del camino RT y
+                    // mantiene los eventos completos, además de las notas.
+                    if let Err(error) = recorder.record(event) {
+                        recorder_error = Some(error.to_string());
+                    }
+                },
+            );
+            if let Err(error) = listen_result {
+                let message = error.to_string();
+                let _ = ready_error_tx.send(Err(message.clone()));
+                return Err(message);
+            }
+            let take = recorder.stop().map_err(|error| error.to_string())?;
+            if let Some(error) = recorder_error {
+                return Err(error);
+            }
+            Ok(take)
+        })?;
+
+    let label = match ready_rx.recv()? {
+        Ok(label) => label,
+        Err(error) => {
+            stop.store(true, Ordering::Release);
+            let _ = listener.join();
+            return Err(error.into());
+        }
+    };
+    println!(
+        "Instrumento nativo conectado a {label}; grabando {} segundos.",
+        seconds
+    );
+    println!("Presiona el KeyLab; audio de salida dirigido a AudioBox si está disponible.");
+
+    let stream_result = run_pipewire_duplex_for_targets(
+        config,
+        render_plan,
+        Duration::from_secs_f64(seconds),
+        targets,
+    );
+    stop.store(true, Ordering::Release);
+    let take_result = listener
+        .join()
+        .map_err(|_| "el thread de entrada MIDI terminó inesperadamente".to_string())?;
+    let report = stream_result?;
+    let take = take_result.map_err(|error| format!("falló la entrada MIDI: {error}"))?;
+    fs::write(&take_output, serde_json::to_vec_pretty(&take)?)?;
+
+    println!(
+        "Take guardada: {} eventos en {}. Cola MIDI descartó {} eventos; salida PipeWire {} callbacks.",
+        take.events.len(),
+        take_output.display(),
+        dropped_events.load(Ordering::Relaxed),
+        report.output_callbacks
+    );
+    Ok(())
+}
+
+/// Reproduce una toma MIDI en el mismo instrumento nativo y motor PipeWire.
+fn midi_synth_play_command(take_path: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
+    let take: MidiTake = serde_json::from_slice(&fs::read(&take_path)?)?;
+    let config = PipeWireStreamConfig::default();
+    let devices = audio_devices()?;
+    let targets = audiobox_targets(&devices);
+    let (mut sender, receiver) = midi_event_queue();
+    let render_plan = build_synth_render_plan(config, receiver)?;
+    let scheduled_end = take
+        .events
+        .iter()
+        .map(|event| event.micros_since_start)
+        .max()
+        .unwrap_or(0)
+        .max(take.duration_micros);
+    let duration = Duration::from_micros(scheduled_end).saturating_add(Duration::from_millis(400));
+    let scheduler = thread::Builder::new()
+        .name("estudio-midi-scheduler".into())
+        .spawn(move || {
+            let started = Instant::now();
+            for event in take.events {
+                let target = Duration::from_micros(event.micros_since_start);
+                loop {
+                    let elapsed = started.elapsed();
+                    if elapsed >= target {
+                        break;
+                    }
+                    thread::sleep((target - elapsed).min(Duration::from_millis(2)));
+                }
+                if let Some(synth_event) = synth_event_from_recorded(&event.message) {
+                    let _ = sender.try_send(synth_event);
+                }
+            }
+            sender.dropped_events()
+        })?;
+
+    println!(
+        "Reproduciendo {} por el instrumento nativo...",
+        take_path.display()
+    );
+    let stream_result = run_pipewire_duplex_for_targets(config, render_plan, duration, targets);
+    let dropped_events = scheduler
+        .join()
+        .map_err(|_| "el scheduler MIDI terminó inesperadamente")?;
+    let report = stream_result?;
+    println!(
+        "Reproducción sintetizada finalizada: {} callbacks PipeWire; eventos MIDI descartados={dropped_events}.",
+        report.output_callbacks,
+    );
+    Ok(())
+}
+
+fn synth_event_from_input(event: &NormalizedMidiEvent) -> Option<SynthMidiEvent> {
+    match event {
+        NormalizedMidiEvent::NoteOn {
+            channel,
+            note,
+            velocity,
+            ..
+        } if *velocity > 0 => Some(SynthMidiEvent::NoteOn {
+            channel: *channel,
+            note: *note,
+            velocity: *velocity,
+        }),
+        NormalizedMidiEvent::NoteOn { channel, note, .. }
+        | NormalizedMidiEvent::NoteOff { channel, note, .. } => Some(SynthMidiEvent::NoteOff {
+            channel: *channel,
+            note: *note,
+        }),
+        _ => None,
+    }
+}
+
+fn synth_event_from_recorded(message: &RecordedMidiMessage) -> Option<SynthMidiEvent> {
+    match message {
+        RecordedMidiMessage::NoteOn {
+            channel,
+            note,
+            velocity,
+        } if *velocity > 0 => Some(SynthMidiEvent::NoteOn {
+            channel: *channel,
+            note: *note,
+            velocity: *velocity,
+        }),
+        RecordedMidiMessage::NoteOn { channel, note, .. }
+        | RecordedMidiMessage::NoteOff { channel, note, .. } => Some(SynthMidiEvent::NoteOff {
+            channel: *channel,
+            note: *note,
+        }),
+        _ => None,
+    }
 }
 
 fn audio_record_command(seconds: &str, output: PathBuf) -> Result<(), Box<dyn std::error::Error>> {

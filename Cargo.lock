@@ -1066,6 +1066,7 @@ dependencies = [
  "estudio-daw-project-model",
  "estudio-daw-runtime-diagnostics",
  "estudio-daw-session",
+ "estudio-daw-synth",
  "serde_json",
 ]
 
@@ -1139,6 +1140,14 @@ name = "estudio-daw-session"
 version = "0.1.0"
 dependencies = [
  "serde",
+ "thiserror 2.0.21",
+]
+
+[[package]]
+name = "estudio-daw-synth"
+version = "0.1.0"
+dependencies = [
+ "estudio-daw-audio-engine",
  "thiserror 2.0.21",
 ]
 

@@ -87,6 +87,31 @@ Estudio DAW debe separar la fuente maestra de los medios usados para edición y 
 - Gate, de-esser, simulación de caja y amp modeling son inserts no destructivos del template de entrada y nunca sustituyen la toma original.
 - La grabación conserva la toma, timestamps, dispositivo, sample rate, ganancia declarada y procesamiento de monitoreo.
 
+### Primer instrumento MIDI nativo
+
+- El primer instrumento del `RenderPlan` consume eventos Note On/Off desde un ring
+  SPSC acotado y reservado antes del stream. El hilo MIDI es el único productor;
+  el callback de audio es el único consumidor.
+- El callback no reserva memoria ni espera al productor. Si el ring se llena, el
+  evento se descarta y el runtime lo contabiliza fuera del callback.
+- El primer prototipo usa un oscilador sinusoidal polifónico y envolventes
+  simples para validar la ruta; no se presenta como sampler, SoundFont ni
+  sustituto de los instrumentos completos planeados.
+- El instrumento actúa como fuente: limpia su bloque y sintetiza sus voces. Los
+  inserts y el master se conectan después en el DAG.
+- Una toma MIDI puede reproducirse por el mismo instrumento y backend que una
+  entrada live; el formato `MidiTake` permanece independiente del instrumento.
+
+**Criterios verificables**
+
+- **Dado** un Note On enviado al ring, **cuando** el siguiente bloque se
+  procesa, **entonces** el instrumento emite audio finito en todos sus canales.
+- **Dado** un Note Off, **cuando** transcurre la envolvente de release,
+  **entonces** la voz termina sin bloquear ni asignar memoria.
+- **Dado** un bloque con longitud que no forma frames completos, **cuando** el
+  nodo lo procesa, **entonces** devuelve un error antes de acceder fuera del
+  buffer.
+
 ## Requisitos verificables
 
 - **Dado** un proyecto con pistas, bus, send y sidechain, **cuando** se activa, **entonces** se genera un `RenderPlan` topológico sin dependencias en callback.

@@ -46,6 +46,10 @@
 - [x] Normalizar Note On/Off, velocity, CC (incluido CC64 como Control Change) y
   pitch bend; la semántica específica de pedal sustain queda pendiente del motor
   de instrumentos.
+- [x] Crear un crate de instrumento nativo inicial con voz polifónica, eventos
+  MIDI por ring SPSC y liberación de notas sin asignaciones en el callback.
+- [x] Conectar captura ALSA live y reproducción de takes con el instrumento nativo
+  y el stream PipeWire; la validación física final con el KeyLab sigue pendiente.
 - [x] Implementar transporte sample/beat/bar mediante `TransportClock` y PPQ
   fijo de 960.
 - [x] Crear reloj de reproducción determinista independiente del wall-clock.
@@ -177,6 +181,9 @@
 - [x] Test de integración ALSA con puerto virtual: recibir antes de la
   desconexión, recrear el emisor, volver a suscribirse y recibir después.
   (El hot-plug automático del monitor queda como evolución del adaptador.)
+- [ ] Test de la entrada ALSA del instrumento: suscribirse a un puerto virtual,
+  recibir Note On normalizado y detener el lector de forma ordenada (implementado,
+  pendiente de ejecución: este entorno no tiene `/dev/snd/seq`).
 - [ ] Test de worker caído durante reproducción.
 - [x] Test de serialización y migración de schema al abrir un proyecto legacy.
 - [ ] Test de proxy offline, proxy obsoleto, fuente ausente y render final desde original.

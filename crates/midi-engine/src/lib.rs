@@ -11,7 +11,10 @@ use serde::{Deserialize, Serialize};
 use std::{
     ffi::CString,
     io::BufRead,
-    sync::mpsc::{self, Receiver},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        mpsc::{self, Receiver},
+    },
     thread,
     time::{Duration, Instant},
 };
@@ -692,6 +695,64 @@ where
             thread::sleep(Duration::from_millis(1));
         }
     }
+}
+
+/// Lee un puerto MIDI hasta solicitar parada y entrega los eventos fuera del
+/// callback de audio. `on_ready` entrega la etiqueta y la dirección del puerto
+/// local sólo después de completar la suscripción, permitiendo verificar el
+/// enlace y evitar perder notas por una carrera entre MIDI y PipeWire.
+pub fn run_alsa_midi_input_until<F, R>(
+    query: &str,
+    stop: &AtomicBool,
+    on_ready: F,
+    mut on_event: R,
+) -> Result<(), LiveControlError>
+where
+    F: FnOnce(String, alsa::seq::Addr),
+    R: FnMut(&NormalizedMidiEvent),
+{
+    let seq = Seq::open(None, None, true)?;
+    let Some((source, label)) = find_alsa_midi_port(query)? else {
+        return Err(LiveControlError::Discovery(
+            estudio_daw_runtime_diagnostics::DiagnosticsError::PipeWire(format!(
+                "no se encontró puerto MIDI para '{query}'"
+            )),
+        ));
+    };
+    let client_name = CString::new("Estudio DAW Instrument Input").expect("literal sin NUL");
+    seq.set_client_name(&client_name)?;
+    let port_name = CString::new("instrument-input").expect("literal sin NUL");
+    let local_port = seq.create_simple_port(
+        &port_name,
+        PortCap::WRITE | PortCap::SUBS_WRITE,
+        PortType::MIDI_GENERIC | PortType::APPLICATION,
+    )?;
+    let subscription = alsa::seq::PortSubscribe::empty()?;
+    subscription.set_sender(source);
+    subscription.set_dest(alsa::seq::Addr {
+        client: seq.client_id()?,
+        port: local_port,
+    });
+    seq.subscribe_port(&subscription)?;
+    on_ready(
+        label,
+        alsa::seq::Addr {
+            client: seq.client_id()?,
+            port: local_port,
+        },
+    );
+
+    let mut input = seq.input();
+    while !stop.load(Ordering::Acquire) {
+        if input.event_input_pending(true)? > 0 {
+            let event = input.event_input()?;
+            let normalized = normalize_alsa_event(&event);
+            on_event(&normalized);
+        } else {
+            thread::sleep(Duration::from_millis(1));
+        }
+    }
+    Ok(())
 }
 
 /// Reproduce una toma MIDI hacia un destino ALSA MIDI, respetando PPQ y tempo.

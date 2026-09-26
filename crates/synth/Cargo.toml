@@ -1,0 +1,10 @@
+[package]
+name = "estudio-daw-synth"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Initial native MIDI instrument for Estudio DAW"
+
+[dependencies]
+estudio-daw-audio-engine = { path = "../audio-engine" }
+thiserror = "2"

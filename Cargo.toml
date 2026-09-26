@@ -9,6 +9,7 @@ members = [
     "crates/session",
     "crates/audio-engine",
     "crates/audio-platform",
+    "crates/synth",
     "crates/command-bus",
     "crates/application",
     "crates/cli",
