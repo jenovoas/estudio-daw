@@ -29,3 +29,21 @@ Las operaciones del agente DEBEN poder previsualizarse y deshacerse.
 - DADO que el usuario pide más energía en el coro
 - CUANDO el agente genera una propuesta
 - ENTONCES el sistema muestra las operaciones concretas, permite aceptarlas y ofrece undo agrupado.
+
+## ADDED Requirements
+
+### Requirement: herramientas musicales declarativas y tipadas
+El scripting y el agente MUST expresar operaciones musicales mediante
+comandos de dominio tipados, validados fuera del callback de audio.
+
+#### Scenario: una orden referencia una pista inexistente
+- WHEN se valida una orden de script o del agente
+- THEN se devuelve un error estructurado y no se modifica la sesión.
+
+### Requirement: propuesta de agente con control del usuario
+Una propuesta generada por el profesor/productor IA MUST ser inspeccionable,
+previsualizable y reversible antes de afectar el proyecto.
+
+#### Scenario: el usuario revisa una sugerencia
+- WHEN el agente propone cambios al arreglo o procesamiento
+- THEN la UI presenta un changeset concreto y sólo lo aplica tras aceptación explícita.

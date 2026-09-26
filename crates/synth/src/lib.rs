@@ -1,8 +1,8 @@
-//! Instrumento MIDI nativo inicial para validar la ruta de audio en tiempo real.
+//! Instrumentos MIDI nativos y sus adaptadores de backend.
 //!
-//! Este crate no pretende sustituir un sampler ni un SoundFont: produce una
-//! onda sinusoidal polifónica para probar captura MIDI, voz, transporte y salida
-//! PipeWire antes de integrar instrumentos con muestras o plugins.
+//! `SineSynthNode` es el fallback de prueba sin dependencias. El adaptador
+//! opcional FluidSynth reproduce bancos SF2 locales en un worker dedicado y
+//! entrega PCM al callback mediante una cola preasignada.
 
 use estudio_daw_audio_engine::{AudioNode, AudioNodeError};
 use std::{
@@ -14,6 +14,13 @@ use std::{
     },
 };
 use thiserror::Error;
+
+mod fluidsynth;
+pub use fluidsynth::{FluidSynthEngine, FluidSynthError, FluidSynthPreset, FluidSynthVersion};
+mod fluidsynth_worker;
+pub use fluidsynth_worker::{
+    FluidSynthPcmNode, SoundFontEventSender, SoundFontInstrumentWorker, SoundFontWorkerError,
+};
 
 pub const MIDI_EVENT_CAPACITY: usize = 256;
 const POLYPHONY: usize = 16;

@@ -1,51 +1,84 @@
-# Primer instrumento MIDI nativo
+# Instrumentos MIDI nativos
 
-`estudio-daw-synth` implementa la primera fuente de sonido propia de Estudio DAW.
-Su alcance intencional es reducido: una voz sinusoidal polifónica permite
-verificar eventos MIDI, renderizado de bloques y salida PipeWire antes de abordar
-samplers, SoundFonts o plugins.
+`estudio-daw-synth` ofrece dos fuentes: el sinte sinusoidal polifónico (fallback
+sin dependencias) y un adaptador opcional a FluidSynth para reproducir
+SoundFonts locales. FluidSynth se carga dinámicamente; compilar Estudio DAW no
+requiere tener instalada su biblioteca.
 
 ## Ruta de señal
 
 ```text
 KeyLab (ALSA MIDI)
   → hilo de entrada fuera de RT
-  → ring SPSC preasignado (256 eventos)
-  → SineSynthNode dentro del RenderPlan
-  → EQ de inserción
-  → PipeWire playback (AudioBox si está disponible)
+  → cola acotada de eventos MIDI
+  → worker dedicado (FluidSynth, al elegir SoundFont)
+  → ring SPSC PCM preasignado
+  → nodo fuente del RenderPlan
+  → EQ de inserción → PipeWire (AudioBox si está disponible)
 ```
 
-El ring tiene un productor y un consumidor no clonables. Si se llena, el envío
-devuelve `false` y el productor incrementa un contador; el callback nunca espera
-ni reserva memoria. El nodo limita su polifonía a 16 voces, calcula las
-frecuencias antes de iniciar audio y aplica ataque/release lineales simples.
-Note On con velocidad cero se interpreta como Note Off.
+El callback PipeWire no llama a FluidSynth, no espera locks y no reserva
+memoria: consume muestras del ring. Si está vacío, escribe silencio y aumenta
+el contador de underruns. La cola de eventos también es acotada y cuenta los
+descartes. El SoundFont se carga y el preset se valida antes de iniciar el
+stream; si falla, el comando muestra el diagnóstico y no modifica ningún
+proyecto. El sinte sinusoidal se conserva como fallback explícito.
 
-El primer nodo limpia el bloque y genera la fuente: este comando no monitoriza la
-entrada física de AudioBox. En este corte no hay presets, control de volumen por
-CC, sustain semántico, tabla de ondas ni muestras. El motor y el contrato MIDI se
-mantienen listos para reemplazar esta fuente por instrumentos de mayor calidad.
+## SineSynth
 
-## Probar desde CLI
+El instrumento de prueba tiene 16 voces, frecuencias precalculadas, ataque y
+release lineales; Note On con velocidad cero equivale a Note Off. No monitoriza
+la entrada física de AudioBox.
 
-Grabar una toma tocando y oír simultáneamente el sinte:
+## SoundFont local
+
+Los comandos aceptan un SoundFont y preset opcionales. Banco y programa siguen
+la numeración MIDI desde cero. Para descubrir los presets disponibles en un
+banco local:
+
+```bash
+cargo run -q -p estudio-daw-cli --bin estudio-daw-project -- \
+  soundfont-presets /usr/share/soundfonts/FluidR3_GM.sf2
+```
+
+```bash
+cargo run -q -p estudio-daw-cli --bin estudio-daw-project -- \
+  midi-synth-live 12 mi-toma.json "KeyLab Essential 49 MID" \
+  --soundfont /usr/share/soundfonts/FluidR3_GM.sf2 --bank 0 --program 0
+
+cargo run -q -p estudio-daw-cli --bin estudio-daw-project -- \
+  midi-synth-play mi-toma.json \
+  --soundfont /usr/share/soundfonts/FluidR3_GM.sf2 --bank 0 --program 0
+```
+
+En Linux se buscan `libfluidsynth.so.3`, `.so.2` y `.so`. Instala la biblioteca
+de runtime y un banco SF2 de forma independiente; la ruta del banco depende de
+la distribución. Estudio DAW no descarga ni redistribuye SoundFonts. Si se
+omite `--soundfont`, se usa SineSynth. Una ruta ilegible, preset inexistente o
+runtime ausente se informa antes de iniciar el audio.
+
+El modelo de proyecto ya puede guardar una referencia portable y un hash
+opcional, sin copiar el banco. En esta primera integración la elección se pasa
+por CLI; editar y persistir la selección desde la UI queda pendiente.
+
+## Probar SineSynth
 
 ```bash
 cargo run -q -p estudio-daw-cli --bin estudio-daw-project -- \
   midi-synth-live 12 mi-toma.json "KeyLab Essential 49 MID"
-```
-
-Reproducir después la toma por el mismo instrumento nativo:
-
-```bash
 cargo run -q -p estudio-daw-cli --bin estudio-daw-project -- \
   midi-synth-play mi-toma.json
 ```
 
-El runtime busca el sink AudioBox para la salida y usa la autoconexión de
-PipeWire si no encuentra uno. La prueba vertical con KeyLab se ejecutó en el
-host: se capturaron 7 eventos sin descartes y la reproducción de la toma terminó
-por PipeWire también sin descartar eventos. Esto valida el flujo MIDI→sintetizador
-→salida; no constituye una evaluación subjetiva del timbre ni sustituye las
-pruebas automatizadas de generación, liberación y ausencia de asignaciones.
+El runtime selecciona AudioBox para salida cuando está disponible y conserva
+la autoconexión PipeWire como fallback. La prueba de hardware previa capturó
+una toma desde KeyLab y finalizó la reproducción PipeWire sin descartar eventos;
+eso no es una evaluación subjetiva del timbre.
+
+## Pruebas y límites
+
+Los tests verifican render FluidSynth, paso de notas por el worker y ausencia de
+asignaciones en el nodo PCM bajo un allocator de conteo. Si
+`/usr/share/soundfonts/FluidR3_GM.sf2` no existe, los tests del banco local se
+omiten. Todavía no hay control semántico de sustain/CC, editor de presets ni
+intercambio hot-swap de instrumentos durante reproducción.

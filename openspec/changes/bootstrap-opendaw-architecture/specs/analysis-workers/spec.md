@@ -58,3 +58,29 @@ El manifiesto puede crecer con letra alineada, melodía, dinámica, stems, afina
 - **Dado** un worker que termina por OOM, **entonces** el supervisor publica `oom`, conserva la reproducción y deja un diagnóstico accionable.
 - **Dado** un análisis completado, **entonces** existe un manifiesto versionado con timestamps, confianza y procedencia.
 - **Dado** una consulta del profesor IA, **entonces** el payload por defecto es el manifiesto simbólico y la respuesta propuesta se traduce a un changeset con preview/undo.
+
+## ADDED Requirements
+
+### Requirement: intercambio de audio por referencias versionadas
+El protocolo entre Rust y los workers MUST transportar referencias a artefactos
+y rangos de samples, no audio voluminoso serializado en mensajes.
+
+#### Scenario: análisis de audio multicanal
+- WHEN Rust solicita analizar una toma de audio
+- THEN el worker recibe una referencia verificable al archivo o memoria compartida y el rango solicitado.
+
+### Requirement: aislamiento de fallos de workers
+Un fallo, cancelación u OOM de un worker MUST conservar la reproducción y el
+último estado reproducible del proyecto.
+
+#### Scenario: worker termina por OOM
+- WHEN el supervisor detecta que el proceso de análisis terminó por presión de memoria
+- THEN publica el diagnóstico y el estado del job sin detener el motor de audio.
+
+### Requirement: contexto simbólico para el profesor musical
+Las consultas de asesoría MUST usar por defecto resultados simbólicos con
+unidades, rangos temporales, confianza y procedencia, no audio crudo.
+
+#### Scenario: consulta de producción
+- WHEN el usuario solicita consejo sobre una canción analizada
+- THEN el profesor recibe el manifiesto musical y cualquier cambio sugerido requiere preview y aceptación.

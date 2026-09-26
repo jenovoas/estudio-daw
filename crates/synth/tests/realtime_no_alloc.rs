@@ -5,7 +5,9 @@ use std::{
 };
 
 use estudio_daw_audio_engine::{AudioBlock, RenderPlanBuilder};
-use estudio_daw_synth::{midi_event_queue, SineSynthNode, SynthMidiEvent};
+use estudio_daw_synth::{
+    midi_event_queue, SineSynthNode, SoundFontInstrumentWorker, SynthMidiEvent,
+};
 
 thread_local! {
     static TRACKING: Cell<bool> = const { Cell::new(false) };
@@ -66,6 +68,30 @@ fn synth_processes_queued_notes_without_allocating() {
         channel: 0,
         note: 60,
     }));
+
+    ALLOCATIONS.with(|count| count.set(0));
+    TRACKING.with(|enabled| enabled.set(true));
+    for _ in 0..1_000 {
+        block.clear();
+        plan.process_block(&mut block).unwrap();
+    }
+    TRACKING.with(|enabled| enabled.set(false));
+
+    assert_eq!(ALLOCATIONS.with(Cell::get), 0);
+}
+
+#[test]
+fn soundfont_pcm_callback_source_does_not_allocate() {
+    let path = "/usr/share/soundfonts/FluidR3_GM.sf2";
+    if !std::path::Path::new(path).is_file() {
+        return;
+    }
+    let (_worker, source) = SoundFontInstrumentWorker::start(path, 48_000, 0, 0).unwrap();
+    let mut builder = RenderPlanBuilder::new();
+    builder.add_node(source);
+    let mut plan = builder.build().unwrap();
+    let mut block = AudioBlock::new(2, 64).unwrap();
+    plan.process_block(&mut block).unwrap();
 
     ALLOCATIONS.with(|count| count.set(0));
     TRACKING.with(|enabled| enabled.set(true));

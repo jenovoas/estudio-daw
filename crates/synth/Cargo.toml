@@ -7,4 +7,5 @@ description = "Initial native MIDI instrument for Estudio DAW"
 
 [dependencies]
 estudio-daw-audio-engine = { path = "../audio-engine" }
+libloading = "0.8.9"
 thiserror = "2"

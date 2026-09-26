@@ -415,7 +415,8 @@ mod tests {
     use super::*;
     use estudio_daw_midi_engine::{MidiSource, RecordedMidiEvent, RecordedMidiMessage};
     use estudio_daw_project_model::{
-        AudioClip, ImportProvenance, MidiClip, TimeSignature, Track, TrackKind, Transport,
+        AudioClip, ImportProvenance, InstrumentConfig, MidiClip, TimeSignature, Track, TrackKind,
+        Transport,
     };
 
     fn project() -> Project {
@@ -437,6 +438,7 @@ mod tests {
                     notes: Vec::new(),
                     audio_channels: None,
                     media_source: None,
+                    instrument: Some(InstrumentConfig::Sine),
                 },
                 Track {
                     id: "track-audio".into(),
@@ -445,6 +447,7 @@ mod tests {
                     notes: Vec::new(),
                     audio_channels: Some(2),
                     media_source: None,
+                    instrument: None,
                 },
             ],
             midi_clips: vec![MidiClip {

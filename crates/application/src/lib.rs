@@ -278,6 +278,7 @@ mod tests {
                 notes: Vec::new(),
                 audio_channels: Some(2),
                 media_source: None,
+                instrument: None,
             }],
             midi_clips: Vec::new(),
             audio_clips: vec![AudioClip {
@@ -385,7 +386,7 @@ mod tests {
 
         let application = ProjectApplication::open(&project_path).unwrap();
         let project = application.snapshot().project.project;
-        assert_eq!(project.schema_version, "estudio-daw.project.v1");
+        assert_eq!(project.schema_version, "estudio-daw.project.v2");
         assert!(project.midi_clips.is_empty());
         assert!(project.audio_clips.is_empty());
     }

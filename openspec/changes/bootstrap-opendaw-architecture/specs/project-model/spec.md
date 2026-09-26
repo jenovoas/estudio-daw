@@ -67,3 +67,21 @@ El formato DEBE incluir versión y migraciones explícitas.
 - DADO un proyecto con una versión anterior
 - CUANDO se abre
 - ENTONCES el programa informa la migración aplicada o rechaza el formato con un diagnóstico accionable.
+
+## ADDED Requirements
+
+### Requirement: estado de sesión portable y versionado
+El proyecto MUST serializar el estado musical y las referencias a assets sin
+incrustar medios pesados, y DEBE migrar esquemas antiguos de forma explícita.
+
+#### Scenario: guardar y reabrir una sesión
+- WHEN una sesión con clips e instrumentos se guarda y vuelve a abrir
+- THEN se recupera la misma configuración portable y los assets se resuelven desde sus referencias.
+
+### Requirement: mutaciones reversibles y atribuibles
+Las mutaciones de UI, scripts y agentes MUST pasar por comandos validados y
+registrar cambios reversibles en el historial.
+
+#### Scenario: aceptar una propuesta del agente
+- WHEN el usuario acepta una propuesta previsualizada
+- THEN se aplica como una transacción atribuible que puede deshacerse como unidad.

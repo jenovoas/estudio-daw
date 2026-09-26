@@ -36,7 +36,10 @@ use estudio_daw_runtime_diagnostics::{
     NormalizedMidiEvent,
 };
 use estudio_daw_session::{CommandBus as SessionCommandBus, Session};
-use estudio_daw_synth::{midi_event_queue, SineSynthNode, SynthEventReceiver, SynthMidiEvent};
+use estudio_daw_synth::{
+    midi_event_queue, SineSynthNode, SoundFontEventSender, SoundFontInstrumentWorker,
+    SynthEventSender, SynthMidiEvent,
+};
 
 fn usage() {
     eprintln!(concat!(
@@ -53,9 +56,11 @@ fn usage() {
             ,
             "\n  estudio-daw-project audio-record <segundos> <salida.wav>"
             ,
-            "\n  estudio-daw-project midi-synth-live <segundos> <salida-toma.json> [entrada]"
+            "\n  estudio-daw-project midi-synth-live <segundos> <salida-toma.json> [entrada] [--soundfont archivo.sf2] [--bank N] [--program N]"
             ,
-            "\n  estudio-daw-project midi-synth-play <toma.json>"
+            "\n  estudio-daw-project midi-synth-play <toma.json> [--soundfont archivo.sf2] [--bank N] [--program N]"
+            ,
+            "\n  estudio-daw-project soundfont-presets <archivo.sf2>"
             ,
             "\n  estudio-daw-project proxy-audio <entrada> <salida>"
             ,
@@ -101,12 +106,23 @@ fn main() -> ExitCode {
                 usage();
                 return ExitCode::from(2);
             };
+            let trailing: Vec<String> = args
+                .map(|value| value.to_string_lossy().into_owned())
+                .collect();
+            let (midi_query, instrument) =
+                match parse_synth_options(&trailing, Some("KeyLab Essential 49 MID".into())) {
+                    Ok(parsed) => parsed,
+                    Err(error) => {
+                        eprintln!("{error}");
+                        usage();
+                        return ExitCode::from(2);
+                    }
+                };
             midi_synth_live_command(
                 seconds.to_string_lossy().as_ref(),
                 take_output.into(),
-                args.next()
-                    .map(|value| value.to_string_lossy().into_owned())
-                    .unwrap_or_else(|| "KeyLab Essential 49 MID".into()),
+                midi_query.expect("entrada MIDI por defecto"),
+                instrument,
             )
         }
         "midi-synth-play" => {
@@ -114,7 +130,32 @@ fn main() -> ExitCode {
                 usage();
                 return ExitCode::from(2);
             };
-            midi_synth_play_command(take.into())
+            let trailing: Vec<String> = args
+                .map(|value| value.to_string_lossy().into_owned())
+                .collect();
+            let (unexpected_input, instrument) = match parse_synth_options(&trailing, None) {
+                Ok(parsed) => parsed,
+                Err(error) => {
+                    eprintln!("{error}");
+                    usage();
+                    return ExitCode::from(2);
+                }
+            };
+            if unexpected_input.is_some() {
+                eprintln!(
+                    "midi-synth-play sólo acepta las opciones --soundfont, --bank y --program"
+                );
+                usage();
+                return ExitCode::from(2);
+            }
+            midi_synth_play_command(take.into(), instrument)
+        }
+        "soundfont-presets" => {
+            let Some(soundfont) = args.next() else {
+                usage();
+                return ExitCode::from(2);
+            };
+            soundfont_presets_command(soundfont.into())
         }
         "proxy-audio" => {
             let Some(input) = args.next() else {
@@ -485,23 +526,179 @@ fn audio_test_command() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-/// Construye el DAG mínimo de una voz de instrumento, insert DSP y master.
-/// Todos los nodos y buffers se preparan antes de que PipeWire ejecute callbacks.
+/// Lista presets locales con los índices MIDI 0-based que aceptan los comandos.
+fn soundfont_presets_command(soundfont_path: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
+    let config = PipeWireStreamConfig::default();
+    let mut synth = estudio_daw_synth::FluidSynthEngine::open(&soundfont_path, config.sample_rate)?;
+    println!(
+        "FluidSynth {}; banco local: {}",
+        synth.version(),
+        soundfont_path.display()
+    );
+    for preset in synth.presets()? {
+        println!(
+            "bank={} program={}  {}",
+            preset.bank, preset.program, preset.name
+        );
+    }
+    Ok(())
+}
+
+#[derive(Clone)]
+enum SynthInstrument {
+    Sine,
+    SoundFont {
+        path: String,
+        bank: u16,
+        program: u8,
+    },
+}
+
+enum SynthEventSink {
+    Sine(SynthEventSender),
+    SoundFont(SoundFontEventSender),
+}
+
+enum SynthAudioSource {
+    Sine(SineSynthNode),
+    SoundFont(estudio_daw_synth::FluidSynthPcmNode),
+}
+
+impl estudio_daw_audio_engine::AudioNode for SynthAudioSource {
+    fn process(
+        &mut self,
+        interleaved: &mut [f32],
+    ) -> Result<(), estudio_daw_audio_engine::AudioNodeError> {
+        match self {
+            Self::Sine(node) => estudio_daw_audio_engine::AudioNode::process(node, interleaved),
+            Self::SoundFont(node) => {
+                estudio_daw_audio_engine::AudioNode::process(node, interleaved)
+            }
+        }
+    }
+}
+
+impl SynthEventSink {
+    fn try_send(&mut self, event: SynthMidiEvent) -> bool {
+        match self {
+            Self::Sine(sender) => sender.try_send(event),
+            Self::SoundFont(sender) => sender.try_send(event),
+        }
+    }
+
+    fn dropped_events(&self) -> usize {
+        match self {
+            Self::Sine(sender) => sender.dropped_events(),
+            Self::SoundFont(sender) => sender.dropped_events(),
+        }
+    }
+}
+
+/// Lee opciones compartidas por reproducción y captura sintetizada.
+fn parse_synth_options(
+    arguments: &[String],
+    default_input: Option<String>,
+) -> Result<(Option<String>, SynthInstrument), String> {
+    let mut input = default_input;
+    let mut path = None;
+    let mut bank = 0_u16;
+    let mut program = 0_u8;
+    let mut index = 0;
+    while index < arguments.len() {
+        match arguments[index].as_str() {
+            "--soundfont" => {
+                index += 1;
+                path = Some(
+                    arguments
+                        .get(index)
+                        .ok_or("--soundfont requiere una ruta SF2")?
+                        .clone(),
+                );
+            }
+            "--bank" => {
+                index += 1;
+                bank = arguments
+                    .get(index)
+                    .ok_or("--bank requiere un entero")?
+                    .parse()
+                    .map_err(|_| "banco SF2 inválido")?;
+            }
+            "--program" => {
+                index += 1;
+                program = arguments
+                    .get(index)
+                    .ok_or("--program requiere un entero")?
+                    .parse()
+                    .map_err(|_| "programa MIDI inválido (0-127)")?;
+            }
+            value if !value.starts_with('-') && input.is_none() => input = Some(value.to_owned()),
+            value => return Err(format!("opción o argumento no reconocido: {value}")),
+        }
+        index += 1;
+    }
+    let instrument = match path {
+        Some(path) => SynthInstrument::SoundFont {
+            path,
+            bank,
+            program,
+        },
+        None if bank == 0 && program == 0 => SynthInstrument::Sine,
+        None => return Err("--bank y --program requieren --soundfont".into()),
+    };
+    Ok((input, instrument))
+}
+
+/// Compila el DAG del instrumento, EQ y master antes de iniciar PipeWire.
+/// La fuente seleccionada no cambia el contrato del callback de audio.
 fn build_synth_render_plan(
     config: PipeWireStreamConfig,
-    receiver: SynthEventReceiver,
-) -> Result<estudio_daw_audio_engine::RenderPlan, Box<dyn std::error::Error>> {
-    let synth = SineSynthNode::new(config.sample_rate, config.channels as usize, receiver)?;
+    instrument: SynthInstrument,
+) -> Result<
+    (
+        estudio_daw_audio_engine::RenderPlan,
+        SynthEventSink,
+        Option<SoundFontInstrumentWorker>,
+    ),
+    Box<dyn std::error::Error>,
+> {
+    let (source, sink, worker) = match instrument {
+        SynthInstrument::Sine => {
+            let (sender, receiver) = midi_event_queue();
+            (
+                SynthAudioSource::Sine(SineSynthNode::new(
+                    config.sample_rate,
+                    config.channels as usize,
+                    receiver,
+                )?),
+                SynthEventSink::Sine(sender),
+                None,
+            )
+        }
+        SynthInstrument::SoundFont {
+            path,
+            bank,
+            program,
+        } => {
+            let (worker, node) =
+                SoundFontInstrumentWorker::start(path, config.sample_rate, bank, program)?;
+            let sender = worker.event_sender();
+            (
+                SynthAudioSource::SoundFont(node),
+                SynthEventSink::SoundFont(sender),
+                Some(worker),
+            )
+        }
+    };
     let mut equalizer = EqualizerNode::new(config.sample_rate as f32, config.channels as usize)?;
     equalizer.add_band(EqBandConfig::high_pass(20.0, 0.707))?;
 
     let mut builder = RenderPlanBuilder::new();
-    let instrument = builder.add_node(synth);
+    let instrument = builder.add_node(source);
     let insert = builder.add_node(equalizer);
     let master = builder.add_node(GainNode::new(0.8));
     builder.connect(instrument, insert)?;
     builder.connect(insert, master)?;
-    Ok(builder.build()?)
+    Ok((builder.build()?, sink, worker))
 }
 
 /// Escucha y graba MIDI desde el KeyLab mientras el instrumento nativo toca por
@@ -511,6 +708,7 @@ fn midi_synth_live_command(
     seconds: &str,
     take_output: PathBuf,
     midi_query: String,
+    instrument: SynthInstrument,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let seconds: f64 = seconds.parse()?;
     if !(seconds.is_finite() && seconds > 0.0) {
@@ -520,8 +718,8 @@ fn midi_synth_live_command(
     let config = PipeWireStreamConfig::default();
     let devices = audio_devices()?;
     let targets = audiobox_targets(&devices);
-    let (mut sender, receiver) = midi_event_queue();
-    let render_plan = build_synth_render_plan(config, receiver)?;
+    let (render_plan, mut event_sink, instrument_worker) =
+        build_synth_render_plan(config, instrument)?;
     let stop = Arc::new(AtomicBool::new(false));
     let dropped_events = Arc::new(AtomicUsize::new(0));
     let (ready_tx, ready_rx) = mpsc::sync_channel::<Result<String, String>>(1);
@@ -547,7 +745,7 @@ fn midi_synth_live_command(
                 },
                 |event| {
                     if let Some(synth_event) = synth_event_from_input(event) {
-                        if !sender.try_send(synth_event) {
+                        if !event_sink.try_send(synth_event) {
                             worker_dropped.fetch_add(1, Ordering::Relaxed);
                         }
                     }
@@ -605,17 +803,27 @@ fn midi_synth_live_command(
         dropped_events.load(Ordering::Relaxed),
         report.output_callbacks
     );
+    if let Some(worker) = instrument_worker.as_ref() {
+        println!(
+            "SoundFont worker: underrun_samples={}, worker_errors={}",
+            worker.underrun_samples(),
+            worker.worker_errors()
+        );
+    }
     Ok(())
 }
 
 /// Reproduce una toma MIDI en el mismo instrumento nativo y motor PipeWire.
-fn midi_synth_play_command(take_path: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
+fn midi_synth_play_command(
+    take_path: PathBuf,
+    instrument: SynthInstrument,
+) -> Result<(), Box<dyn std::error::Error>> {
     let take: MidiTake = serde_json::from_slice(&fs::read(&take_path)?)?;
     let config = PipeWireStreamConfig::default();
     let devices = audio_devices()?;
     let targets = audiobox_targets(&devices);
-    let (mut sender, receiver) = midi_event_queue();
-    let render_plan = build_synth_render_plan(config, receiver)?;
+    let (render_plan, mut event_sink, instrument_worker) =
+        build_synth_render_plan(config, instrument)?;
     let scheduled_end = take
         .events
         .iter()
@@ -638,10 +846,10 @@ fn midi_synth_play_command(take_path: PathBuf) -> Result<(), Box<dyn std::error:
                     thread::sleep((target - elapsed).min(Duration::from_millis(2)));
                 }
                 if let Some(synth_event) = synth_event_from_recorded(&event.message) {
-                    let _ = sender.try_send(synth_event);
+                    let _ = event_sink.try_send(synth_event);
                 }
             }
-            sender.dropped_events()
+            event_sink.dropped_events()
         })?;
 
     println!(
@@ -657,6 +865,13 @@ fn midi_synth_play_command(take_path: PathBuf) -> Result<(), Box<dyn std::error:
         "Reproducción sintetizada finalizada: {} callbacks PipeWire; eventos MIDI descartados={dropped_events}.",
         report.output_callbacks,
     );
+    if let Some(worker) = instrument_worker.as_ref() {
+        println!(
+            "SoundFont worker: underrun_samples={}, worker_errors={}",
+            worker.underrun_samples(),
+            worker.worker_errors()
+        );
+    }
     Ok(())
 }
 
@@ -1086,5 +1301,41 @@ fn midi_outputs_command() -> Result<(), Box<dyn std::error::Error>> {
 fn print_warnings(warnings: &[String]) {
     for warning in warnings {
         eprintln!("warning: {warning}");
+    }
+}
+
+#[cfg(test)]
+mod synth_option_tests {
+    use super::*;
+
+    #[test]
+    fn soundfont_options_choose_a_local_preset_and_keep_input_name() {
+        let args = vec![
+            "KeyLab Essential 49 MID".into(),
+            "--soundfont".into(),
+            "/banks/piano.sf2".into(),
+            "--bank".into(),
+            "2".into(),
+            "--program".into(),
+            "11".into(),
+        ];
+        let (input, instrument) = parse_synth_options(&args, None).unwrap();
+        assert_eq!(input.as_deref(), Some("KeyLab Essential 49 MID"));
+        assert!(matches!(
+            instrument,
+            SynthInstrument::SoundFont {
+                bank: 2,
+                program: 11,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn defaults_to_sine_and_requires_soundfont_for_nondefault_preset() {
+        let (input, instrument) = parse_synth_options(&[], Some("KeyLab".into())).unwrap();
+        assert_eq!(input.as_deref(), Some("KeyLab"));
+        assert!(matches!(instrument, SynthInstrument::Sine));
+        assert!(parse_synth_options(&["--program".into(), "5".into()], None).is_err());
     }
 }

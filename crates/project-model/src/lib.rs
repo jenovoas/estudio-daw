@@ -607,11 +607,9 @@ pub struct Project {
 }
 
 /// Deserializa y migra un proyecto antes de exponerlo al resto de la aplicación.
-///
-/// Los proyectos previos a `project.v1` podían omitir las colecciones de clips;
-/// se normalizan como listas vacías para conservar el contenido existente. Una
-/// versión futura se rechaza explícitamente para evitar que una versión antigua
-/// guarde el archivo y descarte campos que todavía no entiende.
+/// Los esquemas anteriores se migran en memoria. Las versiones futuras se
+/// rechazan antes de deserializar para evitar guardar y perder datos que esta
+/// versión aún no entiende.
 pub fn load_project_json(bytes: &[u8]) -> Result<Project, ProjectJsonError> {
     let mut value: serde_json::Value = serde_json::from_slice(bytes)?;
     let object = value.as_object_mut().ok_or(ProjectJsonError::InvalidRoot)?;
@@ -642,10 +640,32 @@ pub fn load_project_json(bytes: &[u8]) -> Result<Project, ProjectJsonError> {
                 serde_json::Value::String("estudio-daw.project.v1".into()),
             );
         }
-        "estudio-daw.project.v1" => {}
+        "estudio-daw.project.v1" | "estudio-daw.project.v2" => {}
         unsupported => {
             return Err(ProjectJsonError::UnsupportedVersion(unsupported.into()));
         }
+    }
+
+    // project.v2 añade el instrumento a cada pista MIDI. Los proyectos antiguos
+    // mantienen las mismas notas y empiezan con el sinte de prueba, que no
+    // depende de bibliotecas externas ni de SoundFonts instalados.
+    if object.get("schema_version").and_then(|v| v.as_str()) != Some("estudio-daw.project.v2") {
+        if let Some(tracks) = object.get_mut("tracks").and_then(|v| v.as_array_mut()) {
+            for track in tracks {
+                let Some(track) = track.as_object_mut() else {
+                    continue;
+                };
+                if track.get("kind").and_then(|v| v.as_str()) == Some("midi") {
+                    track
+                        .entry("instrument")
+                        .or_insert_with(|| serde_json::json!({ "backend": "sine" }));
+                }
+            }
+        }
+        object.insert(
+            "schema_version".into(),
+            serde_json::Value::String("estudio-daw.project.v2".into()),
+        );
     }
 
     Ok(serde_json::from_value(value)?)
@@ -844,6 +864,32 @@ pub struct Track {
     /// anteriores.
     #[serde(default)]
     pub media_source: Option<MediaSource>,
+    /// Fuente de sonido asignada a la pista MIDI. `None` conserva proyectos y
+    /// pistas sin instrumento hasta que el usuario elige uno explícitamente.
+    #[serde(default)]
+    pub instrument: Option<InstrumentConfig>,
+}
+
+/// Referencia portable a un banco local: el proyecto guarda la ruta/URI, nunca
+/// duplica el contenido potencialmente grande o sujeto a otra licencia.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct SoundFontReference {
+    pub path: String,
+    #[serde(default)]
+    pub sha256: Option<String>,
+}
+
+/// Configuración de instrumento persistible sin exponer detalles del backend
+/// nativo ni introducir dependencias de plataforma en el modelo portable.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(tag = "backend", rename_all = "snake_case")]
+pub enum InstrumentConfig {
+    Sine,
+    FluidSynth {
+        soundfont: SoundFontReference,
+        bank: u16,
+        program: u8,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -1093,6 +1139,7 @@ pub fn import_project_xml(xml: &str) -> Result<ImportResult, ProjectError> {
                     duration_beats: note.duration,
                 })
                 .collect();
+            let instrument = matches!(&kind, TrackKind::Midi).then_some(InstrumentConfig::Sine);
             Track {
                 id: track.id,
                 name: track.name,
@@ -1100,12 +1147,13 @@ pub fn import_project_xml(xml: &str) -> Result<ImportResult, ProjectError> {
                 notes,
                 audio_channels: track.channel.and_then(|c| c.audio_channels),
                 media_source: None,
+                instrument,
             }
         })
         .collect();
 
     let project = Project {
-        schema_version: "estudio-daw.project.v1".into(),
+        schema_version: "estudio-daw.project.v2".into(),
         project_id: "imported-dawproject".into(),
         transport: Transport {
             tempo_bpm: tempo,
@@ -1464,12 +1512,68 @@ mod tests {
 
         let project = load_project_json(legacy).unwrap();
 
-        assert_eq!(project.schema_version, "estudio-daw.project.v1");
+        assert_eq!(project.schema_version, "estudio-daw.project.v2");
         assert_eq!(project.project_id, "legacy-song");
         assert_eq!(project.tracks[0].name, "Voice");
         assert!(project.tracks[0].media_source.is_none());
+        assert!(project.tracks[0].instrument.is_none());
         assert!(project.midi_clips.is_empty());
         assert!(project.audio_clips.is_empty());
+    }
+
+    #[test]
+    fn migrates_v1_midi_tracks_to_explicit_sine_instrument() {
+        let v1 = br#"{
+            "schema_version":"estudio-daw.project.v1",
+            "project_id":"v1-song",
+            "transport":{"tempo_bpm":92.0,"time_signature":{"numerator":4,"denominator":4}},
+            "tracks":[{"id":"track-midi","name":"Keys","kind":"midi","notes":[]}],
+            "import_provenance":{"format":"estudio-daw","format_version":"1","source_file":"","warnings":[]}
+        }"#;
+
+        let project = load_project_json(v1).unwrap();
+
+        assert_eq!(project.schema_version, "estudio-daw.project.v2");
+        assert_eq!(project.tracks[0].instrument, Some(InstrumentConfig::Sine));
+    }
+
+    #[test]
+    fn serializes_soundfont_instrument_reference_without_embedding_asset() {
+        let config = InstrumentConfig::FluidSynth {
+            soundfont: SoundFontReference {
+                path: "/usr/share/soundfonts/FluidR3_GM.sf2".into(),
+                sha256: Some("sha256:abc123".into()),
+            },
+            bank: 0,
+            program: 0,
+        };
+
+        let encoded = serde_json::to_vec(&config).unwrap();
+        let decoded: InstrumentConfig = serde_json::from_slice(&encoded).unwrap();
+
+        assert_eq!(decoded, config);
+        assert!(!String::from_utf8(encoded).unwrap().contains("sample_data"));
+    }
+
+    #[test]
+    fn project_save_reopen_preserves_soundfont_reference_and_preset() {
+        let project_json = br#"{
+            "schema_version":"estudio-daw.project.v2",
+            "project_id":"soundfont-session",
+            "transport":{"tempo_bpm":92.0,"time_signature":{"numerator":4,"denominator":4}},
+            "tracks":[{
+                "id":"keys","name":"Keys","kind":"midi","notes":[],
+                "instrument":{"backend":"fluid_synth","soundfont":{"path":"/banks/keys.sf2","sha256":"sha256:deadbeef"},"bank":1,"program":10}
+            }],
+            "import_provenance":{"format":"estudio-daw","format_version":"2","source_file":"","warnings":[]}
+        }"#;
+
+        let opened = load_project_json(project_json).unwrap();
+        let saved = serde_json::to_vec(&opened).unwrap();
+        let reopened = load_project_json(&saved).unwrap();
+
+        assert_eq!(reopened.tracks[0].instrument, opened.tracks[0].instrument);
+        assert!(!String::from_utf8(saved).unwrap().contains("sample_data"));
     }
 
     #[test]

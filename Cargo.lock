@@ -1148,6 +1148,7 @@ name = "estudio-daw-synth"
 version = "0.1.0"
 dependencies = [
  "estudio-daw-audio-engine",
+ "libloading 0.8.9",
  "thiserror 2.0.21",
 ]
 

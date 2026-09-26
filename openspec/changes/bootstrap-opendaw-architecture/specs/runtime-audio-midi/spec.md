@@ -122,3 +122,29 @@ Estudio DAW debe separar la fuente maestra de los medios usados para edición y 
 - **Dado** un KeyLab y una AudioBox conectados, **cuando** se seleccionan sus perfiles, **entonces** los controles y entradas disponibles pueden mapearse, monitorizarse y probarse desde diagnóstico.
 - El benchmark registra tamaño de bloque, sample rate, xruns, latencia I/O y round-trip, con objetivo inicial <5 ms bajo una configuración documentada.
 - El benchmark compara rutas CPU/GPU/híbridas para FFT, convolución, render offline y análisis, incluyendo el coste de transferencia.
+
+## ADDED Requirements
+
+### Requirement: renderizado de grafo compilado
+El motor MUST compilar el grafo DSP fuera del hilo de audio a un plan topológico
+con buffers reservados antes de activar el stream.
+
+#### Scenario: el grafo contiene un ciclo inválido
+- WHEN se compila la sesión
+- THEN la operación falla antes del callback y el plan de renderizado anterior permanece utilizable.
+
+### Requirement: callback de audio acotado
+El callback MUST limitarse a operaciones acotadas sobre memoria preasignada; no
+puede bloquear, asignar memoria, acceder a disco/red ni invocar workers.
+
+#### Scenario: nodo de instrumento se queda sin PCM
+- WHEN el callback consume un bloque con el ring vacío o parcialmente lleno
+- THEN completa el resto con silencio y actualiza métricas sin esperar al worker.
+
+### Requirement: entrada MIDI aislada del render
+Los eventos MIDI MUST cruzar al render por una cola acotada con política
+explícita de overflow y métricas.
+
+#### Scenario: cola MIDI llena
+- WHEN la entrada publica un evento y no hay espacio
+- THEN el evento se descarta de forma contabilizada y el callback no se bloquea.
