@@ -66,6 +66,8 @@
 - [x] Conectar play/pause, stop y loop MIDI con el reproductor de takes.
 - [x] Añadir perfil del puerto DAW del KeyLab para Play (94), Stop (93) y
   Record (95).
+- [x] Exponer reproducción de clips de proyecto con control MIDI live mediante
+  `project-play-live`.
 - [x] Definir schema inicial de `project.json` para la fixture de interoperabilidad.
 - [ ] Definir entidades Track, Clip, Take, Device, Automation y AnalysisArtifact.
 - [ ] Definir relación original-proxy, timebase, canales y estado de disponibilidad.

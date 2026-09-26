@@ -22,6 +22,7 @@ fn usage() {
             "\n  estudio-daw-project midi-play-live <toma.json> [destino] [control]",
             "\n  estudio-daw-project midi-control-monitor [nombre]",
             "\n  estudio-daw-project project-play <proyecto.json> [clip-id] [destino]",
+            "\n  estudio-daw-project project-play-live <proyecto.json> [clip-id] [destino] [control]",
             "\n  estudio-daw-project midi-outputs"
     ));
 }
@@ -167,6 +168,23 @@ fn main() -> ExitCode {
                 args.next()
                     .map(|value| value.to_string_lossy().into_owned())
                     .unwrap_or_else(|| "FluidSynth".into()),
+            )
+        }
+        "project-play-live" => {
+            let Some(project) = args.next() else {
+                usage();
+                return ExitCode::from(2);
+            };
+            project_play_live_command(
+                project.into(),
+                args.next()
+                    .map(|value| value.to_string_lossy().into_owned()),
+                args.next()
+                    .map(|value| value.to_string_lossy().into_owned())
+                    .unwrap_or_else(|| "FluidSynth".into()),
+                args.next()
+                    .map(|value| value.to_string_lossy().into_owned())
+                    .unwrap_or_else(|| "KeyLab Essential 49 DAW".into()),
             )
         }
         _ => {
@@ -375,6 +393,35 @@ fn project_play_command(
     };
     println!("Clip seleccionado: {} ({})", clip.id, clip.name);
     play_midi_take_interactive(&clip.take, &destination)?;
+    Ok(())
+}
+
+/// Reproduce el primer clip del proyecto y conecta el transporte al puerto
+/// DAW del controlador MIDI. La resolución de proyecto y la reproducción
+/// siguen siendo las mismas; sólo cambia la fuente de comandos de transporte.
+fn project_play_live_command(
+    project_path: PathBuf,
+    clip_id: Option<String>,
+    destination: String,
+    control: String,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let project: Project = serde_json::from_slice(&fs::read(&project_path)?)?;
+    let clip = match clip_id {
+        Some(ref id) => project
+            .midi_clips
+            .iter()
+            .find(|clip| clip.id == *id)
+            .ok_or_else(|| format!("no existe el clip MIDI '{id}'"))?,
+        None => project
+            .midi_clips
+            .first()
+            .ok_or("el proyecto no contiene clips MIDI")?,
+    };
+    println!(
+        "Clip live seleccionado: {} ({}), control={control}",
+        clip.id, clip.name
+    );
+    play_midi_take_live(&clip.take, &destination, &control)?;
     Ok(())
 }
 
