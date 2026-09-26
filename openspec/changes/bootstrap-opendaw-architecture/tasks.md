@@ -24,6 +24,9 @@
 
 ## Preparación
 
+- [x] Completar Architecture Reset v2 con límites de crates, matriz tecnológica y fases.
+- [x] Registrar estrategia de modular monolith, CommandBus, ChangeSet y fallbacks.
+- [ ] Convertir las decisiones v2 en ADRs individuales con pruebas de aceptación.
 - [ ] Confirmar distribución Linux y backend de audio objetivo.
 - [ ] Registrar modelo exacto del KeyLab Essential y de la interfaz de audio.
 - [ ] Decidir licencia inicial del repositorio.
@@ -53,6 +56,8 @@
 
 ## Modelo de proyecto
 
+- [ ] Separar `Portable Domain` de `Platform Runtime` mediante crates y traits explícitos.
+- [ ] Definir `Session`, `TransportSnapshot`, `CommandBus` y `ChangeSet`.
 - [x] Definir schema inicial de `project.json` para la fixture de interoperabilidad.
 - [ ] Definir entidades Track, Clip, Take, Device, Automation y AnalysisArtifact.
 - [ ] Definir relación original-proxy, timebase, canales y estado de disponibilidad.

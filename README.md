@@ -631,6 +631,7 @@ Después se añadirán clips, escenas, Arrangement View, plugins, escalas, anál
 
 ## Documentación de planificación
 
+- [Architecture Reset v2](docs/architecture-v2.md)
 - [Propuesta inicial](openspec/changes/bootstrap-opendaw-architecture/proposal.md)
 - [Diseño](openspec/changes/bootstrap-opendaw-architecture/design.md)
 - [Especificación de audio y MIDI](openspec/changes/bootstrap-opendaw-architecture/specs/runtime-audio-midi/spec.md)
