@@ -5,6 +5,8 @@
 //! compilada y no resuelve dependencias ni crea buffers temporales.
 
 use estudio_daw_dsp::{DspError, EqBandConfig, Equalizer};
+use std::cell::UnsafeCell;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use thiserror::Error;
 
 pub trait AudioNode: Send {
@@ -29,6 +31,81 @@ pub struct AudioBlock {
     channels: usize,
     frames: usize,
     samples: Vec<f32>,
+}
+
+/// Ring SPSC de muestras para conectar captura y reproducción sin locks.
+///
+/// Sólo debe existir un productor y un consumidor. La memoria se reserva en
+/// `new`; `push` y `pop` no asignan, no bloquean y funcionan con índices
+/// atómicos. Es el buffer que usará el backend duplex entre callbacks.
+pub struct SampleRingBuffer {
+    samples: Box<[UnsafeCell<f32>]>,
+    capacity: usize,
+    read: AtomicUsize,
+    write: AtomicUsize,
+}
+
+// Seguridad: el contrato SPSC garantiza que productor y consumidor nunca
+// escriben/leen simultáneamente la misma celda. Los índices atómicos publican
+// las muestras con Release/Acquire antes de que el otro hilo las observe.
+unsafe impl Send for SampleRingBuffer {}
+unsafe impl Sync for SampleRingBuffer {}
+
+impl SampleRingBuffer {
+    pub fn new(capacity: usize) -> Self {
+        assert!(capacity > 0, "un ring de audio necesita capacidad");
+        let mut samples = Vec::with_capacity(capacity);
+        for _ in 0..capacity {
+            samples.push(UnsafeCell::new(0.0));
+        }
+        Self {
+            samples: samples.into_boxed_slice(),
+            capacity,
+            read: AtomicUsize::new(0),
+            write: AtomicUsize::new(0),
+        }
+    }
+
+    pub fn capacity(&self) -> usize {
+        self.capacity
+    }
+
+    pub fn available(&self) -> usize {
+        self.write
+            .load(Ordering::Acquire)
+            .saturating_sub(self.read.load(Ordering::Acquire))
+            .min(self.capacity)
+    }
+
+    pub fn push(&self, input: &[f32]) -> usize {
+        let write = self.write.load(Ordering::Relaxed);
+        let read = self.read.load(Ordering::Acquire);
+        let writable = self.capacity - write.saturating_sub(read).min(self.capacity);
+        let count = input.len().min(writable);
+        for (offset, sample) in input.iter().take(count).enumerate() {
+            let index = (write + offset) % self.capacity;
+            // SAFETY: sólo el productor escribe la posición antes de publicar
+            // el nuevo índice `write` con Release.
+            unsafe { *self.samples[index].get() = *sample };
+        }
+        self.write.store(write + count, Ordering::Release);
+        count
+    }
+
+    pub fn pop(&self, output: &mut [f32]) -> usize {
+        let read = self.read.load(Ordering::Relaxed);
+        let write = self.write.load(Ordering::Acquire);
+        let readable = write.saturating_sub(read).min(self.capacity);
+        let count = output.len().min(readable);
+        for (offset, sample) in output.iter_mut().take(count).enumerate() {
+            let index = (read + offset) % self.capacity;
+            // SAFETY: sólo el consumidor lee la posición antes de publicar
+            // el nuevo índice `read` con Release.
+            unsafe { *sample = *self.samples[index].get() };
+        }
+        self.read.store(read + count, Ordering::Release);
+        count
+    }
 }
 
 impl AudioBlock {
@@ -298,5 +375,26 @@ mod tests {
             AudioBlock::new(2, 0),
             Err(AudioBlockError::InvalidFrameCount)
         );
+    }
+
+    #[test]
+    fn ring_transfers_samples_without_allocating_after_construction() {
+        let ring = SampleRingBuffer::new(4);
+        assert_eq!(ring.push(&[1.0, 2.0, 3.0]), 3);
+        let mut output = [0.0; 2];
+        assert_eq!(ring.pop(&mut output), 2);
+        assert_eq!(output, [1.0, 2.0]);
+        assert_eq!(ring.push(&[4.0, 5.0, 6.0]), 3);
+        let mut rest = [0.0; 4];
+        assert_eq!(ring.pop(&mut rest), 4);
+        assert_eq!(rest, [3.0, 4.0, 5.0, 6.0]);
+    }
+
+    #[test]
+    fn ring_drops_new_samples_when_full_instead_of_blocking() {
+        let ring = SampleRingBuffer::new(2);
+        assert_eq!(ring.push(&[1.0, 2.0, 3.0]), 2);
+        assert_eq!(ring.available(), 2);
+        assert_eq!(ring.push(&[4.0]), 0);
     }
 }
