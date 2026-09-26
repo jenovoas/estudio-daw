@@ -543,6 +543,84 @@ pub fn record_alsa_midi(
     Ok(take)
 }
 
+/// Graba MIDI hasta que el botón Record del puerto DAW vuelve a pulsarse.
+///
+/// El teclado musical y sus controles DAW pueden ser puertos ALSA distintos.
+/// Ambos se suscriben al mismo puerto local, pero sólo los eventos del puerto
+/// musical entran en la toma. El botón Record únicamente cambia el estado del
+/// recorder y nunca se guarda como nota musical.
+pub fn record_alsa_midi_live(
+    input_query: &str,
+    control_query: &str,
+    tempo_bpm: u32,
+) -> Result<MidiTake, LiveRecordError> {
+    let seq = Seq::open(None, None, true)?;
+    let Some((input_source, input_label)) = find_alsa_midi_port(input_query)? else {
+        return Err(LiveRecordError::Discovery(
+            estudio_daw_runtime_diagnostics::DiagnosticsError::PipeWire(format!(
+                "no se encontró entrada MIDI para '{input_query}'"
+            )),
+        ));
+    };
+    let Some((control_source, control_label)) = find_alsa_midi_port(control_query)? else {
+        return Err(LiveRecordError::Discovery(
+            estudio_daw_runtime_diagnostics::DiagnosticsError::PipeWire(format!(
+                "no se encontró control MIDI para '{control_query}'"
+            )),
+        ));
+    };
+    let client_name = CString::new("Estudio DAW Live MIDI Recorder").expect("literal sin NUL");
+    seq.set_client_name(&client_name)?;
+    let port_name = CString::new("live-recording-input").expect("literal sin NUL");
+    let local_port = seq.create_simple_port(
+        &port_name,
+        PortCap::WRITE | PortCap::SUBS_WRITE,
+        PortType::MIDI_GENERIC | PortType::APPLICATION,
+    )?;
+
+    for source in [input_source, control_source] {
+        let subscription = alsa::seq::PortSubscribe::empty()?;
+        subscription.set_sender(source);
+        subscription.set_dest(alsa::seq::Addr {
+            client: seq.client_id()?,
+            port: local_port,
+        });
+        seq.subscribe_port(&subscription)?;
+    }
+
+    println!(
+        "Listo para grabar: MIDI={input_label}; control={control_label}. Pulsa Record para iniciar y detener."
+    );
+    let control_map = MidiControlMap::keylab_daw_defaults();
+    let mut recorder = MidiRecorder::new(tempo_bpm, DEFAULT_PPQ);
+    let mut recording = false;
+    let mut input = seq.input();
+    loop {
+        if input.event_input_pending(true)? == 0 {
+            thread::sleep(Duration::from_millis(1));
+            continue;
+        }
+        let event = input.event_input()?;
+        let normalized = normalize_alsa_event(&event);
+        if event.get_source() == control_source {
+            if let Some(command) = control_map.resolve(&normalized) {
+                if command.action == MidiControlAction::ToggleRecord {
+                    if recording {
+                        let take = recorder.stop()?;
+                        println!("Toma live finalizada: {} eventos.", take.events.len());
+                        return Ok(take);
+                    }
+                    recorder.start()?;
+                    recording = true;
+                    println!("Grabación live iniciada.");
+                }
+            }
+        } else if recording {
+            recorder.record(&normalized)?;
+        }
+    }
+}
+
 /// Ejecuta el mapa de control MIDI sobre una entrada ALSA.
 ///
 /// El callback recibe comandos de sesión, no eventos ALSA. Esto permite que

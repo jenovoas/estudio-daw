@@ -68,6 +68,8 @@
   Record (95).
 - [x] Exponer reproducción de clips de proyecto con control MIDI live mediante
   `project-play-live`.
+- [x] Permitir iniciar y detener una grabación MIDI desde el botón Record del
+  puerto DAW con `midi-record-live`.
 - [x] Definir schema inicial de `project.json` para la fixture de interoperabilidad.
 - [ ] Definir entidades Track, Clip, Take, Device, Automation y AnalysisArtifact.
 - [ ] Definir relación original-proxy, timebase, canales y estado de disponibilidad.

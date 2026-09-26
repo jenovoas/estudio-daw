@@ -2,7 +2,7 @@ use std::{env, fs, path::PathBuf, process::ExitCode};
 
 use estudio_daw_midi_engine::{
     play_midi_take, play_midi_take_interactive, play_midi_take_live, record_alsa_midi,
-    run_alsa_midi_control, LiveSessionState, MidiControlMap, MidiTake,
+    record_alsa_midi_live, run_alsa_midi_control, LiveSessionState, MidiControlMap, MidiTake,
 };
 use estudio_daw_project_model::{
     attach_midi_take, export_dawproject, import_dawproject, quantize_midi_clip, Project,
@@ -14,7 +14,7 @@ use std::time::Duration;
 
 fn usage() {
     eprintln!(concat!(
-        "Uso:\n  estudio-daw-project devices\n  estudio-daw-project midi-monitor [nombre]\n  estudio-daw-project midi-record <segundos> <salida.json> [nombre]\n  estudio-daw-project audio-test\n  estudio-daw-project import <entrada.dawproject> <salida.json>\n  estudio-daw-project export <entrada.json> <salida.dawproject>",
+        "Uso:\n  estudio-daw-project devices\n  estudio-daw-project midi-monitor [nombre]\n  estudio-daw-project midi-record <segundos> <salida.json> [nombre]\n  estudio-daw-project midi-record-live <salida.json> [entrada] [control]\n  estudio-daw-project audio-test\n  estudio-daw-project import <entrada.dawproject> <salida.json>\n  estudio-daw-project export <entrada.json> <salida.dawproject>",
             "\n  estudio-daw-project attach-take <toma.json> <proyecto.json> <salida.json> [nombre]",
         "\n  estudio-daw-project quantize <proyecto.json> <clip-id> <rejilla-ticks> <salida.json>",
             "\n  estudio-daw-project midi-summary <proyecto.json>",
@@ -55,6 +55,21 @@ fn main() -> ExitCode {
                 output.into(),
                 args.next()
                     .map(|value| value.to_string_lossy().into_owned()),
+            )
+        }
+        "midi-record-live" => {
+            let Some(output) = args.next() else {
+                usage();
+                return ExitCode::from(2);
+            };
+            midi_record_live_command(
+                output.into(),
+                args.next()
+                    .map(|value| value.to_string_lossy().into_owned())
+                    .unwrap_or_else(|| "KeyLab Essential 49 MID".into()),
+                args.next()
+                    .map(|value| value.to_string_lossy().into_owned())
+                    .unwrap_or_else(|| "KeyLab Essential 49 DAW".into()),
             )
         }
         "import" | "export" => {
@@ -365,6 +380,17 @@ fn midi_play_command(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let take: MidiTake = serde_json::from_slice(&fs::read(&take_path)?)?;
     play_midi_take(&take, &destination)?;
+    Ok(())
+}
+
+fn midi_record_live_command(
+    output_path: PathBuf,
+    input_query: String,
+    control_query: String,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let take = record_alsa_midi_live(&input_query, &control_query, 120)?;
+    fs::write(&output_path, serde_json::to_string_pretty(&take)?)?;
+    println!("Toma live guardada en {}", output_path.display());
     Ok(())
 }
 
