@@ -178,8 +178,12 @@ pub struct CommandRuntime {
 
 impl CommandRuntime {
     pub fn new(project: Project) -> Self {
+        // El tempo vive en el modelo persistente; iniciar siempre a 120 BPM
+        // haría que la primera sesión abierta ignorara la tonalidad temporal.
+        let mut session = Session::default();
+        session.apply(SessionCommand::SetTempo(project.transport.tempo_bpm));
         Self {
-            session: Session::default(),
+            session,
             project_history: ProjectHistory::new(project),
             events: Vec::new(),
         }
@@ -193,6 +197,16 @@ impl CommandRuntime {
                 .snapshot()
                 .expect("el runtime siempre contiene un proyecto"),
         }
+    }
+
+    /// Permite a la UI habilitar/deshabilitar Undo sin inspeccionar el historial.
+    pub fn can_undo(&self) -> bool {
+        self.project_history.can_undo()
+    }
+
+    /// Permite a la UI habilitar/deshabilitar Redo sin inspeccionar el historial.
+    pub fn can_redo(&self) -> bool {
+        self.project_history.can_redo()
     }
 
     pub fn drain_events(&mut self) -> Vec<DomainEvent> {

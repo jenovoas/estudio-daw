@@ -52,11 +52,15 @@ Las mutaciones del proyecto generan `ProjectEvent` dentro de un
 
 - El crate tiene el runtime de dominio y una cola bounded en memoria; todavía no
   es un log durable de comandos.
+- `estudio-daw-application` es la fachada de ciclo de vida: mantiene vivo el
+  runtime para que una sesión UI pueda encadenar comandos y undo/redo, y publica
+  eventos/snapshots junto con abrir/guardar proyecto. La persistencia guarda el
+  estado resultante, no serializa el stack de undo entre cierres.
 - La CLI está aislada en `estudio-daw-cli`, por fuera del modelo portable. Sus
-  comandos `attach-take`, `quantize`, `attach-media` y `add-audio-clip` ya se
-  enrutan mediante `DomainCommandBus`; import/export, generación de proxies y
+  comandos `attach-take`, `quantize`, `attach-media` y `add-audio-clip` delegan
+  ahora en la misma API de aplicación; import/export, generación de proxies y
   operaciones de dispositivos siguen siendo adaptadores directos porque también
-  coordinan archivos o servicios del sistema.
+  coordinan formatos, archivos o servicios del sistema.
 - La API de comandos se ampliará según las tareas aprobadas; no implica que toda
   mutación existente ya esté migrada.
 - El callback RT no envía comandos a esta cola ni ejecuta `drain_into`.

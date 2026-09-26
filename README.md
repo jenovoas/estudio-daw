@@ -588,6 +588,7 @@ estudio-daw/
 │   ├── audio-engine/ grafo DSP y RenderPlan
 │   ├── dsp/       procesamiento DSP modular
 │   ├── command-bus/ comandos de dominio versionados
+│   ├── application/ ciclo de vida y API común para UI/CLI
 │   └── cli/       adaptador CLI (ejecutable estudio-daw-project)
 ├── python/       workers de análisis
 ├── schemas/      contratos versionados
@@ -645,6 +646,8 @@ Después se añadirán clips, escenas, Arrangement View, plugins, escalas, anál
 
 - [Architecture Reset v2](docs/architecture-v2.md)
 - [Estado de sesión y CommandBus](docs/session-command-bus.md)
+- [API de aplicación y ciclo de proyecto](docs/application-api.md)
+- [Bus de comandos del dominio](docs/domain-command-bus.md)
 - [Audio RenderPlan](docs/audio-render-plan.md)
 - [Backend PipeWire](docs/audio-pipewire.md)
 - [MediaSource y proxies](docs/proxy-assets.md)

@@ -8,9 +8,9 @@ operaciones que usará la UI.
 ```text
 UI nativa / WASM / CLI / scripting
               ↓
-      Application Command API
+  `estudio-daw-application`
               ↓
-   Project model + Session + Audio engine
+  CommandBus → Project + Session models
               ↓
       Platform adapters (PipeWire, MIDI, ffmpeg)
 ```
@@ -31,3 +31,11 @@ dominio. `ProjectHistory::transact()` ya las puede envolver en un
 que refrescar su snapshot. `ProjectSnapshot` incluye una revisión monotónica y
 `drain_events()` entrega eventos de commit, undo y redo para actualizar sólo
 los paneles afectados.
+
+La crate `estudio-daw-application` concreta la frontera superior: conserva
+`CommandRuntime` y su historial mientras el proyecto permanece abierto, valida y
+despacha envelopes, y expone eventos y snapshots sin hacer visible
+`ProjectHistory`. También centraliza `open`, `save`, `save_as` y el reemplazo
+atómico del JSON. Una UI debe conservar una instancia de `ProjectApplication`
+durante toda la sesión; volver a abrir el archivo inicia un historial nuevo desde
+el último estado guardado.

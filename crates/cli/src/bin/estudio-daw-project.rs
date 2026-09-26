@@ -4,14 +4,13 @@
 
 use std::{env, fs, path::PathBuf, process::ExitCode};
 
+use estudio_daw_application::{
+    CommandEnvelope, CommandMetadata, DomainCommand, ProjectApplication, ProjectCommand,
+};
 use estudio_daw_audio_engine::{EqBandConfig, EqualizerNode, RenderPlanBuilder};
 use estudio_daw_audio_platform::{
     run_pipewire_duplex_for_targets, run_pipewire_duplex_for_targets_with_capture,
     PipeWireStreamConfig, PipeWireTargets, WavCaptureRecorder,
-};
-use estudio_daw_command_bus::{
-    CommandEnvelope, CommandMetadata, CommandRuntime, DomainCommand, DomainCommandBus,
-    ProjectCommand,
 };
 use estudio_daw_midi_engine::{
     play_midi_take, play_midi_take_interactive, play_midi_take_live, record_alsa_midi,
@@ -709,22 +708,13 @@ fn apply_project_command_file(
     command_id: &str,
     command: ProjectCommand,
 ) -> Result<Project, Box<dyn std::error::Error>> {
-    let project: Project = serde_json::from_slice(&fs::read(input_path)?)?;
-    let mut runtime = CommandRuntime::new(project);
-    let bus = DomainCommandBus::bounded(1);
-    bus.dispatch(CommandEnvelope {
+    let mut application = ProjectApplication::open(input_path)?;
+    application.dispatch(CommandEnvelope {
         metadata: CommandMetadata::user(command_id),
         command: DomainCommand::Project(command),
     })?;
-    let report = bus.drain_into(&mut runtime);
-    if let Some(diagnostic) = report.rejected.into_iter().next() {
-        return Err(std::io::Error::other(diagnostic.message).into());
-    }
-    if report.applied != 1 {
-        return Err("el bus no aplicó exactamente un comando".into());
-    }
-    let project = runtime.snapshot().project.project;
-    fs::write(output_path, serde_json::to_vec_pretty(&project)?)?;
+    let project = application.snapshot().project.project;
+    application.save_to(output_path)?;
     Ok(project)
 }
 
