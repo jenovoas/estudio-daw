@@ -76,6 +76,10 @@ cargo run -q -p estudio-daw-project-model --bin estudio-daw-project -- audio-tes
 Si el entorno no permite acceder al servidor PipeWire, el comando informa el
 error de permisos/conexión sin ocultarlo.
 
+También reporta muestras por callback y totales de captura/salida. Esos datos
+permiten detectar una negociación de quantum inesperada antes de ajustar el
+ring o atribuir un problema a la AudioBox.
+
 ## Dependencia de sistema
 
 La compilación usa las bindings oficiales `pipewire-rs` y requiere las

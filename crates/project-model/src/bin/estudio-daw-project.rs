@@ -313,9 +313,16 @@ fn audio_test_command() -> Result<(), Box<dyn std::error::Error>> {
         },
     )?;
     println!(
-        "Callbacks: captura={} salida={}; muestras descartadas={} silencio de salida={}",
+        "Callbacks: captura={} salida={}; muestras/callback: captura={} salida={}",
         report.capture_callbacks,
         report.output_callbacks,
+        report.capture_last_samples,
+        report.output_last_samples
+    );
+    println!(
+        "Muestras totales: captura={} salida={}; descartadas={} silencio de salida={}",
+        report.capture_total_samples,
+        report.output_total_samples,
         report.capture_dropped_samples,
         report.output_silence_samples
     );

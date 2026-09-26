@@ -50,6 +50,10 @@ pub enum PipeWireError {
 pub struct PipeWireDuplexReport {
     pub capture_callbacks: u64,
     pub output_callbacks: u64,
+    pub capture_total_samples: u64,
+    pub output_total_samples: u64,
+    pub capture_last_samples: u64,
+    pub output_last_samples: u64,
     pub capture_dropped_samples: u64,
     pub output_silence_samples: u64,
 }
@@ -195,8 +199,12 @@ fn run_pipewire_duplex_internal(
         config.channels as usize * config.max_buffer_frames * 4,
     ));
     let capture_callbacks = Arc::new(AtomicU64::new(0));
+    let capture_total_samples = Arc::new(AtomicU64::new(0));
+    let capture_last_samples = Arc::new(AtomicU64::new(0));
     let capture_dropped_samples = Arc::new(AtomicU64::new(0));
     let output_callbacks = Arc::new(AtomicU64::new(0));
+    let output_total_samples = Arc::new(AtomicU64::new(0));
+    let output_last_samples = Arc::new(AtomicU64::new(0));
     let output_silence_samples = Arc::new(AtomicU64::new(0));
 
     let mut capture_properties = properties! {
@@ -212,6 +220,8 @@ fn run_pipewire_duplex_internal(
         pw::stream::StreamBox::new(&core, "estudio-daw-input", capture_properties)?;
     let capture_ring = Arc::clone(&ring);
     let capture_callbacks_counter = Arc::clone(&capture_callbacks);
+    let capture_total_counter = Arc::clone(&capture_total_samples);
+    let capture_last_counter = Arc::clone(&capture_last_samples);
     let capture_dropped_counter = Arc::clone(&capture_dropped_samples);
     let _capture_listener = capture_stream
         .add_local_listener_with_user_data(())
@@ -229,6 +239,8 @@ fn run_pipewire_duplex_internal(
             let valid_bytes = valid_bytes.min(bytes.len());
             let (_, samples, _) = unsafe { bytes[..valid_bytes].align_to::<f32>() };
             capture_callbacks_counter.fetch_add(1, Ordering::Relaxed);
+            capture_total_counter.fetch_add(samples.len() as u64, Ordering::Relaxed);
+            capture_last_counter.store(samples.len() as u64, Ordering::Relaxed);
             let pushed = capture_ring.push(samples);
             capture_dropped_counter.fetch_add((samples.len() - pushed) as u64, Ordering::Relaxed);
         })
@@ -246,6 +258,8 @@ fn run_pipewire_duplex_internal(
     let output_stream = pw::stream::StreamBox::new(&core, "estudio-daw-output", output_properties)?;
     let output_ring = Arc::clone(&ring);
     let output_callbacks_counter = Arc::clone(&output_callbacks);
+    let output_total_counter = Arc::clone(&output_total_samples);
+    let output_last_counter = Arc::clone(&output_last_samples);
     let output_silence_counter = Arc::clone(&output_silence_samples);
     let _output_listener = output_stream
         .add_local_listener_with_user_data(())
@@ -268,6 +282,8 @@ fn run_pipewire_duplex_internal(
                 .min(bytes.len());
             let (_, samples, _) = unsafe { bytes[..valid_bytes].align_to_mut::<f32>() };
             output_callbacks_counter.fetch_add(1, Ordering::Relaxed);
+            output_total_counter.fetch_add(samples.len() as u64, Ordering::Relaxed);
+            output_last_counter.store(samples.len() as u64, Ordering::Relaxed);
             let copied = output_ring.pop(samples);
             samples[copied..].fill(0.0);
             output_silence_counter.fetch_add((samples.len() - copied) as u64, Ordering::Relaxed);
@@ -308,6 +324,10 @@ fn run_pipewire_duplex_internal(
     Ok(PipeWireDuplexReport {
         capture_callbacks: capture_callbacks.load(Ordering::Relaxed),
         output_callbacks: output_callbacks.load(Ordering::Relaxed),
+        capture_total_samples: capture_total_samples.load(Ordering::Relaxed),
+        output_total_samples: output_total_samples.load(Ordering::Relaxed),
+        capture_last_samples: capture_last_samples.load(Ordering::Relaxed),
+        output_last_samples: output_last_samples.load(Ordering::Relaxed),
         capture_dropped_samples: capture_dropped_samples.load(Ordering::Relaxed),
         output_silence_samples: output_silence_samples.load(Ordering::Relaxed),
     })
