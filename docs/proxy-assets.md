@@ -28,6 +28,10 @@ rename atómico. `hydrate_source()` permite reconstruir el `ProxyAsset` después
 de reiniciar el DAW y vuelve a clasificarlo como `Ready` o `Stale` según la
 fuente actual.
 
+Las pistas de audio contienen ahora un `media_source` opcional dentro del
+modelo `Track`. `attach_media_source()` sólo permite asociarlo a pistas de
+audio; las pistas MIDI permanecen libres de rutas y metadatos de medios.
+
 La resolución sólo selecciona una ruta; no copia, modifica ni re-encodea ningún
 archivo. Si el original cambió, la firma del proxy deja de coincidir y el
 proxy se considera obsoleto. La firma inicial es una comprobación barata de

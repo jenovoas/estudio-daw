@@ -620,6 +620,11 @@ pub struct Track {
     pub kind: TrackKind,
     pub notes: Vec<Note>,
     pub audio_channels: Option<u32>,
+    /// Procedencia original/proxy de una pista de audio. Las pistas MIDI no
+    /// deben usar este campo; `None` conserva compatibilidad con project.json
+    /// anteriores.
+    #[serde(default)]
+    pub media_source: Option<MediaSource>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -641,6 +646,14 @@ pub enum MidiEditError {
     ClipNotFound(String),
     #[error("la rejilla de cuantización debe ser mayor que cero")]
     InvalidGrid,
+}
+
+#[derive(Debug, Error, PartialEq, Eq)]
+pub enum MediaAttachError {
+    #[error("no existe la pista '{0}'")]
+    TrackNotFound(String),
+    #[error("la pista '{0}' no es de audio")]
+    NotAudioTrack(String),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -833,6 +846,7 @@ pub fn import_project_xml(xml: &str) -> Result<ImportResult, ProjectError> {
                 kind,
                 notes,
                 audio_channels: track.channel.and_then(|c| c.audio_channels),
+                media_source: None,
             }
         })
         .collect();
@@ -854,6 +868,24 @@ pub fn import_project_xml(xml: &str) -> Result<ImportResult, ProjectError> {
         },
     };
     Ok(ImportResult { project, warnings })
+}
+
+/// Asocia una fuente de audio a una pista sin tocar el archivo original.
+pub fn attach_media_source(
+    project: &mut Project,
+    track_id: &str,
+    source: MediaSource,
+) -> Result<(), MediaAttachError> {
+    let track = project
+        .tracks
+        .iter_mut()
+        .find(|track| track.id == track_id)
+        .ok_or_else(|| MediaAttachError::TrackNotFound(track_id.into()))?;
+    if track.kind != TrackKind::Audio {
+        return Err(MediaAttachError::NotAudioTrack(track_id.into()));
+    }
+    track.media_source = Some(source);
+    Ok(())
 }
 
 /// Adjunta una toma MIDI a la primera pista MIDI disponible.
@@ -1232,6 +1264,42 @@ mod tests {
             .unwrap();
         assert!(audio.notes.is_empty());
         assert_eq!(audio.audio_channels, Some(1));
+    }
+
+    #[test]
+    fn attaches_media_source_only_to_audio_tracks_and_survives_json() {
+        let mut project = import_dawproject("../../tests/fixtures/dawproject/minimal.dawproject")
+            .unwrap()
+            .project;
+        let audio_id = project
+            .tracks
+            .iter()
+            .find(|track| track.kind == TrackKind::Audio)
+            .unwrap()
+            .id
+            .clone();
+        let original = std::env::temp_dir().join(format!(
+            "estudio-daw-track-source-{}.wav",
+            std::process::id()
+        ));
+        std::fs::write(&original, b"audio").unwrap();
+        let source = MediaSource::from_original(&original).unwrap();
+        attach_media_source(&mut project, &audio_id, source).unwrap();
+        let json = serde_json::to_vec(&project).unwrap();
+        let restored: Project = serde_json::from_slice(&json).unwrap();
+        assert_eq!(
+            restored
+                .tracks
+                .iter()
+                .find(|track| track.id == audio_id)
+                .unwrap()
+                .media_source
+                .as_ref()
+                .unwrap()
+                .original_path,
+            original
+        );
+        std::fs::remove_file(original).unwrap();
     }
 
     #[test]

@@ -56,6 +56,8 @@
   proxies `ready`.
 - [x] Persistir el manifiesto de proxies con escritura atómica y restaurarlo al
   cargar una sesión.
+- [x] Integrar `MediaSource` en `Track` de audio con serialización JSON y
+  validación de tipo de pista.
 - [ ] Definir scheduler híbrido CPU/GPU, presupuestos de transferencia y fallback CPU.
 - [ ] Crear backend de cómputo `wgpu`/Vulkan fuera del callback de audio.
 - [ ] Benchmark CPU/GPU para FFT, convolución, time-stretch, render y análisis.
