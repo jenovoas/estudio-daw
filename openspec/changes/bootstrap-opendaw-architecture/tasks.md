@@ -47,7 +47,7 @@
 - [x] Añadir captura de audio a WAV mediante ring SPSC y escritor fuera del
   callback RT.
 - [x] Añadir captura MIDI a un modelo de evento y toma temporal.
-- [ ] Implementar `MediaSource`/`ProxyAsset` y política original/proxy/auto.
+- [x] Implementar `MediaSource`/`ProxyAsset` y política original/proxy/auto.
 - [ ] Crear jobs de proxy con hash, perfil, validación, regeneración y limpieza segura.
 - [ ] Definir scheduler híbrido CPU/GPU, presupuestos de transferencia y fallback CPU.
 - [ ] Crear backend de cómputo `wgpu`/Vulkan fuera del callback de audio.

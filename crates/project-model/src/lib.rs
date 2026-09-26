@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use std::{
     fs::File,
     io::{Cursor, Read, Write},
-    path::Path,
+    path::{Path, PathBuf},
 };
 use thiserror::Error;
 use zip::{write::SimpleFileOptions, ZipArchive, ZipWriter};
@@ -22,6 +22,115 @@ pub enum ProjectError {
     Zip(#[from] zip::result::ZipError),
     #[error("XML inválido: {0}")]
     Xml(#[from] quick_xml::DeError),
+}
+
+/// Política que decide qué representación se usa durante reproducción o
+/// edición. El original nunca se reemplaza ni se modifica por el proxy.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum ProxyPolicy {
+    Original,
+    Proxy,
+    Auto,
+}
+
+/// Fuente persistente de un medio y su representación ligera opcional.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MediaSource {
+    pub original_path: PathBuf,
+    /// Firma de procedencia calculada cuando se incorpora el archivo.
+    /// La implementación inicial usa tamaño y fecha; el hash de contenido
+    /// completo se añadirá al job de generación de proxies.
+    pub original_signature: String,
+    #[serde(default)]
+    pub proxy: Option<ProxyAsset>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ProxyAsset {
+    pub path: PathBuf,
+    pub source_signature: String,
+    pub profile: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MediaRepresentation {
+    Original,
+    Proxy,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ResolvedMedia {
+    pub path: PathBuf,
+    pub representation: MediaRepresentation,
+}
+
+#[derive(Debug, Error, PartialEq, Eq)]
+pub enum MediaResolveError {
+    #[error("el archivo original no existe: {0}")]
+    OriginalMissing(PathBuf),
+    #[error("no hay un proxy válido disponible")]
+    ProxyUnavailable,
+}
+
+impl MediaSource {
+    pub fn from_original(path: impl Into<PathBuf>) -> Result<Self, std::io::Error> {
+        let path = path.into();
+        Ok(Self {
+            original_signature: media_signature(&path)?,
+            original_path: path,
+            proxy: None,
+        })
+    }
+
+    /// Resuelve la representación sin copiar, re-encodear ni modificar medios.
+    pub fn resolve(&self, policy: ProxyPolicy) -> Result<ResolvedMedia, MediaResolveError> {
+        let proxy_is_valid = self.proxy.as_ref().is_some_and(|proxy| {
+            proxy.source_signature == self.original_signature && proxy.path.is_file()
+        });
+        match policy {
+            ProxyPolicy::Original if self.original_path.is_file() => Ok(ResolvedMedia {
+                path: self.original_path.clone(),
+                representation: MediaRepresentation::Original,
+            }),
+            ProxyPolicy::Proxy if proxy_is_valid => Ok(ResolvedMedia {
+                path: self
+                    .proxy
+                    .as_ref()
+                    .expect("proxy_is_valid implica proxy")
+                    .path
+                    .clone(),
+                representation: MediaRepresentation::Proxy,
+            }),
+            ProxyPolicy::Auto if proxy_is_valid => Ok(ResolvedMedia {
+                path: self
+                    .proxy
+                    .as_ref()
+                    .expect("proxy_is_valid implica proxy")
+                    .path
+                    .clone(),
+                representation: MediaRepresentation::Proxy,
+            }),
+            ProxyPolicy::Auto if self.original_path.is_file() => Ok(ResolvedMedia {
+                path: self.original_path.clone(),
+                representation: MediaRepresentation::Original,
+            }),
+            ProxyPolicy::Original | ProxyPolicy::Auto => Err(MediaResolveError::OriginalMissing(
+                self.original_path.clone(),
+            )),
+            ProxyPolicy::Proxy => Err(MediaResolveError::ProxyUnavailable),
+        }
+    }
+}
+
+/// Firma barata para invalidar proxies cuando cambia el archivo fuente.
+pub fn media_signature(path: impl AsRef<Path>) -> Result<String, std::io::Error> {
+    let metadata = std::fs::metadata(path.as_ref())?;
+    let modified = metadata
+        .modified()?
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default();
+    Ok(format!("{}:{}", metadata.len(), modified.as_nanos()))
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -493,6 +602,58 @@ mod tests {
             .iter()
             .any(|warning| warning.contains("plugins")));
         assert!(result.project.midi_clips.is_empty());
+    }
+
+    #[test]
+    fn auto_policy_prefers_fresh_proxy_and_never_changes_original() {
+        let root = std::env::temp_dir().join(format!("estudio-daw-proxy-{}", std::process::id()));
+        let original = root.join("original.wav");
+        let proxy = root.join("proxy.wav");
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(&original, b"original").unwrap();
+        std::fs::write(&proxy, b"proxy").unwrap();
+        let mut source = MediaSource::from_original(&original).unwrap();
+        source.proxy = Some(ProxyAsset {
+            path: proxy.clone(),
+            source_signature: source.original_signature.clone(),
+            profile: "audio-preview-f32".into(),
+        });
+
+        let resolved = source.resolve(ProxyPolicy::Auto).unwrap();
+        assert_eq!(resolved.path, proxy);
+        assert_eq!(resolved.representation, MediaRepresentation::Proxy);
+        assert_eq!(std::fs::read(&original).unwrap(), b"original");
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn stale_proxy_is_rejected_and_original_policy_is_explicit() {
+        let root =
+            std::env::temp_dir().join(format!("estudio-daw-stale-proxy-{}", std::process::id()));
+        let original = root.join("original.wav");
+        let proxy = root.join("proxy.wav");
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(&original, b"original").unwrap();
+        std::fs::write(&proxy, b"proxy").unwrap();
+        let mut source = MediaSource::from_original(&original).unwrap();
+        source.proxy = Some(ProxyAsset {
+            path: proxy,
+            source_signature: "stale-signature".into(),
+            profile: "audio-preview-f32".into(),
+        });
+
+        assert_eq!(
+            source.resolve(ProxyPolicy::Proxy),
+            Err(MediaResolveError::ProxyUnavailable)
+        );
+        assert_eq!(
+            source
+                .resolve(ProxyPolicy::Original)
+                .unwrap()
+                .representation,
+            MediaRepresentation::Original
+        );
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
