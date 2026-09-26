@@ -10,10 +10,19 @@ use std::{hint::black_box, time::Instant};
 fn main() {
     let fft_micros = benchmark_fft(1024, 100);
     let convolution_micros = benchmark_convolution(65_536, 64, 3);
+    let profile = if cfg!(debug_assertions) {
+        "debug (no apto para comparar rendimiento)"
+    } else {
+        "release"
+    };
     println!("Estudio DAW compute baseline (CPU)");
+    println!("build_profile={profile}");
     println!("fft_1024_us={fft_micros}");
     println!("convolution_65536x64_us={convolution_micros}");
     println!("Estos valores calibrarán el scheduler cuando exista backend GPU.");
+    if cfg!(debug_assertions) {
+        println!("Para mediciones válidas: cargo run --release -p estudio-daw-compute-runtime --bin compute-benchmark");
+    }
 }
 
 /// FFT radix-2 CPU que comparte implementación con el runtime.
