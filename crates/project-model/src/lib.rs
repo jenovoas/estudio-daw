@@ -588,6 +588,8 @@ pub struct Project {
     pub tracks: Vec<Track>,
     #[serde(default)]
     pub midi_clips: Vec<MidiClip>,
+    #[serde(default)]
+    pub audio_clips: Vec<AudioClip>,
     pub import_provenance: ImportProvenance,
 }
 
@@ -599,6 +601,24 @@ pub struct MidiClip {
     pub start_tick: u64,
     pub duration_ticks: u64,
     pub take: MidiTake,
+}
+
+/// Región de audio no destructiva dentro del arreglo.
+///
+/// La posición pertenece al timebase musical del proyecto (`start_tick`),
+/// mientras que el recorte de la fuente se expresa en samples para conservar
+/// precisión independiente del tempo. El sample rate se guarda por clip para
+/// detectar conversiones necesarias antes del render.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct AudioClip {
+    pub id: String,
+    pub name: String,
+    pub track_id: String,
+    pub start_tick: u64,
+    pub source_start_samples: u64,
+    pub duration_samples: u64,
+    pub sample_rate: u32,
+    pub channels: u16,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -646,6 +666,22 @@ pub enum MidiEditError {
     ClipNotFound(String),
     #[error("la rejilla de cuantización debe ser mayor que cero")]
     InvalidGrid,
+}
+
+#[derive(Debug, Error, PartialEq, Eq)]
+pub enum AudioClipError {
+    #[error("no existe la pista de audio '{0}'")]
+    TrackNotFound(String),
+    #[error("la pista '{0}' no es de audio")]
+    NotAudioTrack(String),
+    #[error("la pista '{0}' no tiene fuente de audio")]
+    MissingSource(String),
+    #[error("la duración del clip debe ser mayor que cero")]
+    InvalidDuration,
+    #[error("el sample rate debe ser mayor que cero")]
+    InvalidSampleRate,
+    #[error("el número de canales debe estar entre 1 y 32")]
+    InvalidChannels,
 }
 
 #[derive(Debug, Error, PartialEq, Eq)]
@@ -872,6 +908,7 @@ pub fn import_project_xml(xml: &str) -> Result<ImportResult, ProjectError> {
         },
         tracks,
         midi_clips: Vec::new(),
+        audio_clips: Vec::new(),
         import_provenance: ImportProvenance {
             format: "dawproject".into(),
             format_version: source.version,
@@ -898,6 +935,52 @@ pub fn attach_media_source(
     }
     track.media_source = Some(source);
     Ok(())
+}
+
+/// Añade una región que referencia la fuente de su pista sin copiar ni cortar
+/// el archivo. Las ediciones posteriores operarán sobre esta descripción.
+pub fn add_audio_clip(
+    project: &mut Project,
+    track_id: &str,
+    name: impl Into<String>,
+    start_tick: u64,
+    source_start_samples: u64,
+    duration_samples: u64,
+    sample_rate: u32,
+    channels: u16,
+) -> Result<String, AudioClipError> {
+    let track = project
+        .tracks
+        .iter()
+        .find(|track| track.id == track_id)
+        .ok_or_else(|| AudioClipError::TrackNotFound(track_id.into()))?;
+    if track.kind != TrackKind::Audio {
+        return Err(AudioClipError::NotAudioTrack(track_id.into()));
+    }
+    if track.media_source.is_none() {
+        return Err(AudioClipError::MissingSource(track_id.into()));
+    }
+    if duration_samples == 0 {
+        return Err(AudioClipError::InvalidDuration);
+    }
+    if sample_rate == 0 {
+        return Err(AudioClipError::InvalidSampleRate);
+    }
+    if !(1..=32).contains(&channels) {
+        return Err(AudioClipError::InvalidChannels);
+    }
+    let id = format!("audio-clip-{}", project.audio_clips.len() + 1);
+    project.audio_clips.push(AudioClip {
+        id: id.clone(),
+        name: name.into(),
+        track_id: track_id.into(),
+        start_tick,
+        source_start_samples,
+        duration_samples,
+        sample_rate,
+        channels,
+    });
+    Ok(id)
 }
 
 /// Garantiza el proxy de una pista y actualiza el proyecto sólo tras una
@@ -1320,6 +1403,18 @@ mod tests {
         std::fs::write(&original, b"audio").unwrap();
         let source = MediaSource::from_original(&original).unwrap();
         attach_media_source(&mut project, &audio_id, source).unwrap();
+        let clip_id = add_audio_clip(
+            &mut project,
+            &audio_id,
+            "Guitar region",
+            960,
+            0,
+            48_000,
+            48_000,
+            2,
+        )
+        .unwrap();
+        assert_eq!(clip_id, "audio-clip-1");
         let json = serde_json::to_vec(&project).unwrap();
         let restored: Project = serde_json::from_slice(&json).unwrap();
         assert_eq!(
@@ -1334,6 +1429,8 @@ mod tests {
                 .original_path,
             original
         );
+        assert_eq!(restored.audio_clips[0].start_tick, 960);
+        assert_eq!(restored.audio_clips[0].duration_samples, 48_000);
         std::fs::remove_file(original).unwrap();
     }
 
@@ -1398,6 +1495,7 @@ mod tests {
             },
             tracks: vec![],
             midi_clips: vec![],
+            audio_clips: vec![],
             import_provenance: ImportProvenance {
                 format: "internal".into(),
                 format_version: "1".into(),

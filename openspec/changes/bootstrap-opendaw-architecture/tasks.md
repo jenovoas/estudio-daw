@@ -60,6 +60,8 @@
   validación de tipo de pista.
 - [x] Conectar asociación de fuente y generación/reutilización de proxy al
   flujo CLI de proyecto sin sobrescribir el JSON de entrada.
+- [x] Añadir `AudioClip` con posición musical, offset/duración en samples y
+  comando CLI de inserción no destructiva.
 - [ ] Definir scheduler híbrido CPU/GPU, presupuestos de transferencia y fallback CPU.
 - [ ] Crear backend de cómputo `wgpu`/Vulkan fuera del callback de audio.
 - [ ] Benchmark CPU/GPU para FFT, convolución, time-stretch, render y análisis.

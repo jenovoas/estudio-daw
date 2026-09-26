@@ -32,6 +32,10 @@ Las pistas de audio contienen ahora un `media_source` opcional dentro del
 modelo `Track`. `attach_media_source()` sólo permite asociarlo a pistas de
 audio; las pistas MIDI permanecen libres de rutas y metadatos de medios.
 
+`AudioClip` representa una región no destructiva: su inicio se expresa en
+ticks musicales y su recorte de fuente en samples. Esto permite cambiar el
+tempo del proyecto sin perder la precisión del material grabado.
+
 El flujo CLI completo conserva cada etapa en un archivo nuevo:
 
 ```bash

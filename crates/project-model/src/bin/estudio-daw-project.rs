@@ -10,9 +10,9 @@ use estudio_daw_midi_engine::{
     record_alsa_midi_live, run_alsa_midi_control, MidiControlMap, MidiTake,
 };
 use estudio_daw_project_model::{
-    attach_media_source, attach_midi_take, ensure_track_audio_proxy, export_dawproject,
-    generate_audio_proxy_ffmpeg, import_dawproject, quantize_midi_clip, AudioProxyProfile,
-    MediaSource, Project, ProxyCacheManager,
+    add_audio_clip, attach_media_source, attach_midi_take, ensure_track_audio_proxy,
+    export_dawproject, generate_audio_proxy_ffmpeg, import_dawproject, quantize_midi_clip,
+    AudioProxyProfile, MediaSource, Project, ProxyCacheManager,
 };
 use estudio_daw_runtime_diagnostics::{
     audio_devices, enumerate_alsa_midi_output_ports, midi_devices, monitor_alsa_midi, DeviceInfo,
@@ -40,6 +40,8 @@ fn usage() {
             "\n  estudio-daw-project proxy-track <proyecto.json> <pista> <cache> <salida.json>"
             ,
             "\n  estudio-daw-project attach-media <proyecto.json> <pista> <audio> <salida.json>"
+            ,
+            "\n  estudio-daw-project add-audio-clip <proyecto.json> <pista> <inicio-tick> <inicio-sample> <duracion-samples> <salida.json>"
     ));
 }
 
@@ -124,6 +126,40 @@ fn main() -> ExitCode {
                 project.into(),
                 track_id.to_string_lossy().into_owned(),
                 audio.into(),
+                output.into(),
+            )
+        }
+        "add-audio-clip" => {
+            let Some(project) = args.next() else {
+                usage();
+                return ExitCode::from(2);
+            };
+            let Some(track_id) = args.next() else {
+                usage();
+                return ExitCode::from(2);
+            };
+            let Some(start_tick) = args.next() else {
+                usage();
+                return ExitCode::from(2);
+            };
+            let Some(source_start) = args.next() else {
+                usage();
+                return ExitCode::from(2);
+            };
+            let Some(duration) = args.next() else {
+                usage();
+                return ExitCode::from(2);
+            };
+            let Some(output) = args.next() else {
+                usage();
+                return ExitCode::from(2);
+            };
+            add_audio_clip_command(
+                project.into(),
+                track_id.to_string_lossy().into_owned(),
+                start_tick.to_string_lossy().as_ref(),
+                source_start.to_string_lossy().as_ref(),
+                duration.to_string_lossy().as_ref(),
                 output.into(),
             )
         }
@@ -495,6 +531,35 @@ fn attach_media_command(
         "Fuente asociada: pista={} audio={} proyecto={}",
         track_id,
         audio_path.display(),
+        output_path.display()
+    );
+    Ok(())
+}
+
+fn add_audio_clip_command(
+    project_path: PathBuf,
+    track_id: String,
+    start_tick: &str,
+    source_start: &str,
+    duration: &str,
+    output_path: PathBuf,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let mut project: Project = serde_json::from_slice(&fs::read(&project_path)?)?;
+    let id = add_audio_clip(
+        &mut project,
+        &track_id,
+        "Audio region",
+        start_tick.parse()?,
+        source_start.parse()?,
+        duration.parse()?,
+        48_000,
+        2,
+    )?;
+    fs::write(&output_path, serde_json::to_vec_pretty(&project)?)?;
+    println!(
+        "Clip de audio creado: {} en pista={} proyecto={}",
+        id,
+        track_id,
         output_path.display()
     );
     Ok(())
