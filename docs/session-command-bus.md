@@ -61,7 +61,10 @@ assert_eq!(session.snapshot().state, TransportState::Playing);
 
 ## Estado actual
 
-`MidiControlCommand::to_session_command()` ya traduce el control físico al
-dominio sin hacer que `Session` dependa de MIDI. La migración siguiente hará que
-el lector live publique esos comandos directamente en el bus global y retirará
-la duplicación temporal de `LiveSessionState`.
+`MidiControlCommand::to_session_command()` traduce el control físico al dominio
+sin hacer que `Session` dependa de MIDI. El comando
+`midi-control-monitor` ya recorre ese camino completo: lector ALSA → adaptador
+MIDI → `CommandBus` → `Session` → snapshot impreso.
+
+El reproductor live mantiene todavía una cola de comandos específica para
+transporte; la siguiente migración la sustituirá por el mismo bus global.

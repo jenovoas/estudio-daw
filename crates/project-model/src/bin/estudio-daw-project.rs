@@ -2,7 +2,7 @@ use std::{env, fs, path::PathBuf, process::ExitCode};
 
 use estudio_daw_midi_engine::{
     play_midi_take, play_midi_take_interactive, play_midi_take_live, record_alsa_midi,
-    record_alsa_midi_live, run_alsa_midi_control, LiveSessionState, MidiControlMap, MidiTake,
+    record_alsa_midi_live, run_alsa_midi_control, MidiControlMap, MidiTake,
 };
 use estudio_daw_project_model::{
     attach_midi_take, export_dawproject, import_dawproject, quantize_midi_clip, Project,
@@ -10,6 +10,7 @@ use estudio_daw_project_model::{
 use estudio_daw_runtime_diagnostics::{
     audio_devices, enumerate_alsa_midi_output_ports, midi_devices, monitor_alsa_midi, DeviceInfo,
 };
+use estudio_daw_session::{CommandBus, Session};
 use std::time::Duration;
 
 fn usage() {
@@ -234,16 +235,23 @@ fn midi_control_monitor_command(query: Option<String>) -> Result<(), Box<dyn std
     let query = query.unwrap_or_else(|| "KeyLab".into());
     let map = MidiControlMap::for_port_query(&query);
     println!("Mapa de control seleccionado para '{query}'.");
-    let mut session = LiveSessionState::default();
+    let bus = CommandBus::bounded(64);
+    let mut session = Session::default();
     run_alsa_midi_control(&query, &map, |command| {
-        session.apply_control(command);
+        let domain_command = command.to_session_command();
+        if let Err(error) = bus.dispatch(domain_command) {
+            eprintln!("Comando MIDI descartado: {error}");
+            return;
+        }
+        bus.drain_into(&mut session);
+        let snapshot = session.snapshot();
         println!(
             "Sesión: transporte={:?} rec={} loop={} escena={} master={:.3}",
-            session.transport,
-            session.recording,
-            session.loop_enabled,
-            session.scene_index,
-            session.master_volume
+            snapshot.state,
+            snapshot.recording,
+            snapshot.loop_enabled,
+            snapshot.scene_index,
+            snapshot.master_volume
         );
         println!("  <- {:?}, valor {:.3}", command.action, command.value);
     })?;
