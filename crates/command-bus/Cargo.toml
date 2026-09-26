@@ -7,6 +7,7 @@ description = "Versioned domain command bus for Estudio DAW"
 
 [dependencies]
 estudio-daw-project-model = { path = "../project-model" }
+estudio-daw-midi-engine = { path = "../midi-engine" }
 estudio-daw-session = { path = "../session" }
 serde = { version = "1", features = ["derive"] }
 thiserror = "2"

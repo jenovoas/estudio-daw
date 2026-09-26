@@ -4,9 +4,10 @@
 //! conocer PipeWire, ALSA, ffmpeg, GPU ni widgets. Cada comando está versionado,
 //! atribuido y puede declarar precondiciones antes de mutar el estado.
 
+use estudio_daw_midi_engine::MidiTake;
 use estudio_daw_project_model::{
-    add_audio_clip, set_audio_clip_fades, set_audio_clip_gain, trim_audio_clip, Project,
-    ProjectEvent, ProjectHistory, ProjectSnapshot,
+    add_audio_clip, attach_midi_take, quantize_midi_clip, set_audio_clip_fades,
+    set_audio_clip_gain, trim_audio_clip, Project, ProjectEvent, ProjectHistory, ProjectSnapshot,
 };
 use estudio_daw_session::{Session, SessionCommand, TransportSnapshot, TransportState};
 use serde::{Deserialize, Serialize};
@@ -71,6 +72,14 @@ pub enum ProjectCommand {
         clip_id: String,
         fade_in_samples: u64,
         fade_out_samples: u64,
+    },
+    AttachMidiTake {
+        take: MidiTake,
+        name: String,
+    },
+    QuantizeMidiClip {
+        clip_id: String,
+        grid_ticks: u64,
     },
     Undo,
     Redo,
@@ -293,6 +302,21 @@ impl CommandRuntime {
                     set_audio_clip_fades(project, &clip_id, fade_in_samples, fade_out_samples)
                 })
                 .map_err(|error| CommandError::Project(error.to_string()))?,
+            ProjectCommand::AttachMidiTake { take, name } => self
+                .project_history
+                .transact("attach MIDI take", |project| {
+                    attach_midi_take(project, take, name).map(|_| ())
+                })
+                .map_err(|error| CommandError::Project(error.to_string()))?,
+            ProjectCommand::QuantizeMidiClip {
+                clip_id,
+                grid_ticks,
+            } => self
+                .project_history
+                .transact("quantize MIDI clip", |project| {
+                    quantize_midi_clip(project, &clip_id, grid_ticks).map(|_| ())
+                })
+                .map_err(|error| CommandError::Project(error.to_string()))?,
             ProjectCommand::Undo => {
                 self.project_history
                     .undo()
@@ -364,7 +388,10 @@ impl DomainCommandBus {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use estudio_daw_project_model::{AudioClip, ImportProvenance, TimeSignature, Transport};
+    use estudio_daw_midi_engine::{MidiSource, RecordedMidiEvent, RecordedMidiMessage};
+    use estudio_daw_project_model::{
+        AudioClip, ImportProvenance, MidiClip, TimeSignature, Track, TrackKind, Transport,
+    };
 
     fn project() -> Project {
         Project {
@@ -377,8 +404,48 @@ mod tests {
                     denominator: 4,
                 },
             },
-            tracks: Vec::new(),
-            midi_clips: Vec::new(),
+            tracks: vec![Track {
+                id: "track-midi".into(),
+                name: "MIDI".into(),
+                kind: TrackKind::Midi,
+                notes: Vec::new(),
+                audio_channels: None,
+                media_source: None,
+            }],
+            midi_clips: vec![MidiClip {
+                id: "midi-clip-1".into(),
+                name: "Take".into(),
+                track_id: "track-midi".into(),
+                start_tick: 0,
+                duration_ticks: 800,
+                take: MidiTake {
+                    ppq: 960,
+                    tempo_bpm: 120,
+                    duration_micros: 1_000_000,
+                    events: vec![
+                        RecordedMidiEvent {
+                            tick: 500,
+                            micros_since_start: 260_000,
+                            source: MidiSource { client: 1, port: 0 },
+                            message: RecordedMidiMessage::NoteOn {
+                                channel: 0,
+                                note: 64,
+                                velocity: 90,
+                            },
+                        },
+                        RecordedMidiEvent {
+                            tick: 777,
+                            micros_since_start: 400_000,
+                            source: MidiSource { client: 1, port: 0 },
+                            message: RecordedMidiMessage::ControlChange {
+                                channel: 0,
+                                controller: 64,
+                                value: 127,
+                            },
+                        },
+                    ],
+                },
+            }],
             audio_clips: vec![AudioClip {
                 id: "clip-1".into(),
                 name: "Audio".into(),
@@ -477,5 +544,78 @@ mod tests {
         assert_eq!(restored, original);
         assert!(json.contains("\"scope\":\"project\""));
         assert!(json.contains("\"type\":\"set_audio_clip_gain\""));
+    }
+
+    #[test]
+    fn midi_quantization_is_a_reversible_domain_command() {
+        let bus = DomainCommandBus::bounded(2);
+        bus.dispatch(envelope(
+            "quantize-1",
+            DomainCommand::Project(ProjectCommand::QuantizeMidiClip {
+                clip_id: "midi-clip-1".into(),
+                grid_ticks: 120,
+            }),
+        ))
+        .unwrap();
+        let mut runtime = CommandRuntime::new(project());
+
+        let report = bus.drain_into(&mut runtime);
+        assert_eq!(report.applied, 1);
+        assert_eq!(
+            runtime.snapshot().project.project.midi_clips[0].take.events[0].tick,
+            480
+        );
+        // La cuantización sólo mueve Note On/Off; los controladores se conservan.
+        assert_eq!(
+            runtime.snapshot().project.project.midi_clips[0].take.events[1].tick,
+            777
+        );
+
+        runtime
+            .apply(envelope(
+                "undo-quantize-1",
+                DomainCommand::Project(ProjectCommand::Undo),
+            ))
+            .unwrap();
+        assert_eq!(
+            runtime.snapshot().project.project.midi_clips[0].take.events[0].tick,
+            500
+        );
+    }
+
+    #[test]
+    fn attach_midi_take_is_serializable_and_emits_an_attributed_event() {
+        let mut runtime = CommandRuntime::new(project());
+        let take = MidiTake {
+            ppq: 960,
+            tempo_bpm: 120,
+            duration_micros: 500_000,
+            events: Vec::new(),
+        };
+        let command = envelope(
+            "attach-take-1",
+            DomainCommand::Project(ProjectCommand::AttachMidiTake {
+                take,
+                name: "Grabación live".into(),
+            }),
+        );
+        let encoded = serde_json::to_string(&command).unwrap();
+        let decoded: CommandEnvelope = serde_json::from_str(&encoded).unwrap();
+
+        runtime.apply(decoded).unwrap();
+        let snapshot = runtime.snapshot();
+        assert_eq!(snapshot.project.project.midi_clips.len(), 2);
+        assert_eq!(
+            snapshot.project.project.midi_clips[1].name,
+            "Grabación live"
+        );
+        assert!(matches!(
+            runtime.drain_events().as_slice(),
+            [DomainEvent {
+                command_id,
+                author: CommandAuthor::User,
+                payload: DomainEventPayload::ProjectChanged(_),
+            }] if command_id == "attach-take-1"
+        ));
     }
 }

@@ -484,6 +484,7 @@ dependencies = [
 name = "estudio-daw-command-bus"
 version = "0.1.0"
 dependencies = [
+ "estudio-daw-midi-engine",
  "estudio-daw-project-model",
  "estudio-daw-session",
  "serde",

@@ -79,7 +79,7 @@
 ## Modelo de proyecto
 
 - [ ] Separar `Portable Domain` de `Platform Runtime` mediante crates y traits explícitos.
-- [ ] Definir `Session`, `TransportSnapshot`, `CommandBus` y `ChangeSet`.
+- [x] Definir `Session`, `TransportSnapshot`, `CommandBus` y `ChangeSet`.
 - [x] Crear mapa modular de control MIDI para transporte, escenas y volumen
   master, con lector ALSA reutilizable y resolución sin asignaciones.
 - [x] Aplicar comandos MIDI a un estado de sesión live con transporte,

@@ -68,6 +68,8 @@ no borrando el historial.
   diseñarse para ser consumidas por UI sin acoplar la UI a hardware o procesos.
 - No duplicar buses, modelos o documentación. Si dos componentes parecen
   solaparse, definir primero sus responsabilidades y una ruta de migración.
+- Consultar `docs/domain-command-bus.md` antes de ampliar o migrar comandos de
+  proyecto; describe el contrato ejecutable y sus límites actuales.
 
 ## Flujo de trabajo
 
