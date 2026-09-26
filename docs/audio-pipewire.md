@@ -78,9 +78,15 @@ disco no alcanza la velocidad de captura, el diagnóstico expone las muestras
 descartadas en vez de bloquear el audio.
 
 La integración con el stream duplex usará este componente como consumidor
-secundario de la captura. El render y la reproducción no dependerán del estado
-del archivo, y la ruta de grabación podrá sustituirse después por FLAC, stems o
-un proxy sin cambiar el contrato del callback.
+secundario de la captura. El comando `audio-record` ya lo conecta al stream y
+guarda una toma WAV mientras el render y la reproducción siguen funcionando de
+forma independiente. La ruta podrá sustituirse después por FLAC, stems o un
+proxy sin cambiar el contrato del callback.
+
+```bash
+cargo run -q -p estudio-daw-project-model --bin estudio-daw-project -- \
+  audio-record 10 toma.wav
+```
 
 ## Smoke test
 

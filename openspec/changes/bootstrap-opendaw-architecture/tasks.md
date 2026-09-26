@@ -44,7 +44,8 @@
 - [x] Implementar transporte sample/beat/bar mediante `TransportClock` y PPQ
   fijo de 960.
 - [x] Crear reloj de reproducción determinista independiente del wall-clock.
-- [ ] Añadir captura de audio a archivo temporal.
+- [x] Añadir captura de audio a WAV mediante ring SPSC y escritor fuera del
+  callback RT.
 - [x] Añadir captura MIDI a un modelo de evento y toma temporal.
 - [ ] Implementar `MediaSource`/`ProxyAsset` y política original/proxy/auto.
 - [ ] Crear jobs de proxy con hash, perfil, validación, regeneración y limpieza segura.

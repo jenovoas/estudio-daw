@@ -7,8 +7,8 @@ use estudio_daw_audio_engine::{RenderPlan, SampleRingBuffer};
 use pipewire as pw;
 use pw::{properties::properties, spa};
 use spa::pod::Pod;
-use std::io::Cursor;
 use std::fs::File;
+use std::io::Cursor;
 use std::io::{self, Seek, SeekFrom, Write};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
@@ -53,6 +53,8 @@ pub enum PipeWireError {
     Capture(#[from] io::Error),
     #[error("el hilo de captura WAV terminó inesperadamente")]
     CaptureWorkerPanic,
+    #[error("el escritor WAV todavía tiene referencias activas")]
+    CaptureStillInUse,
 }
 
 /// Resultado de una captura escrita por `WavCaptureRecorder`.
@@ -328,7 +330,8 @@ pub fn run_pipewire_duplex(
     config: PipeWireStreamConfig,
     render_plan: RenderPlan,
 ) -> Result<(), PipeWireError> {
-    run_pipewire_duplex_internal(config, render_plan, None, PipeWireTargets::default()).map(|_| ())
+    run_pipewire_duplex_internal(config, render_plan, None, None, PipeWireTargets::default())
+        .map(|_| ())
 }
 
 /// Ejecuta el duplex durante una duración finita y devuelve métricas de la
@@ -348,16 +351,37 @@ pub fn run_pipewire_duplex_for_targets(
     duration: Duration,
     targets: PipeWireTargets,
 ) -> Result<PipeWireDuplexReport, PipeWireError> {
-    run_pipewire_duplex_internal(config, render_plan, Some(duration), targets)
+    run_pipewire_duplex_internal(config, render_plan, Some(duration), None, targets)
+        .map(|(report, _)| report)
+}
+
+/// Ejecuta duplex y guarda la captura en un WAV sin hacer I/O en el callback.
+///
+/// El `WavCaptureRecorder` se consume aquí para garantizar que el hilo escritor
+/// termine y que el encabezado del archivo quede actualizado antes de retornar.
+pub fn run_pipewire_duplex_for_targets_with_capture(
+    config: PipeWireStreamConfig,
+    render_plan: RenderPlan,
+    duration: Duration,
+    targets: PipeWireTargets,
+    recorder: WavCaptureRecorder,
+) -> Result<(PipeWireDuplexReport, WavCaptureReport), PipeWireError> {
+    let (report, capture_report) =
+        run_pipewire_duplex_internal(config, render_plan, Some(duration), Some(recorder), targets)?;
+    capture_report
+        .ok_or(PipeWireError::CaptureStillInUse)
+        .map(|capture| (report, capture))
 }
 
 fn run_pipewire_duplex_internal(
     config: PipeWireStreamConfig,
     mut render_plan: RenderPlan,
     duration: Option<Duration>,
+    recorder: Option<WavCaptureRecorder>,
     targets: PipeWireTargets,
-) -> Result<PipeWireDuplexReport, PipeWireError> {
+) -> Result<(PipeWireDuplexReport, Option<WavCaptureReport>), PipeWireError> {
     let config = config.validate()?;
+    let recorder = recorder.map(Arc::new);
     pw::init();
     let main_loop = pw::main_loop::MainLoopRc::new(None)?;
     let context = pw::context::ContextRc::new(&main_loop, None)?;
@@ -391,6 +415,7 @@ fn run_pipewire_duplex_internal(
     let capture_total_counter = Arc::clone(&capture_total_samples);
     let capture_last_counter = Arc::clone(&capture_last_samples);
     let capture_dropped_counter = Arc::clone(&capture_dropped_samples);
+    let capture_recorder = recorder.as_ref().map(Arc::clone);
     let _capture_listener = capture_stream
         .add_local_listener_with_user_data(())
         .process(move |stream, _| {
@@ -411,6 +436,9 @@ fn run_pipewire_duplex_internal(
             capture_last_counter.store(samples.len() as u64, Ordering::Relaxed);
             let pushed = capture_ring.push(samples);
             capture_dropped_counter.fetch_add((samples.len() - pushed) as u64, Ordering::Relaxed);
+            if let Some(recorder) = capture_recorder.as_ref() {
+                recorder.push(samples);
+            }
         })
         .register()?;
 
@@ -489,16 +517,32 @@ fn run_pipewire_duplex_internal(
         None
     };
     main_loop.run();
-    Ok(PipeWireDuplexReport {
-        capture_callbacks: capture_callbacks.load(Ordering::Relaxed),
-        output_callbacks: output_callbacks.load(Ordering::Relaxed),
-        capture_total_samples: capture_total_samples.load(Ordering::Relaxed),
-        output_total_samples: output_total_samples.load(Ordering::Relaxed),
-        capture_last_samples: capture_last_samples.load(Ordering::Relaxed),
-        output_last_samples: output_last_samples.load(Ordering::Relaxed),
-        capture_dropped_samples: capture_dropped_samples.load(Ordering::Relaxed),
-        output_silence_samples: output_silence_samples.load(Ordering::Relaxed),
-    })
+    // Liberamos explícitamente los listeners antes de recuperar el recorder
+    // único y cerrar su hilo escritor de forma determinista.
+    drop(_capture_listener);
+    drop(capture_stream);
+    drop(_output_listener);
+    drop(output_stream);
+    let capture_report = recorder
+        .map(|recorder| {
+            Arc::try_unwrap(recorder)
+                .map_err(|_| PipeWireError::CaptureStillInUse)
+                .and_then(WavCaptureRecorder::finish)
+        })
+        .transpose()?;
+    Ok((
+        PipeWireDuplexReport {
+            capture_callbacks: capture_callbacks.load(Ordering::Relaxed),
+            output_callbacks: output_callbacks.load(Ordering::Relaxed),
+            capture_total_samples: capture_total_samples.load(Ordering::Relaxed),
+            output_total_samples: output_total_samples.load(Ordering::Relaxed),
+            capture_last_samples: capture_last_samples.load(Ordering::Relaxed),
+            output_last_samples: output_last_samples.load(Ordering::Relaxed),
+            capture_dropped_samples: capture_dropped_samples.load(Ordering::Relaxed),
+            output_silence_samples: output_silence_samples.load(Ordering::Relaxed),
+        },
+        capture_report,
+    ))
 }
 
 fn audio_params(config: PipeWireStreamConfig) -> [&'static Pod; 1] {

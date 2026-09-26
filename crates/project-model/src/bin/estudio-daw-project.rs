@@ -2,7 +2,8 @@ use std::{env, fs, path::PathBuf, process::ExitCode};
 
 use estudio_daw_audio_engine::{EqBandConfig, EqualizerNode, RenderPlanBuilder};
 use estudio_daw_audio_platform::{
-    run_pipewire_duplex_for_targets, PipeWireStreamConfig, PipeWireTargets,
+    run_pipewire_duplex_for_targets, run_pipewire_duplex_for_targets_with_capture,
+    PipeWireStreamConfig, PipeWireTargets, WavCaptureRecorder,
 };
 use estudio_daw_midi_engine::{
     play_midi_take, play_midi_take_interactive, play_midi_take_live, record_alsa_midi,
@@ -29,6 +30,8 @@ fn usage() {
             "\n  estudio-daw-project project-play <proyecto.json> [clip-id] [destino]",
             "\n  estudio-daw-project project-play-live <proyecto.json> [clip-id] [destino] [control]",
             "\n  estudio-daw-project midi-outputs"
+            ,
+            "\n  estudio-daw-project audio-record <segundos> <salida.wav>"
     ));
 }
 
@@ -46,6 +49,17 @@ fn main() -> ExitCode {
                 .map(|value| value.to_string_lossy().into_owned()),
         ),
         "audio-test" => audio_test_command(),
+        "audio-record" => {
+            let Some(seconds) = args.next() else {
+                usage();
+                return ExitCode::from(2);
+            };
+            let Some(output) = args.next() else {
+                usage();
+                return ExitCode::from(2);
+            };
+            audio_record_command(seconds.to_string_lossy().as_ref(), output.into())
+        }
         "midi-record" => {
             let Some(seconds) = args.next() else {
                 usage();
@@ -286,21 +300,11 @@ fn audio_test_command() -> Result<(), Box<dyn std::error::Error>> {
             Vec::new()
         }
     };
-    let audiobox = |device: &&DeviceInfo| {
-        let text = format!("{} {}", device.name, device.description).to_ascii_lowercase();
-        text.contains("audiobox")
-    };
-    let capture_node = devices
-        .iter()
-        .find(|device| {
-            device.media_class.to_ascii_lowercase().contains("source") && audiobox(device)
-        })
-        .map(|device| device.id);
-    let playback_node = devices
-        .iter()
-        .find(|device| device.media_class.to_ascii_lowercase().contains("sink") && audiobox(device))
-        .map(|device| device.id);
-    println!("AudioBox targets: captura={capture_node:?}, reproducción={playback_node:?}");
+    let targets = audiobox_targets(&devices);
+    println!(
+        "AudioBox targets: captura={:?}, reproducción={:?}",
+        targets.capture_node, targets.playback_node
+    );
     println!("Abriendo smoke test duplex PipeWire durante 3 segundos...");
     let mut equalizer = EqualizerNode::new(48_000.0, 2)?;
     // Primer nodo DSP real de la ruta AudioBox → salida: elimina DC y
@@ -313,10 +317,7 @@ fn audio_test_command() -> Result<(), Box<dyn std::error::Error>> {
         PipeWireStreamConfig::default(),
         render_plan,
         Duration::from_secs(3),
-        PipeWireTargets {
-            capture_node,
-            playback_node,
-        },
+        targets,
     )?;
     println!(
         "Callbacks: captura={} salida={}; muestras/callback: captura={} salida={}",
@@ -333,6 +334,70 @@ fn audio_test_command() -> Result<(), Box<dyn std::error::Error>> {
         report.output_silence_samples
     );
     Ok(())
+}
+
+fn audio_record_command(seconds: &str, output: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
+    let seconds: f64 = seconds.parse()?;
+    if !(seconds.is_finite() && seconds > 0.0) {
+        return Err("los segundos deben ser un número positivo".into());
+    }
+    let devices = audio_devices()?;
+    let targets = audiobox_targets(&devices);
+    let config = PipeWireStreamConfig::default();
+    let mut equalizer = EqualizerNode::new(config.sample_rate as f32, config.channels as usize)?;
+    equalizer.add_band(EqBandConfig::high_pass(20.0, 0.707))?;
+    let mut render_builder = RenderPlanBuilder::new();
+    render_builder.add_node(equalizer);
+    let render_plan = render_builder.build()?;
+    // Diez segundos de margen amortiguan ráfagas de disco sin convertir el
+    // callback en un productor bloqueante. El writer sigue siendo el dueño de
+    // la persistencia y reporta overflow si el sistema no alcanza.
+    let recorder = WavCaptureRecorder::new(
+        output.clone(),
+        config.sample_rate,
+        config.channels as u16,
+        config.sample_rate as usize * 10,
+    )?;
+    println!(
+        "Grabando AudioBox durante {seconds:.2}s en {}...",
+        output.display()
+    );
+    let (report, capture) = run_pipewire_duplex_for_targets_with_capture(
+        config,
+        render_plan,
+        Duration::from_secs_f64(seconds),
+        targets,
+        recorder,
+    )?;
+    println!(
+        "Captura finalizada: {} muestras, descartadas={}; callbacks captura={} salida={}",
+        capture.captured_samples,
+        capture.dropped_samples,
+        report.capture_callbacks,
+        report.output_callbacks
+    );
+    Ok(())
+}
+
+fn audiobox_targets(devices: &[DeviceInfo]) -> PipeWireTargets {
+    let is_audiobox = |device: &&DeviceInfo| {
+        let text = format!("{} {}", device.name, device.description).to_ascii_lowercase();
+        text.contains("audiobox")
+    };
+    PipeWireTargets {
+        capture_node: devices
+            .iter()
+            .find(|device| {
+                device.media_class.to_ascii_lowercase().contains("source") && is_audiobox(device)
+            })
+            .map(|device| device.id),
+        playback_node: devices
+            .iter()
+            .find(|device| {
+                device.media_class.to_ascii_lowercase().contains("sink") && is_audiobox(device)
+            })
+            .map(|device| device.id),
+    }
 }
 
 fn midi_record_command(
