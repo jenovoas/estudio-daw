@@ -7,17 +7,18 @@
 use std::{hint::black_box, time::Instant};
 
 fn main() {
-    let fft_micros = benchmark_fft(1024, 3);
+    let dft_micros = benchmark_dft(1024, 3);
     let convolution_micros = benchmark_convolution(65_536, 64, 3);
     println!("Estudio DAW compute baseline (CPU)");
-    println!("fft_1024_us={fft_micros}");
+    println!("dft_1024_us={dft_micros}");
     println!("convolution_65536x64_us={convolution_micros}");
     println!("Estos valores calibrarán el scheduler cuando exista backend GPU.");
 }
 
 /// DFT pequeña, deliberadamente simple, para tener una referencia estable.
-/// La implementación FFT optimizada llegará junto al primer backend de compute.
-fn benchmark_fft(size: usize, repetitions: usize) -> u128 {
+/// No debe confundirse con una FFT: su coste es O(N²). La FFT optimizada
+/// llegará en la siguiente fase junto con la comparación CPU/GPU.
+fn benchmark_dft(size: usize, repetitions: usize) -> u128 {
     let input: Vec<f32> = (0..size).map(|i| (i as f32).sin()).collect();
     let started = Instant::now();
     for _ in 0..repetitions {

@@ -47,7 +47,7 @@
 - [ ] Crear backend de cómputo `wgpu`/Vulkan fuera del callback de audio.
 - [ ] Benchmark CPU/GPU para FFT, convolución, time-stretch, render y análisis.
 - [x] Definir contrato testeable de selección CPU/GPU y razones de fallback.
-- [x] Crear baseline CPU reproducible para FFT y convolución.
+- [x] Crear baseline CPU reproducible para DFT de referencia y convolución.
 
 ## Modelo de proyecto
 
