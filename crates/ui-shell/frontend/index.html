@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#101318" />
+    <title>Estudio DAW</title>
+    <link rel="stylesheet" href="./styles.css" />
+    <script src="./platform-tauri.js" defer></script>
+    <script src="./main.js" defer></script>
+  </head>
+  <body>
+    <header class="topbar">
+      <a class="brand" href="#" aria-label="Estudio DAW inicio"><span class="brand-mark">E</span><span>estudio<span class="brand-light">daw</span></span></a>
+      <div class="project-actions">
+        <span id="project-path" class="project-path">Sin proyecto abierto</span>
+        <button id="open-project" class="button button-secondary">Abrir proyecto</button>
+        <button id="save-project-as" class="button button-secondary" disabled>Guardar como</button>
+        <button id="save-project" class="button button-primary" disabled>Guardar</button>
+      </div>
+    </header>
+
+    <main class="workspace">
+      <section class="transport panel">
+        <div class="transport-controls">
+          <button id="stop" class="transport-button" title="Detener" disabled>■</button>
+          <button id="play" class="transport-button transport-play" title="Reproducir" disabled>▶</button>
+          <button id="pause" class="transport-button" title="Pausar" disabled>Ⅱ</button>
+        </div>
+        <div class="transport-readout"><span class="eyebrow">TEMPO</span><strong id="tempo">—</strong><span class="unit">BPM</span></div>
+        <div class="transport-readout"><span class="eyebrow">ESTADO</span><strong id="transport-state">DETENIDO</strong></div>
+        <div class="transport-spacer"></div>
+        <button id="undo" class="button button-quiet" disabled>↶ Deshacer</button>
+        <button id="redo" class="button button-quiet" disabled>↷ Rehacer</button>
+      </section>
+
+      <section class="session-heading">
+        <div><span class="eyebrow">SESIÓN</span><h1 id="project-name">Tu espacio de producción</h1></div>
+        <div class="session-stats">
+          <div class="stat"><strong id="track-count">0</strong><span>PISTAS</span></div>
+          <div class="stat"><strong id="midi-count">0</strong><span>CLIPS MIDI</span></div>
+          <div class="stat"><strong id="audio-count">0</strong><span>CLIPS AUDIO</span></div>
+        </div>
+      </section>
+
+      <section class="tracks panel">
+        <div class="panel-heading"><div><span class="eyebrow">ARRANGEMENT</span><h2>Pistas</h2></div><span id="revision" class="revision">—</span></div>
+        <div class="track-header"><span>PISTA</span><span>TIPO</span><span>NOTAS</span><span>ESTADO</span></div>
+        <div id="track-list" class="track-list"><div class="empty-state">Abre un proyecto para ver sus pistas.</div></div>
+      </section>
+
+      <section class="notice panel">
+        <span class="notice-icon">i</span>
+        <div><strong id="notice-title">Shell de escritorio experimental</strong><p id="notice-text">El transporte actual modifica el estado de sesión; todavía no inicia el motor de audio.</p></div>
+      </section>
+    </main>
+
+    <footer><span class="connection-dot"></span><span id="engine-status">Core listo · motor de audio aún no conectado</span><span class="footer-right">TAURI · PROTOTIPO</span></footer>
+  </body>
+</html>

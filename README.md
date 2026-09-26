@@ -589,6 +589,7 @@ estudio-daw/
 │   ├── dsp/       procesamiento DSP modular
 │   ├── command-bus/ comandos de dominio versionados
 │   ├── application/ ciclo de vida y API común para UI/CLI
+│   ├── ui-shell/    shell de escritorio Tauri y adaptador web
 │   └── cli/       adaptador CLI (ejecutable estudio-daw-project)
 ├── python/       workers de análisis
 ├── schemas/      contratos versionados
@@ -653,6 +654,7 @@ Después se añadirán clips, escenas, Arrangement View, plugins, escalas, anál
 - [MediaSource y proxies](docs/proxy-assets.md)
 - [Control MIDI live](docs/midi-live-control.md)
 - [Frontera Core/UI](docs/ui-architecture.md)
+- [Shell de escritorio Tauri](crates/ui-shell/tauri.conf.json)
 - [Propuesta inicial](openspec/changes/bootstrap-opendaw-architecture/proposal.md)
 - [Diseño](openspec/changes/bootstrap-opendaw-architecture/design.md)
 - [Especificación de audio y MIDI](openspec/changes/bootstrap-opendaw-architecture/specs/runtime-audio-midi/spec.md)
@@ -660,3 +662,20 @@ Después se añadirán clips, escenas, Arrangement View, plugins, escalas, anál
 - [Especificación de workers de análisis](openspec/changes/bootstrap-opendaw-architecture/specs/analysis-workers/spec.md)
 - [Especificación de scripting y agente](openspec/changes/bootstrap-opendaw-architecture/specs/scripting-and-agent/spec.md)
 - [Tareas](openspec/changes/bootstrap-opendaw-architecture/tasks.md)
+
+### Shell gráfico experimental
+
+La primera interfaz de escritorio usa Tauri como adaptador sobre
+`estudio-daw-application`; el frontend está separado del bridge Tauri. Esta
+ventana permite abrir/guardar proyectos JSON, inspeccionar pistas y clips, y
+probar los comandos de transporte e historial. El estado Play/Pause/Stop todavía
+no está conectado al stream ni al `RenderPlan` de audio.
+
+```bash
+cargo run -p estudio-daw-ui-shell
+```
+
+El IPC transporta comandos y resúmenes serializables, nunca PCM ni buffers GPU.
+La reproducción y DSP permanecen en Rust; futuras waveform/espectrogramas usarán
+datos derivados y acotados. Para la primera compilación en Arch/Linux se requiere
+WebKitGTK 4.1 y GTK 3, además de las dependencias de desarrollo de Tauri.

@@ -39,3 +39,47 @@ despacha envelopes, y expone eventos y snapshots sin hacer visible
 atómico del JSON. Una UI debe conservar una instancia de `ProjectApplication`
 durante toda la sesión; volver a abrir el archivo inicia un historial nuevo desde
 el último estado guardado.
+
+## Shell Tauri y transporte de datos
+
+La dirección preferida para el shell de escritorio es Tauri con un frontend web
+desacoplado de sus APIs. Tauri será un adaptador de presentación y sistema; la
+decisión no mueve el dominio ni el motor de audio al WebView, ni impide crear un
+adaptador web independiente en el futuro.
+
+La comunicación tiene dos planos con límites distintos:
+
+- **Control y estado:** comandos tipados, snapshots de proyecto, diagnósticos,
+  progreso de jobs y telemetría compacta pueden cruzar el IPC serializado de
+  Tauri. Los medidores envían agregados (pico/RMS por bloque o ventana), nunca
+  muestras individuales.
+- **Audio:** PCM, streams de captura/reproducción y buffers de DSP permanecen en
+  el runtime Rust. El callback RT sigue usando buffers preasignados y colas
+  bounded; no llama al WebView ni espera mensajes IPC.
+
+Los proyectos serializan la estructura musical y referencias a medios; WAV, FLAC,
+proxies y renders son artefactos externos al JSON. La UI identifica medios mediante
+IDs/ref opacas y solicita operaciones al backend. El WebView no recibe permiso
+general sobre el filesystem. Si se usa el protocolo asset para un preview, su
+scope se limita a rutas autorizadas del proyecto o caché.
+
+## Frontera de GPU y visualizaciones
+
+La GPU acelera trabajos pesados mediante `compute-runtime`/`wgpu` fuera del
+callback: espectrogramas, análisis, separación, convolución larga, time-stretch,
+pitch-shift y renders offline, según benchmark y coste de transferencia. La CPU
+continúa siendo la ruta segura para el callback, el transporte y el DSP pequeño de
+baja latencia; cualquier procesamiento GPU en tiempo real requiere deadline,
+buffers preparados y fallback CPU probado.
+
+La GPU del runtime nativo y la del WebView son contextos distintos: no se asumirá
+que comparten dispositivos, texturas o buffers sin copia. La interfaz recibe datos
+derivados de tamaño acotado (por ejemplo, una pirámide min/max para waveform,
+medidores agregados o tiles de espectrograma); la lectura de vuelta GPU se hace
+asíncronamente y fuera del callback. El WebView puede usar su propia aceleración
+para dibujar, pero eso no sustituye ni duplica el DSP nativo.
+
+En modo navegador el dominio portable podrá compartir modelos y comandos, pero el
+backend de audio/compute será otro adaptador (por ejemplo Web Audio/AudioWorklet y
+WebGPU cuando estén disponibles). No se presupone intercambio zero-copy con el
+runtime nativo de Tauri.

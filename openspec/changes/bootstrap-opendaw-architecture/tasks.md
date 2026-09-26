@@ -152,6 +152,14 @@
 - [ ] Añadir explicación de teoría basada en datos de la sesión.
 - [ ] Añadir ejercicios de oído y registro de resultados.
 
+## UI
+
+- [x] Crear un shell experimental Tauri que consuma `ProjectApplication`, mantenga
+  el frontend desacoplado del runtime nativo y no transporte PCM por IPC.
+- [ ] Diseñar contratos de snapshot/telemetría compacta y referencias opacas a
+  medios; visualizar waveform/espectrograma desde artefactos derivados sin asumir
+  memoria GPU compartida entre `wgpu` nativo y WebView.
+
 ## Verificación
 
 - [ ] Test de no asignaciones en el callback de audio.

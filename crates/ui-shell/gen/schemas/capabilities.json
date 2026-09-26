@@ -1,0 +1,1 @@
+{"default":{"identifier":"default","description":"Permite al shell principal invocar el core y abrir proyectos mediante el diálogo nativo.","local":true,"windows":["main"],"permissions":["core:default","dialog:allow-open","dialog:allow-save"]}}

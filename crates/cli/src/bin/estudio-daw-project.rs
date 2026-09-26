@@ -48,7 +48,7 @@ fn usage() {
             "\n  estudio-daw-project attach-media <proyecto.json> <pista> <audio> <salida.json>"
             ,
             "\n  estudio-daw-project add-audio-clip <proyecto.json> <pista> <inicio-tick> <inicio-sample> <duracion-samples> <salida.json>"
-    ));
+   ));
 }
 
 fn main() -> ExitCode {

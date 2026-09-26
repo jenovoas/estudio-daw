@@ -1,0 +1,24 @@
+[package]
+name = "estudio-daw-ui-shell"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Tauri desktop shell for Estudio DAW"
+build = "build.rs"
+
+[[bin]]
+name = "estudio-daw"
+path = "src/main.rs"
+
+[build-dependencies]
+tauri-build = "2"
+
+[dependencies]
+estudio-daw-application = { path = "../application" }
+estudio-daw-project-model = { path = "../project-model" }
+serde = { version = "1", features = ["derive"] }
+tauri = "2"
+tauri-plugin-dialog = "2"
+
+[dev-dependencies]
+serde_json = "1"

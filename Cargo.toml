@@ -12,6 +12,7 @@ members = [
     "crates/command-bus",
     "crates/application",
     "crates/cli",
+    "crates/ui-shell",
 ]
 
 [workspace.package]
