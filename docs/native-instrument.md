@@ -44,6 +44,8 @@ cargo run -q -p estudio-daw-cli --bin estudio-daw-project -- \
 ```
 
 El runtime busca el sink AudioBox para la salida y usa la autoconexión de
-PipeWire si no encuentra uno. La validación automatizada cubre generación,
-liberación y ausencia de asignaciones; la prueba auditiva con el hardware sigue
-siendo una verificación manual, no se infiere del test unitario.
+PipeWire si no encuentra uno. La prueba vertical con KeyLab se ejecutó en el
+host: se capturaron 7 eventos sin descartes y la reproducción de la toma terminó
+por PipeWire también sin descartar eventos. Esto valida el flujo MIDI→sintetizador
+→salida; no constituye una evaluación subjetiva del timbre ni sustituye las
+pruebas automatizadas de generación, liberación y ausencia de asignaciones.

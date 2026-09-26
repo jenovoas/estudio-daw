@@ -188,7 +188,9 @@
 - [x] Test de serialización y migración de schema al abrir un proyecto legacy.
 - [ ] Test de proxy offline, proxy obsoleto, fuente ausente y render final desde original.
 - [ ] Test de undo de operación del agente.
-- [ ] Prueba vertical: KeyLab → synth → grabación MIDI → reproducción.
+- [x] Prueba vertical: KeyLab → synth → grabación MIDI → reproducción. Validada
+  en hardware el 2026-09-26: toma de 7 eventos, 0 eventos descartados y
+  reproducción PipeWire completada con 0 eventos MIDI descartados.
 
 ## Web y WASM
 
