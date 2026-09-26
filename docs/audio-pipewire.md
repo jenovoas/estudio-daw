@@ -61,6 +61,19 @@ la medición de xruns se añadirán en la capa de diagnóstico.
 La selección explícita de nodos, latencia medida y sincronización duplex serán
 las siguientes extensiones.
 
+## Smoke test
+
+El comando de laboratorio abre el duplex durante tres segundos, imprime los
+dispositivos disponibles y reporta callbacks, muestras descartadas y silencio
+insertado por falta de datos:
+
+```bash
+cargo run -q -p estudio-daw-project-model --bin estudio-daw-project -- audio-test
+```
+
+Si el entorno no permite acceder al servidor PipeWire, el comando informa el
+error de permisos/conexión sin ocultarlo.
+
 ## Dependencia de sistema
 
 La compilación usa las bindings oficiales `pipewire-rs` y requiere las

@@ -84,6 +84,8 @@
   `RT_PROCESS`, aislado en `audio-platform`.
 - [x] Añadir ring SPSC preasignado y streams PipeWire de captura/reproducción
   para el primer flujo duplex.
+- [x] Crear smoke test duplex finito con métricas de callbacks, muestras
+  descartadas y silencio de salida.
 - [x] Definir schema inicial de `project.json` para la fixture de interoperabilidad.
 - [ ] Definir entidades Track, Clip, Take, Device, Automation y AnalysisArtifact.
 - [ ] Definir relación original-proxy, timebase, canales y estado de disponibilidad.

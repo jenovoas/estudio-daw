@@ -8,7 +8,9 @@ use pipewire as pw;
 use pw::{properties::properties, spa};
 use spa::pod::Pod;
 use std::io::Cursor;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::time::Duration;
 use thiserror::Error;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -34,6 +36,16 @@ pub enum PipeWireError {
     InvalidConfig,
     #[error("error de PipeWire: {0}")]
     PipeWire(#[from] pw::Error),
+    #[error("error del timer PipeWire: {0}")]
+    Timer(String),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PipeWireDuplexReport {
+    pub capture_callbacks: u64,
+    pub output_callbacks: u64,
+    pub capture_dropped_samples: u64,
+    pub output_silence_samples: u64,
 }
 
 impl PipeWireStreamConfig {
@@ -137,8 +149,27 @@ pub fn run_pipewire_output(
 /// `RenderPlan`. La capacidad se reserva antes de iniciar el main loop.
 pub fn run_pipewire_duplex(
     config: PipeWireStreamConfig,
-    mut render_plan: RenderPlan,
+    render_plan: RenderPlan,
 ) -> Result<(), PipeWireError> {
+    run_pipewire_duplex_internal(config, render_plan, None).map(|_| ())
+}
+
+/// Ejecuta el duplex durante una duración finita y devuelve métricas de la
+/// prueba. Es el smoke test que usará la CLI para detectar problemas de
+/// conexión sin dejar un main loop bloqueado indefinidamente.
+pub fn run_pipewire_duplex_for(
+    config: PipeWireStreamConfig,
+    render_plan: RenderPlan,
+    duration: Duration,
+) -> Result<PipeWireDuplexReport, PipeWireError> {
+    run_pipewire_duplex_internal(config, render_plan, Some(duration))
+}
+
+fn run_pipewire_duplex_internal(
+    config: PipeWireStreamConfig,
+    mut render_plan: RenderPlan,
+    duration: Option<Duration>,
+) -> Result<PipeWireDuplexReport, PipeWireError> {
     let config = config.validate()?;
     pw::init();
     let main_loop = pw::main_loop::MainLoopRc::new(None)?;
@@ -147,6 +178,10 @@ pub fn run_pipewire_duplex(
     let ring = Arc::new(SampleRingBuffer::new(
         config.channels as usize * config.max_buffer_frames * 4,
     ));
+    let capture_callbacks = Arc::new(AtomicU64::new(0));
+    let capture_dropped_samples = Arc::new(AtomicU64::new(0));
+    let output_callbacks = Arc::new(AtomicU64::new(0));
+    let output_silence_samples = Arc::new(AtomicU64::new(0));
 
     let capture_stream = pw::stream::StreamBox::new(
         &core,
@@ -159,6 +194,8 @@ pub fn run_pipewire_duplex(
         },
     )?;
     let capture_ring = Arc::clone(&ring);
+    let capture_callbacks_counter = Arc::clone(&capture_callbacks);
+    let capture_dropped_counter = Arc::clone(&capture_dropped_samples);
     let _capture_listener = capture_stream
         .add_local_listener_with_user_data(())
         .process(move |stream, _| {
@@ -172,7 +209,9 @@ pub fn run_pipewire_duplex(
                 return;
             };
             let (_, samples, _) = unsafe { bytes.align_to::<f32>() };
-            let _ = capture_ring.push(samples);
+            capture_callbacks_counter.fetch_add(1, Ordering::Relaxed);
+            let pushed = capture_ring.push(samples);
+            capture_dropped_counter.fetch_add((samples.len() - pushed) as u64, Ordering::Relaxed);
         })
         .register()?;
 
@@ -187,6 +226,8 @@ pub fn run_pipewire_duplex(
         },
     )?;
     let output_ring = Arc::clone(&ring);
+    let output_callbacks_counter = Arc::clone(&output_callbacks);
+    let output_silence_counter = Arc::clone(&output_silence_samples);
     let _output_listener = output_stream
         .add_local_listener_with_user_data(())
         .process(move |stream, _| {
@@ -200,8 +241,10 @@ pub fn run_pipewire_duplex(
                 return;
             };
             let (_, samples, _) = unsafe { bytes.align_to_mut::<f32>() };
+            output_callbacks_counter.fetch_add(1, Ordering::Relaxed);
             let copied = output_ring.pop(samples);
             samples[copied..].fill(0.0);
+            output_silence_counter.fetch_add((samples.len() - copied) as u64, Ordering::Relaxed);
             let _ = render_plan.process(samples);
         })
         .register()?;
@@ -224,8 +267,24 @@ pub fn run_pipewire_duplex(
             | pw::stream::StreamFlags::RT_PROCESS,
         &mut output_params,
     )?;
+    let _timer = if let Some(duration) = duration {
+        let loop_to_quit = main_loop.clone();
+        let timer = main_loop.loop_().add_timer(move |_| loop_to_quit.quit());
+        timer
+            .update_timer(Some(duration), None)
+            .into_result()
+            .map_err(|error| PipeWireError::Timer(format!("{error:?}")))?;
+        Some(timer)
+    } else {
+        None
+    };
     main_loop.run();
-    Ok(())
+    Ok(PipeWireDuplexReport {
+        capture_callbacks: capture_callbacks.load(Ordering::Relaxed),
+        output_callbacks: output_callbacks.load(Ordering::Relaxed),
+        capture_dropped_samples: capture_dropped_samples.load(Ordering::Relaxed),
+        output_silence_samples: output_silence_samples.load(Ordering::Relaxed),
+    })
 }
 
 fn audio_params(config: PipeWireStreamConfig) -> [&'static Pod; 1] {

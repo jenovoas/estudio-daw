@@ -6,6 +6,8 @@ license.workspace = true
 description = "Canonical project model and DAWproject interchange adapter for Estudio DAW"
 
 [dependencies]
+estudio-daw-audio-engine = { path = "../audio-engine" }
+estudio-daw-audio-platform = { path = "../audio-platform" }
 estudio-daw-midi-engine = { path = "../midi-engine" }
 estudio-daw-session = { path = "../session" }
 estudio-daw-runtime-diagnostics = { path = "../runtime-diagnostics" }
