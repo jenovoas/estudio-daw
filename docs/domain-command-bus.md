@@ -39,6 +39,7 @@ mutación.
 
 - transporte: los `SessionCommand` existentes;
 - audio: agregar, recortar, ajustar ganancia y fades de clips;
+- medios: asociar una fuente original/proxy a una pista de audio;
 - MIDI: adjuntar una toma y cuantizar Note On/Off de un clip;
 - historial: undo y redo de transacciones del proyecto.
 
@@ -66,4 +67,5 @@ cargo test -p estudio-daw-command-bus
 
 Las pruebas cubren coordinación de sesión/proyecto, precondiciones obsoletas,
 serialización, atribución de eventos, cuantización que conserva controladores y
-undo de una mutación MIDI.
+undo de mutaciones MIDI y medios, además del rechazo de fuentes dirigidas a
+pistas MIDI.

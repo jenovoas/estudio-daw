@@ -6,8 +6,9 @@
 
 use estudio_daw_midi_engine::MidiTake;
 use estudio_daw_project_model::{
-    add_audio_clip, attach_midi_take, quantize_midi_clip, set_audio_clip_fades,
-    set_audio_clip_gain, trim_audio_clip, Project, ProjectEvent, ProjectHistory, ProjectSnapshot,
+    add_audio_clip, attach_media_source, attach_midi_take, quantize_midi_clip,
+    set_audio_clip_fades, set_audio_clip_gain, trim_audio_clip, MediaSource, Project, ProjectEvent,
+    ProjectHistory, ProjectSnapshot,
 };
 use estudio_daw_session::{Session, SessionCommand, TransportSnapshot, TransportState};
 use serde::{Deserialize, Serialize};
@@ -72,6 +73,10 @@ pub enum ProjectCommand {
         clip_id: String,
         fade_in_samples: u64,
         fade_out_samples: u64,
+    },
+    AttachMediaSource {
+        track_id: String,
+        source: MediaSource,
     },
     AttachMidiTake {
         take: MidiTake,
@@ -302,6 +307,12 @@ impl CommandRuntime {
                     set_audio_clip_fades(project, &clip_id, fade_in_samples, fade_out_samples)
                 })
                 .map_err(|error| CommandError::Project(error.to_string()))?,
+            ProjectCommand::AttachMediaSource { track_id, source } => self
+                .project_history
+                .transact("attach media source", |project| {
+                    attach_media_source(project, &track_id, source)
+                })
+                .map_err(|error| CommandError::Project(error.to_string()))?,
             ProjectCommand::AttachMidiTake { take, name } => self
                 .project_history
                 .transact("attach MIDI take", |project| {
@@ -404,14 +415,24 @@ mod tests {
                     denominator: 4,
                 },
             },
-            tracks: vec![Track {
-                id: "track-midi".into(),
-                name: "MIDI".into(),
-                kind: TrackKind::Midi,
-                notes: Vec::new(),
-                audio_channels: None,
-                media_source: None,
-            }],
+            tracks: vec![
+                Track {
+                    id: "track-midi".into(),
+                    name: "MIDI".into(),
+                    kind: TrackKind::Midi,
+                    notes: Vec::new(),
+                    audio_channels: None,
+                    media_source: None,
+                },
+                Track {
+                    id: "track-audio".into(),
+                    name: "Audio".into(),
+                    kind: TrackKind::Audio,
+                    notes: Vec::new(),
+                    audio_channels: Some(2),
+                    media_source: None,
+                },
+            ],
             midi_clips: vec![MidiClip {
                 id: "midi-clip-1".into(),
                 name: "Take".into(),
@@ -617,5 +638,57 @@ mod tests {
                 payload: DomainEventPayload::ProjectChanged(_),
             }] if command_id == "attach-take-1"
         ));
+    }
+
+    #[test]
+    fn media_source_attachment_is_reversible_and_rejects_midi_tracks() {
+        let source = MediaSource {
+            original_path: "/music/demo.wav".into(),
+            original_signature: "size:128;mtime:1".into(),
+            original_hash: "sha256:source".into(),
+            proxy: None,
+        };
+        let mut runtime = CommandRuntime::new(project());
+        runtime
+            .apply(envelope(
+                "attach-media-1",
+                DomainCommand::Project(ProjectCommand::AttachMediaSource {
+                    track_id: "track-audio".into(),
+                    source: source.clone(),
+                }),
+            ))
+            .unwrap();
+
+        assert_eq!(
+            runtime.snapshot().project.project.tracks[1].media_source,
+            Some(source.clone())
+        );
+        runtime
+            .apply(envelope(
+                "undo-media-1",
+                DomainCommand::Project(ProjectCommand::Undo),
+            ))
+            .unwrap();
+        assert_eq!(
+            runtime.snapshot().project.project.tracks[1].media_source,
+            None
+        );
+
+        let bus = DomainCommandBus::bounded(1);
+        bus.dispatch(envelope(
+            "wrong-track-1",
+            DomainCommand::Project(ProjectCommand::AttachMediaSource {
+                track_id: "track-midi".into(),
+                source,
+            }),
+        ))
+        .unwrap();
+        let report = bus.drain_into(&mut runtime);
+        assert_eq!(report.applied, 0);
+        assert_eq!(report.rejected[0].code, "project_command_failed");
+        assert_eq!(
+            runtime.snapshot().project.project.tracks[0].media_source,
+            None
+        );
     }
 }
