@@ -14,6 +14,7 @@
 - [x] Probar import/export de un fixture DAWproject y documentar pérdidas o campos
   incompatibles con el modelo Rust.
 - [x] Crear CLI mínima para importar/exportar DAWproject y `project.json`.
+- [x] Integrar una toma MIDI grabada como `MidiClip` en `project.json`.
 - [ ] Registrar atribuciones, licencias, dependencias transitivas y estrategia de
   aislamiento antes de portar cualquier código o asset.
 

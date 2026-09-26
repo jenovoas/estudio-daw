@@ -1,13 +1,16 @@
 use std::{env, fs, path::PathBuf, process::ExitCode};
 
-use estudio_daw_midi_engine::record_alsa_midi;
-use estudio_daw_project_model::{export_dawproject, import_dawproject, Project};
+use estudio_daw_midi_engine::{record_alsa_midi, MidiTake};
+use estudio_daw_project_model::{attach_midi_take, export_dawproject, import_dawproject, Project};
 use estudio_daw_runtime_diagnostics::{audio_devices, midi_devices, monitor_alsa_midi, DeviceInfo};
 use std::time::Duration;
 
 fn usage() {
     eprintln!(
-        "Uso:\n  estudio-daw-project devices\n  estudio-daw-project midi-monitor [nombre]\n  estudio-daw-project midi-record <segundos> <salida.json> [nombre]\n  estudio-daw-project audio-test\n  estudio-daw-project import <entrada.dawproject> <salida.json>\n  estudio-daw-project export <entrada.json> <salida.dawproject>"
+        concat!(
+            "Uso:\n  estudio-daw-project devices\n  estudio-daw-project midi-monitor [nombre]\n  estudio-daw-project midi-record <segundos> <salida.json> [nombre]\n  estudio-daw-project audio-test\n  estudio-daw-project import <entrada.dawproject> <salida.json>\n  estudio-daw-project export <entrada.json> <salida.dawproject>",
+            "\n  estudio-daw-project attach-take <toma.json> <proyecto.json> <salida.json> [nombre]"
+        )
     );
 }
 
@@ -55,6 +58,27 @@ fn main() -> ExitCode {
                 "export" => export_command(input.into(), output.into()),
                 _ => unreachable!(),
             }
+        }
+        "attach-take" => {
+            let Some(take) = args.next() else {
+                usage();
+                return ExitCode::from(2);
+            };
+            let Some(project) = args.next() else {
+                usage();
+                return ExitCode::from(2);
+            };
+            let Some(output) = args.next() else {
+                usage();
+                return ExitCode::from(2);
+            };
+            attach_take_command(
+                take.into(),
+                project.into(),
+                output.into(),
+                args.next()
+                    .map(|value| value.to_string_lossy().into_owned()),
+            )
         }
         _ => {
             usage();
@@ -137,6 +161,24 @@ fn export_command(input: PathBuf, output: PathBuf) -> Result<(), Box<dyn std::er
     let result = export_dawproject(&project, &output)?;
     println!("Exportado a {}", output.display());
     print_warnings(&result.warnings);
+    Ok(())
+}
+
+fn attach_take_command(
+    take_path: PathBuf,
+    project_path: PathBuf,
+    output_path: PathBuf,
+    name: Option<String>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let take: MidiTake = serde_json::from_slice(&fs::read(&take_path)?)?;
+    let mut project: Project = serde_json::from_slice(&fs::read(&project_path)?)?;
+    let clip_id = attach_midi_take(
+        &mut project,
+        take,
+        name.unwrap_or_else(|| "MIDI Take".into()),
+    )?;
+    fs::write(&output_path, serde_json::to_string_pretty(&project)?)?;
+    println!("Clip MIDI {clip_id} adjuntado a {}", output_path.display());
     Ok(())
 }
 

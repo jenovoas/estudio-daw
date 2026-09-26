@@ -3,6 +3,7 @@
 //! DAWproject sólo es una frontera de intercambio. El modelo interno conserva
 //! información adicional como escala, procedencia y estado de proxies.
 
+use estudio_daw_midi_engine::MidiTake;
 use quick_xml::{de::from_str, escape::escape};
 use serde::{Deserialize, Serialize};
 use std::{
@@ -29,7 +30,19 @@ pub struct Project {
     pub project_id: String,
     pub transport: Transport,
     pub tracks: Vec<Track>,
+    #[serde(default)]
+    pub midi_clips: Vec<MidiClip>,
     pub import_provenance: ImportProvenance,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct MidiClip {
+    pub id: String,
+    pub name: String,
+    pub track_id: String,
+    pub start_tick: u64,
+    pub duration_ticks: u64,
+    pub take: MidiTake,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -58,6 +71,12 @@ pub struct Track {
 pub enum TrackKind {
     Midi,
     Audio,
+}
+
+#[derive(Debug, Error, PartialEq, Eq)]
+pub enum AttachTakeError {
+    #[error("no existe una pista MIDI para adjuntar la toma")]
+    NoMidiTrack,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -262,6 +281,7 @@ pub fn import_project_xml(xml: &str) -> Result<ImportResult, ProjectError> {
             time_signature: signature,
         },
         tracks,
+        midi_clips: Vec::new(),
         import_provenance: ImportProvenance {
             format: "dawproject".into(),
             format_version: source.version,
@@ -270,6 +290,39 @@ pub fn import_project_xml(xml: &str) -> Result<ImportResult, ProjectError> {
         },
     };
     Ok(ImportResult { project, warnings })
+}
+
+/// Adjunta una toma MIDI a la primera pista MIDI disponible.
+///
+/// La operación conserva la toma completa y crea una entidad de clip para que
+/// el motor pueda ubicarla en el arreglo sin modificar el archivo de captura.
+pub fn attach_midi_take(
+    project: &mut Project,
+    take: MidiTake,
+    name: impl Into<String>,
+) -> Result<String, AttachTakeError> {
+    let track_id = project
+        .tracks
+        .iter()
+        .find(|track| track.kind == TrackKind::Midi)
+        .map(|track| track.id.clone())
+        .ok_or(AttachTakeError::NoMidiTrack)?;
+    let duration_ticks = take
+        .events
+        .iter()
+        .map(|event| event.tick)
+        .max()
+        .unwrap_or(0);
+    let id = format!("midi-clip-{}", project.midi_clips.len() + 1);
+    project.midi_clips.push(MidiClip {
+        id: id.clone(),
+        name: name.into(),
+        track_id,
+        start_tick: 0,
+        duration_ticks,
+        take,
+    });
+    Ok(id)
 }
 
 /// Exporta el modelo interno como un contenedor `.dawproject` mínimo.
@@ -287,6 +340,10 @@ pub fn export_dawproject(
         .any(|track| matches!(track.kind, TrackKind::Audio))
     {
         warnings.push("Las referencias de audio/proxy aún no se exportan al contenedor.".into());
+    }
+    if !project.midi_clips.is_empty() {
+        warnings
+            .push("Los clips MIDI internos aún no se exportan al contenedor DAWproject.".into());
     }
     warnings
         .push("El estado de plugins, análisis y operaciones del agente no se exporta aún.".into());
@@ -381,6 +438,7 @@ fn escape_attr(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use estudio_daw_midi_engine::{MidiSource, RecordedMidiEvent, RecordedMidiMessage};
 
     #[test]
     fn imports_minimal_fixture_from_zip() {
@@ -394,6 +452,7 @@ mod tests {
             .warnings
             .iter()
             .any(|warning| warning.contains("plugins")));
+        assert!(result.project.midi_clips.is_empty());
     }
 
     #[test]
@@ -428,5 +487,65 @@ mod tests {
             source.project.tracks[0].notes
         );
         std::fs::remove_file(output).unwrap();
+    }
+
+    #[test]
+    fn attaches_midi_take_to_first_midi_track() {
+        let mut project = import_dawproject("../../tests/fixtures/dawproject/minimal.dawproject")
+            .unwrap()
+            .project;
+        let take = MidiTake {
+            ppq: 480,
+            tempo_bpm: 92,
+            duration_micros: 1_000_000,
+            events: vec![RecordedMidiEvent {
+                tick: 480,
+                micros_since_start: 500_000,
+                source: MidiSource { client: 3, port: 0 },
+                message: RecordedMidiMessage::NoteOn {
+                    channel: 1,
+                    note: 64,
+                    velocity: 100,
+                },
+            }],
+        };
+        let id = attach_midi_take(&mut project, take, "KeyLab take").unwrap();
+        assert_eq!(id, "midi-clip-1");
+        assert_eq!(project.midi_clips[0].track_id, "track-midi");
+        assert_eq!(project.midi_clips[0].duration_ticks, 480);
+        assert_eq!(project.midi_clips[0].name, "KeyLab take");
+    }
+
+    #[test]
+    fn rejects_take_when_project_has_no_midi_track() {
+        let mut project = Project {
+            schema_version: "test".into(),
+            project_id: "test".into(),
+            transport: Transport {
+                tempo_bpm: 120.0,
+                time_signature: TimeSignature {
+                    numerator: 4,
+                    denominator: 4,
+                },
+            },
+            tracks: vec![],
+            midi_clips: vec![],
+            import_provenance: ImportProvenance {
+                format: "internal".into(),
+                format_version: "1".into(),
+                source_file: "".into(),
+                warnings: vec![],
+            },
+        };
+        let take = MidiTake {
+            ppq: 480,
+            tempo_bpm: 120,
+            duration_micros: 0,
+            events: vec![],
+        };
+        assert_eq!(
+            attach_midi_take(&mut project, take, "empty"),
+            Err(AttachTakeError::NoMidiTrack)
+        );
     }
 }
