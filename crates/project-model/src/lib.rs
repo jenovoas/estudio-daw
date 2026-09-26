@@ -619,6 +619,12 @@ pub struct AudioClip {
     pub duration_samples: u64,
     pub sample_rate: u32,
     pub channels: u16,
+    #[serde(default)]
+    pub gain_db: f32,
+    #[serde(default)]
+    pub fade_in_samples: u64,
+    #[serde(default)]
+    pub fade_out_samples: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -682,6 +688,12 @@ pub enum AudioClipError {
     InvalidSampleRate,
     #[error("el número de canales debe estar entre 1 y 32")]
     InvalidChannels,
+    #[error("no existe el clip de audio '{0}'")]
+    ClipNotFound(String),
+    #[error("la ganancia debe ser un valor finito")]
+    InvalidGain,
+    #[error("el fade no puede superar la duración del clip")]
+    InvalidFade,
 }
 
 #[derive(Debug, Error, PartialEq, Eq)]
@@ -979,8 +991,70 @@ pub fn add_audio_clip(
         duration_samples,
         sample_rate,
         channels,
+        gain_db: 0.0,
+        fade_in_samples: 0,
+        fade_out_samples: 0,
     });
     Ok(id)
+}
+
+/// Cambia el recorte de una región sin editar ni reescribir su fuente.
+pub fn trim_audio_clip(
+    project: &mut Project,
+    clip_id: &str,
+    source_start_samples: u64,
+    duration_samples: u64,
+) -> Result<(), AudioClipError> {
+    if duration_samples == 0 {
+        return Err(AudioClipError::InvalidDuration);
+    }
+    let clip = project
+        .audio_clips
+        .iter_mut()
+        .find(|clip| clip.id == clip_id)
+        .ok_or_else(|| AudioClipError::ClipNotFound(clip_id.into()))?;
+    if clip.fade_in_samples + clip.fade_out_samples > duration_samples {
+        return Err(AudioClipError::InvalidFade);
+    }
+    clip.source_start_samples = source_start_samples;
+    clip.duration_samples = duration_samples;
+    Ok(())
+}
+
+pub fn set_audio_clip_gain(
+    project: &mut Project,
+    clip_id: &str,
+    gain_db: f32,
+) -> Result<(), AudioClipError> {
+    if !gain_db.is_finite() {
+        return Err(AudioClipError::InvalidGain);
+    }
+    let clip = project
+        .audio_clips
+        .iter_mut()
+        .find(|clip| clip.id == clip_id)
+        .ok_or_else(|| AudioClipError::ClipNotFound(clip_id.into()))?;
+    clip.gain_db = gain_db.clamp(-120.0, 24.0);
+    Ok(())
+}
+
+pub fn set_audio_clip_fades(
+    project: &mut Project,
+    clip_id: &str,
+    fade_in_samples: u64,
+    fade_out_samples: u64,
+) -> Result<(), AudioClipError> {
+    let clip = project
+        .audio_clips
+        .iter_mut()
+        .find(|clip| clip.id == clip_id)
+        .ok_or_else(|| AudioClipError::ClipNotFound(clip_id.into()))?;
+    if fade_in_samples.saturating_add(fade_out_samples) > clip.duration_samples {
+        return Err(AudioClipError::InvalidFade);
+    }
+    clip.fade_in_samples = fade_in_samples;
+    clip.fade_out_samples = fade_out_samples;
+    Ok(())
 }
 
 /// Garantiza el proxy de una pista y actualiza el proyecto sólo tras una
@@ -1415,6 +1489,9 @@ mod tests {
         )
         .unwrap();
         assert_eq!(clip_id, "audio-clip-1");
+        set_audio_clip_gain(&mut project, &clip_id, -3.0).unwrap();
+        set_audio_clip_fades(&mut project, &clip_id, 2_400, 2_400).unwrap();
+        trim_audio_clip(&mut project, &clip_id, 4_800, 24_000).unwrap();
         let json = serde_json::to_vec(&project).unwrap();
         let restored: Project = serde_json::from_slice(&json).unwrap();
         assert_eq!(
@@ -1430,7 +1507,9 @@ mod tests {
             original
         );
         assert_eq!(restored.audio_clips[0].start_tick, 960);
-        assert_eq!(restored.audio_clips[0].duration_samples, 48_000);
+        assert_eq!(restored.audio_clips[0].duration_samples, 24_000);
+        assert_eq!(restored.audio_clips[0].source_start_samples, 4_800);
+        assert_eq!(restored.audio_clips[0].gain_db, -3.0);
         std::fs::remove_file(original).unwrap();
     }
 

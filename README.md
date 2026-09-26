@@ -647,6 +647,7 @@ Después se añadirán clips, escenas, Arrangement View, plugins, escalas, anál
 - [Backend PipeWire](docs/audio-pipewire.md)
 - [MediaSource y proxies](docs/proxy-assets.md)
 - [Control MIDI live](docs/midi-live-control.md)
+- [Frontera Core/UI](docs/ui-architecture.md)
 - [Propuesta inicial](openspec/changes/bootstrap-opendaw-architecture/proposal.md)
 - [Diseño](openspec/changes/bootstrap-opendaw-architecture/design.md)
 - [Especificación de audio y MIDI](openspec/changes/bootstrap-opendaw-architecture/specs/runtime-audio-midi/spec.md)

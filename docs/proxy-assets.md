@@ -36,6 +36,10 @@ audio; las pistas MIDI permanecen libres de rutas y metadatos de medios.
 ticks musicales y su recorte de fuente en samples. Esto permite cambiar el
 tempo del proyecto sin perder la precisión del material grabado.
 
+El binario `estudio-daw-project` es un adaptador de laboratorio, no la
+arquitectura de la UI. Las operaciones de asociación, caché y edición viven en
+Rust y la futura interfaz las invocará mediante un `Application/Command API`.
+
 El flujo CLI completo conserva cada etapa en un archivo nuevo:
 
 ```bash
