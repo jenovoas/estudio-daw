@@ -394,6 +394,9 @@ fn audio_record_command(seconds: &str, output: PathBuf) -> Result<(), Box<dyn st
 }
 
 fn proxy_audio_command(input: PathBuf, output: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
+    if !input.is_file() {
+        return Err(format!("no existe el archivo de audio fuente: {}", input.display()).into());
+    }
     let source = MediaSource::from_original(&input)?;
     let profile = AudioProxyProfile::opus_preview();
     let asset = generate_audio_proxy_ffmpeg(&source, &output, &profile)?;

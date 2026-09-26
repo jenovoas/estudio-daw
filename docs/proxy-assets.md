@@ -33,7 +33,7 @@ publica el archivo sólo después de esa validación:
 
 ```bash
 cargo run -q -p estudio-daw-project-model --bin estudio-daw-project -- \
-  proxy-audio original.wav cache/original-preview.ogg
+  proxy-audio /ruta/a/mi-cancion.wav cache/mi-cancion-preview.ogg
 ```
 
 El editor podrá seguir usando la representación anterior mientras el job
