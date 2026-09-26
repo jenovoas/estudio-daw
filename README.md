@@ -582,11 +582,13 @@ La versión nativa seguirá siendo la referencia para baja latencia, interfaces 
 
 ```text
 estudio-daw/
-├── crates/       núcleo Rust
+├── crates/       núcleo Rust y adaptadores
 │   ├── session/   estado de sesión y CommandBus bounded
 │   ├── midi-engine/
 │   ├── audio-engine/ grafo DSP y RenderPlan
-│   └── dsp/       procesamiento DSP modular
+│   ├── dsp/       procesamiento DSP modular
+│   ├── command-bus/ comandos de dominio versionados
+│   └── cli/       adaptador CLI (ejecutable estudio-daw-project)
 ├── python/       workers de análisis
 ├── schemas/      contratos versionados
 ├── docs/         decisiones y documentación
@@ -609,19 +611,19 @@ Comandos de laboratorio:
 
 ```bash
 # Ver destinos MIDI ALSA
-cargo run -q -p estudio-daw-project-model --bin estudio-daw-project -- midi-outputs
+cargo run -q -p estudio-daw-cli --bin estudio-daw-project -- midi-outputs
 
 # Reproducir una toma directamente
-cargo run -q -p estudio-daw-project-model --bin estudio-daw-project -- midi-play mi-toma.json "FLUID Synth"
+cargo run -q -p estudio-daw-cli --bin estudio-daw-project -- midi-play mi-toma.json "FLUID Synth"
 
 # Reproducir un clip que ya pertenece a project.json
-cargo run -q -p estudio-daw-project-model --bin estudio-daw-project -- project-play proyecto.json midi-clip-1 "FLUID Synth"
+cargo run -q -p estudio-daw-cli --bin estudio-daw-project -- project-play proyecto.json midi-clip-1 "FLUID Synth"
 
 # Reproducir un clip controlando el transporte desde el puerto DAW del KeyLab
-cargo run -q -p estudio-daw-project-model --bin estudio-daw-project -- project-play-live proyecto.json "" "FluidSynth" "KeyLab Essential 49 DAW"
+cargo run -q -p estudio-daw-cli --bin estudio-daw-project -- project-play-live proyecto.json "" "FluidSynth" "KeyLab Essential 49 DAW"
 
 # Grabar MIDI iniciando y deteniendo con el botón Record del KeyLab
-cargo run -q -p estudio-daw-project-model --bin estudio-daw-project -- midi-record-live mi-toma-live.json "KeyLab Essential 49 MID" "KeyLab Essential 49 DAW"
+cargo run -q -p estudio-daw-cli --bin estudio-daw-project -- midi-record-live mi-toma-live.json "KeyLab Essential 49 MID" "KeyLab Essential 49 DAW"
 ```
 
 Durante `project-play`, la terminal acepta `p` para pausar/reanudar, `s` para

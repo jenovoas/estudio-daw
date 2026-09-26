@@ -1,7 +1,7 @@
 # Bus de comandos del dominio
 
 `estudio-daw-command-bus` coordina las mutaciones del proyecto y del transporte
-desde una frontera portable. La UI, CLI, MIDI, scripting y agentes podrán emitir
+desde una frontera portable. La UI, CLI, MIDI, scripting y agentes pueden emitir
 el mismo `CommandEnvelope`; no necesitan conocer los detalles internos de
 `ProjectHistory` ni de `Session`.
 
@@ -52,9 +52,11 @@ Las mutaciones del proyecto generan `ProjectEvent` dentro de un
 
 - El crate tiene el runtime de dominio y una cola bounded en memoria; todavía no
   es un log durable de comandos.
-- El binario CLI vive hoy dentro de `project-model`, por lo que no puede depender
-  de este crate sin crear un ciclo. Migrar la CLI a un crate adaptador separado
-  será una tarea explícita antes de enrutar sus mutaciones por este bus.
+- La CLI está aislada en `estudio-daw-cli`, por fuera del modelo portable. Sus
+  comandos `attach-take`, `quantize`, `attach-media` y `add-audio-clip` ya se
+  enrutan mediante `DomainCommandBus`; import/export, generación de proxies y
+  operaciones de dispositivos siguen siendo adaptadores directos porque también
+  coordinan archivos o servicios del sistema.
 - La API de comandos se ampliará según las tareas aprobadas; no implica que toda
   mutación existente ya esté migrada.
 - El callback RT no envía comandos a esta cola ni ejecuta `drain_into`.

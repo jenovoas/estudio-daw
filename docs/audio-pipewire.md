@@ -84,7 +84,7 @@ forma independiente. La ruta podrá sustituirse después por FLAC, stems o un
 proxy sin cambiar el contrato del callback.
 
 ```bash
-cargo run -q -p estudio-daw-project-model --bin estudio-daw-project -- \
+cargo run -q -p estudio-daw-cli --bin estudio-daw-project -- \
   audio-record 10 toma.wav
 ```
 
@@ -95,7 +95,7 @@ dispositivos disponibles y reporta callbacks, muestras descartadas y silencio
 insertado por falta de datos:
 
 ```bash
-cargo run -q -p estudio-daw-project-model --bin estudio-daw-project -- audio-test
+cargo run -q -p estudio-daw-cli --bin estudio-daw-project -- audio-test
 ```
 
 Si el entorno no permite acceder al servidor PipeWire, el comando informa el

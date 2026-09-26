@@ -1,3 +1,7 @@
+//! Adaptador CLI: conecta argumentos, archivos y hardware con los crates del DAW.
+//! Las mutaciones del proyecto pasan por `estudio-daw-command-bus`; aquí no se
+//! replica la lógica de edición que también necesitarán la UI y el scripting.
+
 use std::{env, fs, path::PathBuf, process::ExitCode};
 
 use estudio_daw_audio_engine::{EqBandConfig, EqualizerNode, RenderPlanBuilder};
@@ -5,19 +9,22 @@ use estudio_daw_audio_platform::{
     run_pipewire_duplex_for_targets, run_pipewire_duplex_for_targets_with_capture,
     PipeWireStreamConfig, PipeWireTargets, WavCaptureRecorder,
 };
+use estudio_daw_command_bus::{
+    CommandEnvelope, CommandMetadata, CommandRuntime, DomainCommand, DomainCommandBus,
+    ProjectCommand,
+};
 use estudio_daw_midi_engine::{
     play_midi_take, play_midi_take_interactive, play_midi_take_live, record_alsa_midi,
     record_alsa_midi_live, run_alsa_midi_control, MidiControlMap, MidiTake,
 };
 use estudio_daw_project_model::{
-    add_audio_clip, attach_media_source, attach_midi_take, ensure_track_audio_proxy,
-    export_dawproject, generate_audio_proxy_ffmpeg, import_dawproject, quantize_midi_clip,
+    ensure_track_audio_proxy, export_dawproject, generate_audio_proxy_ffmpeg, import_dawproject,
     AudioProxyProfile, MediaSource, Project, ProxyCacheManager,
 };
 use estudio_daw_runtime_diagnostics::{
     audio_devices, enumerate_alsa_midi_output_ports, midi_devices, monitor_alsa_midi, DeviceInfo,
 };
-use estudio_daw_session::{CommandBus, Session};
+use estudio_daw_session::{CommandBus as SessionCommandBus, Session};
 use std::time::Duration;
 
 fn usage() {
@@ -356,7 +363,7 @@ fn midi_control_monitor_command(query: Option<String>) -> Result<(), Box<dyn std
     let query = query.unwrap_or_else(|| "KeyLab".into());
     let map = MidiControlMap::for_port_query(&query);
     println!("Mapa de control seleccionado para '{query}'.");
-    let bus = CommandBus::bounded(64);
+    let bus = SessionCommandBus::bounded(64);
     let mut session = Session::default();
     run_alsa_midi_control(&query, &map, |command| {
         let domain_command = command.to_session_command();
@@ -523,10 +530,16 @@ fn attach_media_command(
     audio_path: PathBuf,
     output_path: PathBuf,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let mut project: Project = serde_json::from_slice(&fs::read(&project_path)?)?;
     let source = MediaSource::from_original(&audio_path)?;
-    attach_media_source(&mut project, &track_id, source)?;
-    fs::write(&output_path, serde_json::to_vec_pretty(&project)?)?;
+    let _project = apply_project_command_file(
+        project_path,
+        output_path.clone(),
+        "cli-attach-media",
+        ProjectCommand::AttachMediaSource {
+            track_id: track_id.clone(),
+            source,
+        },
+    )?;
     println!(
         "Fuente asociada: pista={} audio={} proyecto={}",
         track_id,
@@ -544,18 +557,25 @@ fn add_audio_clip_command(
     duration: &str,
     output_path: PathBuf,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let mut project: Project = serde_json::from_slice(&fs::read(&project_path)?)?;
-    let id = add_audio_clip(
-        &mut project,
-        &track_id,
-        "Audio region",
-        start_tick.parse()?,
-        source_start.parse()?,
-        duration.parse()?,
-        48_000,
-        2,
+    let project = apply_project_command_file(
+        project_path,
+        output_path.clone(),
+        "cli-add-audio-clip",
+        ProjectCommand::AddAudioClip {
+            track_id: track_id.clone(),
+            name: "Audio region".into(),
+            start_tick: start_tick.parse()?,
+            source_start_samples: source_start.parse()?,
+            duration_samples: duration.parse()?,
+            sample_rate: 48_000,
+            channels: 2,
+        },
     )?;
-    fs::write(&output_path, serde_json::to_vec_pretty(&project)?)?;
+    let id = project
+        .audio_clips
+        .last()
+        .map(|clip| clip.id.as_str())
+        .unwrap_or("(sin id)");
     println!(
         "Clip de audio creado: {} en pista={} proyecto={}",
         id,
@@ -640,13 +660,20 @@ fn attach_take_command(
     name: Option<String>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let take: MidiTake = serde_json::from_slice(&fs::read(&take_path)?)?;
-    let mut project: Project = serde_json::from_slice(&fs::read(&project_path)?)?;
-    let clip_id = attach_midi_take(
-        &mut project,
-        take,
-        name.unwrap_or_else(|| "MIDI Take".into()),
+    let project = apply_project_command_file(
+        project_path,
+        output_path.clone(),
+        "cli-attach-midi-take",
+        ProjectCommand::AttachMidiTake {
+            take,
+            name: name.unwrap_or_else(|| "MIDI Take".into()),
+        },
     )?;
-    fs::write(&output_path, serde_json::to_string_pretty(&project)?)?;
+    let clip_id = project
+        .midi_clips
+        .last()
+        .map(|clip| clip.id.as_str())
+        .unwrap_or("(sin id)");
     println!("Clip MIDI {clip_id} adjuntado a {}", output_path.display());
     Ok(())
 }
@@ -658,15 +685,47 @@ fn quantize_command(
     output_path: PathBuf,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let grid: u64 = grid.parse()?;
-    let mut project: Project = serde_json::from_slice(&fs::read(&project_path)?)?;
-    let changed = quantize_midi_clip(&mut project, &clip_id, grid)?;
-    fs::write(&output_path, serde_json::to_string_pretty(&project)?)?;
+    let _project = apply_project_command_file(
+        project_path,
+        output_path.clone(),
+        "cli-quantize-midi-clip",
+        ProjectCommand::QuantizeMidiClip {
+            clip_id: clip_id.clone(),
+            grid_ticks: grid,
+        },
+    )?;
     println!(
-        "{} eventos cuantizados en {clip_id}; salida: {}",
-        changed,
+        "Cuantización aplicada a {clip_id}; salida: {}",
         output_path.display()
     );
     Ok(())
+}
+
+/// Lee un proyecto, ejecuta una mutación mediante el bus de dominio y persiste
+/// el snapshot resultante. La CLI y una futura UI comparten así el mismo contrato.
+fn apply_project_command_file(
+    input_path: PathBuf,
+    output_path: PathBuf,
+    command_id: &str,
+    command: ProjectCommand,
+) -> Result<Project, Box<dyn std::error::Error>> {
+    let project: Project = serde_json::from_slice(&fs::read(input_path)?)?;
+    let mut runtime = CommandRuntime::new(project);
+    let bus = DomainCommandBus::bounded(1);
+    bus.dispatch(CommandEnvelope {
+        metadata: CommandMetadata::user(command_id),
+        command: DomainCommand::Project(command),
+    })?;
+    let report = bus.drain_into(&mut runtime);
+    if let Some(diagnostic) = report.rejected.into_iter().next() {
+        return Err(std::io::Error::other(diagnostic.message).into());
+    }
+    if report.applied != 1 {
+        return Err("el bus no aplicó exactamente un comando".into());
+    }
+    let project = runtime.snapshot().project.project;
+    fs::write(output_path, serde_json::to_vec_pretty(&project)?)?;
+    Ok(project)
 }
 
 fn midi_summary_command(project_path: PathBuf) -> Result<(), Box<dyn std::error::Error>> {

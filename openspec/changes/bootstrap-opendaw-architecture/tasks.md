@@ -80,6 +80,8 @@
 
 - [ ] Separar `Portable Domain` de `Platform Runtime` mediante crates y traits explícitos.
 - [x] Definir `Session`, `TransportSnapshot`, `CommandBus` y `ChangeSet`.
+- [x] Separar el adaptador CLI de `project-model` y enrutar sus mutaciones
+  principales de clips/MIDI/medios por comandos de dominio.
 - [x] Crear mapa modular de control MIDI para transporte, escenas y volumen
   master, con lector ALSA reutilizable y resolución sin asignaciones.
 - [x] Aplicar comandos MIDI a un estado de sesión live con transporte,

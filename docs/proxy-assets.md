@@ -43,10 +43,10 @@ Rust y la futura interfaz las invocará mediante un `Application/Command API`.
 El flujo CLI completo conserva cada etapa en un archivo nuevo:
 
 ```bash
-cargo run -q -p estudio-daw-project-model --bin estudio-daw-project -- \
+cargo run -q -p estudio-daw-cli --bin estudio-daw-project -- \
   attach-media proyecto.json track-audio toma.wav proyecto-con-audio.json
 
-cargo run -q -p estudio-daw-project-model --bin estudio-daw-project -- \
+cargo run -q -p estudio-daw-cli --bin estudio-daw-project -- \
   proxy-track proyecto-con-audio.json track-audio .cache/proxies proyecto-final.json
 ```
 
@@ -69,7 +69,7 @@ con ffmpeg a Opus/Ogg, valida con ffprobe que la salida sea estéreo a 48 kHz y
 publica el archivo sólo después de esa validación:
 
 ```bash
-cargo run -q -p estudio-daw-project-model --bin estudio-daw-project -- \
+cargo run -q -p estudio-daw-cli --bin estudio-daw-project -- \
   proxy-audio /ruta/a/mi-cancion.wav cache/mi-cancion-preview.ogg
 ```
 

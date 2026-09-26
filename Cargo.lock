@@ -481,6 +481,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "estudio-daw-cli"
+version = "0.1.0"
+dependencies = [
+ "estudio-daw-audio-engine",
+ "estudio-daw-audio-platform",
+ "estudio-daw-command-bus",
+ "estudio-daw-midi-engine",
+ "estudio-daw-project-model",
+ "estudio-daw-runtime-diagnostics",
+ "estudio-daw-session",
+ "serde_json",
+]
+
+[[package]]
 name = "estudio-daw-command-bus"
 version = "0.1.0"
 dependencies = [

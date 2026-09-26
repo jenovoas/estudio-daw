@@ -35,14 +35,14 @@ canal 1 aunque el contrato Rust use `channel: 0`.
 Para reproducir una toma y controlar el transporte desde el KeyLab:
 
 ```bash
-cargo run -q -p estudio-daw-project-model --bin estudio-daw-project -- \
+cargo run -q -p estudio-daw-cli --bin estudio-daw-project -- \
   midi-play-live mi-toma.json "FLUID Synth" "KeyLab Essential 49 DAW"
 ```
 
 Para reproducir el primer clip de un proyecto:
 
 ```bash
-cargo run -q -p estudio-daw-project-model --bin estudio-daw-project -- \
+cargo run -q -p estudio-daw-cli --bin estudio-daw-project -- \
   project-play-live proyecto.json "" "FLUID Synth" "KeyLab Essential 49 DAW"
 ```
 
@@ -54,7 +54,7 @@ reproducción. El reloj de reproducción no queda bloqueado por ALSA.
 La grabación escucha el puerto musical y usa el puerto DAW sólo como control:
 
 ```bash
-cargo run -q -p estudio-daw-project-model --bin estudio-daw-project -- \
+cargo run -q -p estudio-daw-cli --bin estudio-daw-project -- \
   midi-record-live mi-toma-live.json \
   "KeyLab Essential 49 MID" \
   "KeyLab Essential 49 DAW"
@@ -102,4 +102,3 @@ y aplicación de comandos al estado live:
 ```bash
 cargo test -p estudio-daw-midi-engine
 ```
-
