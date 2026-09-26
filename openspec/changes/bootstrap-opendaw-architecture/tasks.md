@@ -39,6 +39,7 @@
 - [x] Crear workspace Cargo y crate base de modelo/intercambio.
 - [x] Implementar enumeración diagnóstica de dispositivos de audio y MIDI mediante PipeWire.
 - [ ] Implementar stream de audio de prueba.
+- [x] Crear módulo DSP modular de ecualización con bandas sin asignaciones en procesamiento.
 - [ ] Leer Note On/Off, velocity, CC, pitch bend y sustain.
 - [ ] Implementar transporte sample/beat/bar.
 - [ ] Crear reloj de reproducción determinista.

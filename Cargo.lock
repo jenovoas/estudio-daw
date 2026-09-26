@@ -376,6 +376,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "estudio-daw-dsp"
+version = "0.1.0"
+
+[[package]]
 name = "estudio-daw-midi-engine"
 version = "0.1.0"
 dependencies = [
