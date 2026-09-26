@@ -105,6 +105,76 @@ impl AudioProxyProfile {
     }
 }
 
+/// Administrador de caché de proxies derivados.
+#[derive(Debug, Clone)]
+pub struct ProxyCacheManager {
+    root: PathBuf,
+}
+
+impl ProxyCacheManager {
+    pub fn new(root: impl Into<PathBuf>) -> Self {
+        Self { root: root.into() }
+    }
+
+    pub fn root(&self) -> &Path {
+        &self.root
+    }
+
+    /// Devuelve una ubicación estable para un perfil y una fuente concretos.
+    /// El hash evita colisiones entre archivos con el mismo nombre y permite
+    /// conservar versiones antiguas hasta que una limpieza explícita las retire.
+    pub fn destination_for(&self, source: &MediaSource, profile: &AudioProxyProfile) -> PathBuf {
+        let stem = source
+            .original_path
+            .file_stem()
+            .and_then(|value| value.to_str())
+            .map(sanitize_filename)
+            .unwrap_or_else(|| "media".into());
+        let hash = source
+            .original_hash
+            .strip_prefix("sha256:")
+            .unwrap_or(&source.original_hash);
+        let short_hash = &hash[..hash.len().min(16)];
+        self.root
+            .join(format!("{stem}-{short_hash}-{}.ogg", profile.id))
+    }
+
+    /// Reutiliza una entrada lista o genera una nueva si falta/está obsoleta.
+    pub fn ensure_audio_proxy(
+        &self,
+        source: &mut MediaSource,
+        profile: &AudioProxyProfile,
+    ) -> Result<ProxyCacheState, ProxyJobError> {
+        let destination = self.destination_for(source, profile);
+        match source.proxy_cache_state(&destination, &profile.id) {
+            ProxyCacheState::Ready => return Ok(ProxyCacheState::Ready),
+            ProxyCacheState::Building => return Err(ProxyJobError::AlreadyBuilding),
+            ProxyCacheState::Missing | ProxyCacheState::Stale => {}
+        }
+        let asset = generate_audio_proxy_ffmpeg(source, &destination, profile)?;
+        source.proxy = Some(asset);
+        Ok(ProxyCacheState::Ready)
+    }
+}
+
+fn sanitize_filename(value: &str) -> String {
+    let sanitized: String = value
+        .chars()
+        .map(|character| {
+            if character.is_ascii_alphanumeric() || matches!(character, '-' | '_') {
+                character
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    if sanitized.is_empty() {
+        "media".into()
+    } else {
+        sanitized
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MediaRepresentation {
     Original,
@@ -1002,6 +1072,26 @@ mod tests {
             source.proxy_cache_state(&proxy, "audio-opus-preview-v1"),
             ProxyCacheState::Stale
         );
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn proxy_cache_destination_is_stable_and_sanitized() {
+        let root =
+            std::env::temp_dir().join(format!("estudio-daw-cache-path-{}", std::process::id()));
+        let original = root.join("Mi canción (master).wav");
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(&original, b"audio").unwrap();
+        let source = MediaSource::from_original(&original).unwrap();
+        let manager = ProxyCacheManager::new(root.join("cache"));
+        let profile = AudioProxyProfile::opus_preview();
+        let first = manager.destination_for(&source, &profile);
+        let second = manager.destination_for(&source, &profile);
+        assert_eq!(first, second);
+        assert!(first.to_string_lossy().contains("Mi_canci_n__master_"));
+        assert!(first
+            .to_string_lossy()
+            .ends_with("audio-opus-preview-v1.ogg"));
         std::fs::remove_dir_all(root).unwrap();
     }
 

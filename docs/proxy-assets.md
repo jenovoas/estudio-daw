@@ -18,6 +18,11 @@ fuente que lo generó.
 `.building` con `create_new`, por lo que dos procesos no pueden generar el
 mismo proxy simultáneamente.
 
+`ProxyCacheManager` calcula rutas deterministas usando nombre sanitizado,
+perfil y prefijo SHA-256. `ensure_audio_proxy()` reutiliza entradas `Ready` y
+sólo genera una nueva entrada para estados `Missing` o `Stale`; el modelo no se
+actualiza hasta que el archivo fue validado y publicado.
+
 La resolución sólo selecciona una ruta; no copia, modifica ni re-encodea ningún
 archivo. Si el original cambió, la firma del proxy deja de coincidir y el
 proxy se considera obsoleto. La firma inicial es una comprobación barata de
