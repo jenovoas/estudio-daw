@@ -72,6 +72,8 @@
   puerto DAW con `midi-record-live`.
 - [x] Crear crate de sesión con `TransportSnapshot`, `SessionCommand` y
   `CommandBus` bounded, documentado y probado sin hardware.
+- [x] Traducir `MidiControlCommand` a `SessionCommand` sin acoplar el dominio a
+  MIDI.
 - [x] Definir schema inicial de `project.json` para la fixture de interoperabilidad.
 - [ ] Definir entidades Track, Clip, Take, Device, Automation y AnalysisArtifact.
 - [ ] Definir relación original-proxy, timebase, canales y estado de disponibilidad.

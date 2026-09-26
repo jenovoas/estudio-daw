@@ -58,6 +58,26 @@ pub struct MidiControlCommand {
     pub value: f32,
 }
 
+impl MidiControlCommand {
+    /// Traduce control físico a intención de dominio.
+    ///
+    /// El adaptador evita que `Session` dependa de MIDI: el dominio sólo
+    /// recibe `SessionCommand` y puede ser controlado por otras superficies.
+    pub fn to_session_command(self) -> estudio_daw_session::SessionCommand {
+        use estudio_daw_session::SessionCommand;
+
+        match self.action {
+            MidiControlAction::TogglePlay => SessionCommand::TogglePlay,
+            MidiControlAction::Stop => SessionCommand::Stop,
+            MidiControlAction::ToggleRecord => SessionCommand::ToggleRecord,
+            MidiControlAction::ToggleLoop => SessionCommand::ToggleLoop,
+            MidiControlAction::NextScene => SessionCommand::NextScene,
+            MidiControlAction::PreviousScene => SessionCommand::PreviousScene,
+            MidiControlAction::MasterVolume => SessionCommand::SetMasterVolume(self.value),
+        }
+    }
+}
+
 /// Tabla de control MIDI editable desde la UI y persistible junto al proyecto.
 ///
 /// La tabla sólo se modifica fuera del hilo RT. `resolve` únicamente recorre
@@ -1147,6 +1167,19 @@ mod tests {
         assert_eq!(
             command.map(|command| command.action),
             Some(MidiControlAction::TogglePlay)
+        );
+    }
+
+    #[test]
+    fn translates_midi_control_to_domain_command() {
+        let command = MidiControlCommand {
+            action: MidiControlAction::MasterVolume,
+            value: 0.63,
+        }
+        .to_session_command();
+        assert_eq!(
+            command,
+            estudio_daw_session::SessionCommand::SetMasterVolume(0.63)
         );
     }
 

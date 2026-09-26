@@ -61,7 +61,7 @@ assert_eq!(session.snapshot().state, TransportState::Playing);
 
 ## Estado actual
 
-El lector MIDI live ya tiene un `LiveSessionState` compatible como prototipo.
-La siguiente migración eliminará esa duplicación y hará que `MidiControlCommand`
-se traduzca a `SessionCommand` antes de entrar al bus global.
-
+`MidiControlCommand::to_session_command()` ya traduce el control físico al
+dominio sin hacer que `Session` dependa de MIDI. La migración siguiente hará que
+el lector live publique esos comandos directamente en el bus global y retirará
+la duplicación temporal de `LiveSessionState`.

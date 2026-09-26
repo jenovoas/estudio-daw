@@ -8,5 +8,6 @@ description = "MIDI event model and take recorder for Estudio DAW"
 [dependencies]
 alsa = "0.9"
 estudio-daw-runtime-diagnostics = { path = "../runtime-diagnostics" }
+estudio-daw-session = { path = "../session" }
 serde = { version = "1", features = ["derive"] }
 thiserror = "2"

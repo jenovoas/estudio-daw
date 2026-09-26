@@ -385,6 +385,7 @@ version = "0.1.0"
 dependencies = [
  "alsa",
  "estudio-daw-runtime-diagnostics",
+ "estudio-daw-session",
  "serde",
  "thiserror",
 ]
