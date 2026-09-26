@@ -35,7 +35,7 @@
 - [ ] Implementar transporte sample/beat/bar.
 - [ ] Crear reloj de reproducción determinista.
 - [ ] Añadir captura de audio a archivo temporal.
-- [ ] Añadir captura MIDI a un modelo de evento.
+- [x] Añadir captura MIDI a un modelo de evento y toma temporal.
 - [ ] Implementar `MediaSource`/`ProxyAsset` y política original/proxy/auto.
 - [ ] Crear jobs de proxy con hash, perfil, validación, regeneración y limpieza segura.
 

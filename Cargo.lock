@@ -250,6 +250,7 @@ dependencies = [
 name = "estudio-daw-project-model"
 version = "0.1.0"
 dependencies = [
+ "estudio-daw-midi-engine",
  "estudio-daw-runtime-diagnostics",
  "pretty_assertions",
  "quick-xml",

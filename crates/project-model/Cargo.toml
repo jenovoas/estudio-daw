@@ -6,6 +6,7 @@ license.workspace = true
 description = "Canonical project model and DAWproject interchange adapter for Estudio DAW"
 
 [dependencies]
+estudio-daw-midi-engine = { path = "../midi-engine" }
 estudio-daw-runtime-diagnostics = { path = "../runtime-diagnostics" }
 quick-xml = { version = "0.37", features = ["serialize"] }
 serde = { version = "1", features = ["derive"] }

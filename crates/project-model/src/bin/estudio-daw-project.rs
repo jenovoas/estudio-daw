@@ -1,11 +1,13 @@
 use std::{env, fs, path::PathBuf, process::ExitCode};
 
+use estudio_daw_midi_engine::record_alsa_midi;
 use estudio_daw_project_model::{export_dawproject, import_dawproject, Project};
 use estudio_daw_runtime_diagnostics::{audio_devices, midi_devices, monitor_alsa_midi, DeviceInfo};
+use std::time::Duration;
 
 fn usage() {
     eprintln!(
-        "Uso:\n  estudio-daw-project devices\n  estudio-daw-project midi-monitor [nombre]\n  estudio-daw-project audio-test\n  estudio-daw-project import <entrada.dawproject> <salida.json>\n  estudio-daw-project export <entrada.json> <salida.dawproject>"
+        "Uso:\n  estudio-daw-project devices\n  estudio-daw-project midi-monitor [nombre]\n  estudio-daw-project midi-record <segundos> <salida.json> [nombre]\n  estudio-daw-project audio-test\n  estudio-daw-project import <entrada.dawproject> <salida.json>\n  estudio-daw-project export <entrada.json> <salida.dawproject>"
     );
 }
 
@@ -23,6 +25,22 @@ fn main() -> ExitCode {
                 .map(|value| value.to_string_lossy().into_owned()),
         ),
         "audio-test" => audio_test_command(),
+        "midi-record" => {
+            let Some(seconds) = args.next() else {
+                usage();
+                return ExitCode::from(2);
+            };
+            let Some(output) = args.next() else {
+                usage();
+                return ExitCode::from(2);
+            };
+            midi_record_command(
+                seconds.to_string_lossy().as_ref(),
+                output.into(),
+                args.next()
+                    .map(|value| value.to_string_lossy().into_owned()),
+            )
+        }
         "import" | "export" => {
             let Some(input) = args.next() else {
                 usage();
@@ -72,6 +90,25 @@ fn audio_test_command() -> Result<(), Box<dyn std::error::Error>> {
     println!(
         "Prueba de stream: pendiente del backend de audio RT; no se abre ningún stream todavía."
     );
+    Ok(())
+}
+
+fn midi_record_command(
+    seconds: &str,
+    output: PathBuf,
+    query: Option<String>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let seconds: f64 = seconds.parse()?;
+    if !(seconds.is_finite() && seconds > 0.0) {
+        return Err("los segundos deben ser un número positivo".into());
+    }
+    let take = record_alsa_midi(
+        query.as_deref().unwrap_or("KeyLab"),
+        Duration::from_secs_f64(seconds),
+        120,
+    )?;
+    fs::write(&output, serde_json::to_string_pretty(&take)?)?;
+    println!("Toma MIDI guardada en {}", output.display());
     Ok(())
 }
 

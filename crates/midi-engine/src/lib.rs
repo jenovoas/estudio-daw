@@ -3,9 +3,16 @@
 //! Este primer recorder vive fuera del callback de audio. La integración RT
 //! definitiva recibirá eventos desde un ring bounded preasignado.
 
-use estudio_daw_runtime_diagnostics::NormalizedMidiEvent;
+use alsa::seq::{PortCap, PortType, Seq};
+use estudio_daw_runtime_diagnostics::{
+    find_alsa_midi_port, normalize_alsa_event, NormalizedMidiEvent,
+};
 use serde::{Deserialize, Serialize};
-use std::time::{Duration, Instant};
+use std::{
+    ffi::CString,
+    thread,
+    time::{Duration, Instant},
+};
 use thiserror::Error;
 
 pub const DEFAULT_PPQ: u32 = 480;
@@ -80,6 +87,16 @@ pub enum RecorderError {
     AlreadyRecording,
 }
 
+#[derive(Debug, Error)]
+pub enum LiveRecordError {
+    #[error("no se pudo encontrar el puerto MIDI: {0}")]
+    Discovery(#[from] estudio_daw_runtime_diagnostics::DiagnosticsError),
+    #[error("error ALSA durante la grabación: {0}")]
+    Alsa(#[from] alsa::Error),
+    #[error("error del recorder: {0}")]
+    Recorder(#[from] RecorderError),
+}
+
 pub struct MidiRecorder {
     ppq: u32,
     tempo_bpm: u32,
@@ -146,6 +163,61 @@ impl MidiRecorder {
     pub fn is_recording(&self) -> bool {
         self.started_at.is_some()
     }
+}
+
+/// Graba una toma MIDI real desde un puerto ALSA durante `duration`.
+///
+/// Usa polling fuera del callback RT; la futura integración del motor usará un
+/// ring bounded y el transporte musical compartido.
+pub fn record_alsa_midi(
+    query: &str,
+    duration: Duration,
+    tempo_bpm: u32,
+) -> Result<MidiTake, LiveRecordError> {
+    let seq = Seq::open(None, None, true)?;
+    let Some((source, label)) = find_alsa_midi_port(query)? else {
+        return Err(LiveRecordError::Discovery(
+            estudio_daw_runtime_diagnostics::DiagnosticsError::PipeWire(format!(
+                "no se encontró puerto MIDI para '{query}'"
+            )),
+        ));
+    };
+    let client_name = CString::new("Estudio DAW MIDI Recorder").expect("literal sin NUL");
+    seq.set_client_name(&client_name)?;
+    let port_name = CString::new("recording-input").expect("literal sin NUL");
+    let local_port = seq.create_simple_port(
+        &port_name,
+        PortCap::WRITE | PortCap::SUBS_WRITE,
+        PortType::MIDI_GENERIC | PortType::APPLICATION,
+    )?;
+    let subscription = alsa::seq::PortSubscribe::empty()?;
+    subscription.set_sender(source);
+    subscription.set_dest(alsa::seq::Addr {
+        client: seq.client_id()?,
+        port: local_port,
+    });
+    seq.subscribe_port(&subscription)?;
+
+    println!(
+        "Grabando MIDI desde {label} durante {:.1}s...",
+        duration.as_secs_f64()
+    );
+    let mut recorder = MidiRecorder::new(tempo_bpm, DEFAULT_PPQ);
+    recorder.start()?;
+    let deadline = Instant::now() + duration;
+    let mut input = seq.input();
+    while Instant::now() < deadline {
+        if input.event_input_pending(false)? > 0 {
+            let event = input.event_input()?;
+            let normalized = normalize_alsa_event(&event);
+            recorder.record(&normalized)?;
+        } else {
+            thread::sleep(Duration::from_millis(1));
+        }
+    }
+    let take = recorder.stop()?;
+    println!("Toma finalizada: {} eventos.", take.events.len());
+    Ok(take)
 }
 
 fn convert_event(event: &NormalizedMidiEvent) -> (MidiSource, RecordedMidiMessage) {
