@@ -3,7 +3,7 @@
 //! Este crate no participa en el callback RT. Lee el inventario publicado por
 //! PipeWire y devuelve datos neutrales para la CLI y, más adelante, la UI.
 
-use std::process::Command;
+use std::{fs, path::Path, process::Command};
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -72,10 +72,10 @@ pub fn enumerate_pipewire() -> Result<Vec<DeviceInfo>, DiagnosticsError> {
 }
 
 pub fn midi_devices() -> Result<Vec<DeviceInfo>, DiagnosticsError> {
-    Ok(enumerate_pipewire()?
-        .into_iter()
-        .filter(|device| device.media_class.to_ascii_lowercase().contains("midi"))
-        .collect())
+    let mut devices = enumerate_pipewire().unwrap_or_default();
+    devices.retain(|device| device.media_class.to_ascii_lowercase().contains("midi"));
+    devices.extend(enumerate_alsa_midi()?);
+    Ok(devices)
 }
 
 pub fn audio_devices() -> Result<Vec<DeviceInfo>, DiagnosticsError> {
@@ -86,6 +86,56 @@ pub fn audio_devices() -> Result<Vec<DeviceInfo>, DiagnosticsError> {
             class.contains("audio") || class.contains("source") || class.contains("sink")
         })
         .collect())
+}
+
+/// Descubre puertos MIDI USB que ALSA conoce aunque PipeWire aún no los haya
+/// expuesto como nodos. Es útil para controladores como KeyLab.
+pub fn enumerate_alsa_midi() -> Result<Vec<DeviceInfo>, DiagnosticsError> {
+    let cards = fs::read_to_string("/proc/asound/cards")?;
+    let mut descriptions = std::collections::HashMap::new();
+    for line in cards.lines() {
+        let Some((number, rest)) = line.trim_start().split_once(' ') else {
+            continue;
+        };
+        let Ok(card) = number.parse::<u64>() else {
+            continue;
+        };
+        let description = rest
+            .split_once(':')
+            .map(|(_, description)| description.trim().to_string())
+            .unwrap_or_else(|| rest.trim().to_string());
+        descriptions.insert(card, description);
+    }
+
+    let mut devices = Vec::new();
+    let snd = Path::new("/dev/snd");
+    if !snd.exists() {
+        return Ok(devices);
+    }
+    for entry in fs::read_dir(snd)? {
+        let entry = entry?;
+        let name = entry.file_name().to_string_lossy().into_owned();
+        let Some(rest) = name.strip_prefix("midiC") else {
+            continue;
+        };
+        let Some((card, device)) = rest.split_once('D') else {
+            continue;
+        };
+        let (Ok(card), Ok(device)) = (card.parse::<u64>(), device.parse::<u64>()) else {
+            continue;
+        };
+        devices.push(DeviceInfo {
+            id: 10_000 + card * 100 + device,
+            media_class: "ALSA/MIDI".into(),
+            name: format!("hw:{card},{device}"),
+            description: descriptions
+                .get(&card)
+                .cloned()
+                .unwrap_or_else(|| "ALSA MIDI".into()),
+        });
+    }
+    devices.sort_by_key(|device| device.id);
+    Ok(devices)
 }
 
 #[cfg(test)]
@@ -100,5 +150,13 @@ mod tests {
             object["info"]["props"]["node.description"],
             "AudioBox USB 96"
         );
+    }
+
+    #[test]
+    fn parses_alsa_midi_device_name() {
+        let rest = "midiC3D0".strip_prefix("midiC").unwrap();
+        let (card, device) = rest.split_once('D').unwrap();
+        assert_eq!(card.parse::<u64>().unwrap(), 3);
+        assert_eq!(device.parse::<u64>().unwrap(), 0);
     }
 }
