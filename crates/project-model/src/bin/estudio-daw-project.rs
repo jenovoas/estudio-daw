@@ -2,7 +2,7 @@ use std::{env, fs, path::PathBuf, process::ExitCode};
 
 use estudio_daw_midi_engine::{
     play_midi_take, play_midi_take_interactive, record_alsa_midi, run_alsa_midi_control,
-    MidiControlMap, MidiTake,
+    LiveSessionState, MidiControlMap, MidiTake,
 };
 use estudio_daw_project_model::{
     attach_midi_take, export_dawproject, import_dawproject, quantize_midi_clip, Project,
@@ -184,11 +184,18 @@ fn midi_monitor_command(query: Option<String>) -> Result<(), Box<dyn std::error:
 fn midi_control_monitor_command(query: Option<String>) -> Result<(), Box<dyn std::error::Error>> {
     let map = MidiControlMap::live_defaults();
     println!("Mapa live inicial: pads 36-41 en canal 10; CC7 en canal 1 controla volumen master.");
+    let mut session = LiveSessionState::default();
     run_alsa_midi_control(query.as_deref().unwrap_or("KeyLab"), &map, |command| {
+        session.apply_control(command);
         println!(
-            "Comando MIDI: {:?}, valor {:.3}",
-            command.action, command.value
+            "Sesión: transporte={:?} rec={} loop={} escena={} master={:.3}",
+            session.transport,
+            session.recording,
+            session.loop_enabled,
+            session.scene_index,
+            session.master_volume
         );
+        println!("  <- {:?}, valor {:.3}", command.action, command.value);
     })?;
     Ok(())
 }

@@ -320,6 +320,67 @@ impl TransportState {
     }
 }
 
+/// Estado mínimo que puede mutar un controlador MIDI durante un live.
+///
+/// Es intencionalmente independiente del backend ALSA y de la interfaz
+/// gráfica. Más adelante será absorbido por `Session` y su `CommandBus`, pero
+/// ya permite probar la semántica del control en tiempo real.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct LiveSessionState {
+    pub transport: TransportState,
+    pub recording: bool,
+    pub loop_enabled: bool,
+    pub scene_index: i32,
+    pub master_volume: f32,
+}
+
+impl Default for LiveSessionState {
+    fn default() -> Self {
+        Self {
+            transport: TransportState::Stopped,
+            recording: false,
+            loop_enabled: false,
+            scene_index: 0,
+            master_volume: 1.0,
+        }
+    }
+}
+
+impl LiveSessionState {
+    /// Aplica un comando MIDI y devuelve el estado actualizado.
+    ///
+    /// Esta mutación ocurre fuera del callback de audio. El motor RT recibirá
+    /// posteriormente una versión compacta mediante un ring lock-free.
+    pub fn apply_control(&mut self, command: MidiControlCommand) {
+        match command.action {
+            MidiControlAction::TogglePlay => {
+                self.transport = match self.transport {
+                    TransportState::Playing => TransportState::Paused,
+                    TransportState::Paused | TransportState::Stopped => TransportState::Playing,
+                };
+            }
+            MidiControlAction::Stop => {
+                self.transport = TransportState::Stopped;
+                self.recording = false;
+            }
+            MidiControlAction::ToggleRecord => {
+                self.recording = !self.recording;
+                if self.recording && self.transport == TransportState::Stopped {
+                    self.transport = TransportState::Playing;
+                }
+            }
+            MidiControlAction::ToggleLoop => self.loop_enabled = !self.loop_enabled,
+            MidiControlAction::NextScene => self.scene_index = self.scene_index.saturating_add(1),
+            MidiControlAction::PreviousScene => {
+                self.scene_index = self.scene_index.saturating_sub(1).max(0)
+            }
+            MidiControlAction::MasterVolume => {
+                self.master_volume = command.value.clamp(0.0, 1.0);
+            }
+        }
+    }
+}
+
 pub struct MidiRecorder {
     ppq: u32,
     tempo_bpm: u32,
@@ -889,6 +950,32 @@ mod tests {
                 },
             })
             .is_none());
+    }
+
+    #[test]
+    fn applies_midi_commands_to_live_session_state() {
+        let mut state = LiveSessionState::default();
+        state.apply_control(MidiControlCommand {
+            action: MidiControlAction::ToggleRecord,
+            value: 1.0,
+        });
+        state.apply_control(MidiControlCommand {
+            action: MidiControlAction::ToggleLoop,
+            value: 1.0,
+        });
+        state.apply_control(MidiControlCommand {
+            action: MidiControlAction::NextScene,
+            value: 1.0,
+        });
+        state.apply_control(MidiControlCommand {
+            action: MidiControlAction::MasterVolume,
+            value: 0.75,
+        });
+        assert_eq!(state.transport, TransportState::Playing);
+        assert!(state.recording);
+        assert!(state.loop_enabled);
+        assert_eq!(state.scene_index, 1);
+        assert_eq!(state.master_volume, 0.75);
     }
 
     #[test]
