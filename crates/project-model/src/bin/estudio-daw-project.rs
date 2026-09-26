@@ -4,7 +4,9 @@ use estudio_daw_midi_engine::{play_midi_take, record_alsa_midi, MidiTake};
 use estudio_daw_project_model::{
     attach_midi_take, export_dawproject, import_dawproject, quantize_midi_clip, Project,
 };
-use estudio_daw_runtime_diagnostics::{audio_devices, midi_devices, monitor_alsa_midi, DeviceInfo};
+use estudio_daw_runtime_diagnostics::{
+    audio_devices, enumerate_alsa_midi_output_ports, midi_devices, monitor_alsa_midi, DeviceInfo,
+};
 use std::time::Duration;
 
 fn usage() {
@@ -13,7 +15,8 @@ fn usage() {
             "\n  estudio-daw-project attach-take <toma.json> <proyecto.json> <salida.json> [nombre]",
         "\n  estudio-daw-project quantize <proyecto.json> <clip-id> <rejilla-ticks> <salida.json>",
             "\n  estudio-daw-project midi-summary <proyecto.json>",
-            "\n  estudio-daw-project midi-play <toma.json> [destino]"
+            "\n  estudio-daw-project midi-play <toma.json> [destino]",
+            "\n  estudio-daw-project midi-outputs"
     ));
 }
 
@@ -126,6 +129,7 @@ fn main() -> ExitCode {
                     .unwrap_or_else(|| "FluidSynth".into()),
             )
         }
+        "midi-outputs" => midi_outputs_command(),
         _ => {
             usage();
             Err("comando desconocido".into())
@@ -272,6 +276,18 @@ fn midi_play_command(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let take: MidiTake = serde_json::from_slice(&fs::read(&take_path)?)?;
     play_midi_take(&take, &destination)?;
+    Ok(())
+}
+
+fn midi_outputs_command() -> Result<(), Box<dyn std::error::Error>> {
+    let outputs = enumerate_alsa_midi_output_ports()?;
+    if outputs.is_empty() {
+        println!("No hay destinos MIDI ALSA disponibles.");
+    } else {
+        for (address, label) in outputs {
+            println!("[{}:{}] {}", address.client, address.port, label);
+        }
+    }
     Ok(())
 }
 
