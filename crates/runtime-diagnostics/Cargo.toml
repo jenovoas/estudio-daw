@@ -6,5 +6,6 @@ license.workspace = true
 description = "Non-real-time PipeWire/MIDI diagnostics for Estudio DAW"
 
 [dependencies]
+alsa = "0.9"
 serde_json = "1"
 thiserror = "2"

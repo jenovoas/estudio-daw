@@ -1,11 +1,11 @@
 use std::{env, fs, path::PathBuf, process::ExitCode};
 
 use estudio_daw_project_model::{export_dawproject, import_dawproject, Project};
-use estudio_daw_runtime_diagnostics::{audio_devices, midi_devices, DeviceInfo};
+use estudio_daw_runtime_diagnostics::{audio_devices, midi_devices, monitor_alsa_midi, DeviceInfo};
 
 fn usage() {
     eprintln!(
-        "Uso:\n  estudio-daw-project devices\n  estudio-daw-project midi-monitor\n  estudio-daw-project audio-test\n  estudio-daw-project import <entrada.dawproject> <salida.json>\n  estudio-daw-project export <entrada.json> <salida.dawproject>"
+        "Uso:\n  estudio-daw-project devices\n  estudio-daw-project midi-monitor [nombre]\n  estudio-daw-project audio-test\n  estudio-daw-project import <entrada.dawproject> <salida.json>\n  estudio-daw-project export <entrada.json> <salida.dawproject>"
     );
 }
 
@@ -18,7 +18,10 @@ fn main() -> ExitCode {
 
     let result = match command.to_string_lossy().as_ref() {
         "devices" => devices_command(),
-        "midi-monitor" => midi_monitor_command(),
+        "midi-monitor" => midi_monitor_command(
+            args.next()
+                .map(|value| value.to_string_lossy().into_owned()),
+        ),
         "audio-test" => audio_test_command(),
         "import" | "export" => {
             let Some(input) = args.next() else {
@@ -56,10 +59,10 @@ fn devices_command() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn midi_monitor_command() -> Result<(), Box<dyn std::error::Error>> {
+fn midi_monitor_command(query: Option<String>) -> Result<(), Box<dyn std::error::Error>> {
     println!("Puertos MIDI detectados:");
     print_devices(&midi_devices()?);
-    println!("Monitor en vivo: pendiente del backend MIDI RT; esta fase sólo enumera capacidades.");
+    monitor_alsa_midi(query.as_deref().unwrap_or("KeyLab"))?;
     Ok(())
 }
 
