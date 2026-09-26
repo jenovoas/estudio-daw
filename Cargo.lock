@@ -481,6 +481,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "estudio-daw-command-bus"
+version = "0.1.0"
+dependencies = [
+ "estudio-daw-project-model",
+ "estudio-daw-session",
+ "serde",
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
 name = "estudio-daw-compute-runtime"
 version = "0.1.0"
 dependencies = [

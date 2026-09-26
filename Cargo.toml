@@ -9,6 +9,7 @@ members = [
     "crates/session",
     "crates/audio-engine",
     "crates/audio-platform",
+    "crates/command-bus",
 ]
 
 [workspace.package]

@@ -100,7 +100,7 @@ impl Default for TransportSnapshot {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 pub enum SessionCommand {
     Play,
     Pause,
