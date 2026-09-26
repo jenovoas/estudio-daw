@@ -644,6 +644,7 @@ Después se añadirán clips, escenas, Arrangement View, plugins, escalas, anál
 - [Architecture Reset v2](docs/architecture-v2.md)
 - [Estado de sesión y CommandBus](docs/session-command-bus.md)
 - [Audio RenderPlan](docs/audio-render-plan.md)
+- [Backend PipeWire](docs/audio-pipewire.md)
 - [Control MIDI live](docs/midi-live-control.md)
 - [Propuesta inicial](openspec/changes/bootstrap-opendaw-architecture/proposal.md)
 - [Diseño](openspec/changes/bootstrap-opendaw-architecture/design.md)

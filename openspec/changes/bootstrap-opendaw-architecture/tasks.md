@@ -80,6 +80,8 @@
   del ecualizador modular.
 - [x] Añadir `AudioBlock` preasignado y `RenderPlan::process_block()` sin
   redimensionar buffers durante el procesamiento.
+- [x] Crear adaptador PipeWire F32LE con stream autoconectado y flag
+  `RT_PROCESS`, aislado en `audio-platform`.
 - [x] Definir schema inicial de `project.json` para la fixture de interoperabilidad.
 - [ ] Definir entidades Track, Clip, Take, Device, Automation y AnalysisArtifact.
 - [ ] Definir relación original-proxy, timebase, canales y estado de disponibilidad.
