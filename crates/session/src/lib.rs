@@ -26,6 +26,66 @@ pub struct TransportSnapshot {
     pub master_volume: f32,
 }
 
+/// Resolución musical interna del transporte: 960 ticks por negra.
+///
+/// Es suficientemente precisa para edición MIDI y permite representar
+/// subdivisiones habituales sin usar floats en la posición del proyecto.
+pub const TICKS_PER_QUARTER: u32 = 960;
+
+/// Reloj determinista que convierte frames de audio en ticks musicales.
+///
+/// El resto fraccional se conserva como enteros racionales, de modo que una
+/// secuencia de callbacks de PipeWire produce exactamente la misma posición
+/// que un único bloque equivalente. No consulta el reloj del sistema y por
+/// eso también es portable al render offline y al adaptador WASM.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TransportClock {
+    position_ticks: u64,
+    remainder: u128,
+}
+
+impl Default for TransportClock {
+    fn default() -> Self {
+        Self {
+            position_ticks: 0,
+            remainder: 0,
+        }
+    }
+}
+
+impl TransportClock {
+    pub fn position_ticks(&self) -> u64 {
+        self.position_ticks
+    }
+
+    pub fn reset(&mut self) {
+        self.position_ticks = 0;
+        self.remainder = 0;
+    }
+
+    /// Avanza el reloj y devuelve los ticks enteros producidos.
+    pub fn advance_frames(&mut self, frames: u64, sample_rate: u32, tempo_bpm: f64) -> u64 {
+        if frames == 0 || sample_rate == 0 || !tempo_bpm.is_finite() || tempo_bpm <= 0.0 {
+            return 0;
+        }
+
+        // Milésimas de BPM hacen que el cálculo sea entero y estable, sin
+        // exigir que el modelo de proyecto abandone su API f64 todavía.
+        let milli_bpm = (tempo_bpm.clamp(20.0, 999.0) * 1_000.0).round() as u128;
+        let numerator = u128::from(frames)
+            .saturating_mul(milli_bpm)
+            .saturating_mul(u128::from(TICKS_PER_QUARTER));
+        let denominator = 60_u128
+            .saturating_mul(1_000)
+            .saturating_mul(u128::from(sample_rate));
+        let total = self.remainder.saturating_add(numerator);
+        let ticks = total / denominator;
+        self.remainder = total % denominator;
+        self.position_ticks = self.position_ticks.saturating_add(ticks as u64);
+        ticks as u64
+    }
+}
+
 impl Default for TransportSnapshot {
     fn default() -> Self {
         Self {
@@ -98,12 +158,14 @@ impl CommandBus {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Session {
     snapshot: TransportSnapshot,
+    clock: TransportClock,
 }
 
 impl Default for Session {
     fn default() -> Self {
         Self {
             snapshot: TransportSnapshot::default(),
+            clock: TransportClock::default(),
         }
     }
 }
@@ -111,6 +173,22 @@ impl Default for Session {
 impl Session {
     pub fn snapshot(&self) -> TransportSnapshot {
         self.snapshot
+    }
+
+    pub fn clock(&self) -> TransportClock {
+        self.clock
+    }
+
+    /// Avanza la posición musical sólo mientras el transporte está en marcha.
+    pub fn advance_audio_frames(&mut self, frames: u64, sample_rate: u32) -> u64 {
+        if self.snapshot.state != TransportState::Playing {
+            return 0;
+        }
+        let advanced = self
+            .clock
+            .advance_frames(frames, sample_rate, self.snapshot.tempo_bpm);
+        self.snapshot.position_ticks = self.clock.position_ticks();
+        advanced
     }
 
     pub fn apply(&mut self, command: SessionCommand) {
@@ -131,6 +209,7 @@ impl Session {
                 self.snapshot.state = TransportState::Stopped;
                 self.snapshot.position_ticks = 0;
                 self.snapshot.recording = false;
+                self.clock.reset();
             }
             SessionCommand::ToggleRecord => {
                 self.snapshot.recording = !self.snapshot.recording;
@@ -189,5 +268,30 @@ mod tests {
         let mut session = Session::default();
         session.apply(SessionCommand::SetTempo(-1.0));
         assert_eq!(session.snapshot().tempo_bpm, 120.0);
+    }
+
+    #[test]
+    fn clock_is_deterministic_across_callback_boundaries() {
+        let mut one_block = TransportClock::default();
+        let mut many_blocks = TransportClock::default();
+
+        one_block.advance_frames(48_000, 48_000, 120.0);
+        for _ in 0..1_500 {
+            many_blocks.advance_frames(32, 48_000, 120.0);
+        }
+
+        assert_eq!(one_block, many_blocks);
+        assert_eq!(one_block.position_ticks(), 1_920);
+    }
+
+    #[test]
+    fn paused_session_does_not_advance_transport() {
+        let mut session = Session::default();
+        assert_eq!(session.advance_audio_frames(48_000, 48_000), 0);
+        session.apply(SessionCommand::Play);
+        assert_eq!(session.advance_audio_frames(24_000, 48_000), 960);
+        session.apply(SessionCommand::Pause);
+        assert_eq!(session.advance_audio_frames(24_000, 48_000), 0);
+        assert_eq!(session.snapshot().position_ticks, 960);
     }
 }

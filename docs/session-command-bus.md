@@ -32,6 +32,12 @@ audio-engine / clips / UI
 - escena activa;
 - volumen master normalizado.
 
+`TransportClock` convierte frames de audio en ticks con PPQ fijo de 960. Usa
+un resto racional entero entre callbacks, por lo que dividir un render en
+bloques de PipeWire no cambia la posición final. El reloj sólo avanza cuando
+la sesión está en `Playing`; el mismo contrato servirá para reproducción,
+render offline y el futuro adaptador WASM.
+
 `SessionCommand` representa intenciones, no mensajes de hardware. Esto permite
 que MIDI, teclado, scripting y profesor IA controlen el mismo estado sin
 duplicar reglas.

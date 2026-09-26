@@ -41,8 +41,9 @@
 - [ ] Implementar stream de audio de prueba.
 - [x] Crear módulo DSP modular de ecualización con bandas sin asignaciones en procesamiento.
 - [ ] Leer Note On/Off, velocity, CC, pitch bend y sustain.
-- [ ] Implementar transporte sample/beat/bar.
-- [ ] Crear reloj de reproducción determinista.
+- [x] Implementar transporte sample/beat/bar mediante `TransportClock` y PPQ
+  fijo de 960.
+- [x] Crear reloj de reproducción determinista independiente del wall-clock.
 - [ ] Añadir captura de audio a archivo temporal.
 - [x] Añadir captura MIDI a un modelo de evento y toma temporal.
 - [ ] Implementar `MediaSource`/`ProxyAsset` y política original/proxy/auto.
