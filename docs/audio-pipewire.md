@@ -53,7 +53,9 @@ SampleRingBuffer (lock-free SPSC)
 PipeWire playback callback → RenderPlan
 ```
 
-La capacidad se calcula con `channels * max_buffer_frames * 4`. Si la captura
+La capacidad se calcula con `channels * max_buffer_frames * 4`. El periodo DSP
+objetivo es `period_frames` (32 por defecto) y se solicita a PipeWire mediante
+`node.latency`. Si la captura
 produce más muestras que el espacio disponible, `push()` devuelve sólo las
 muestras aceptadas y no bloquea el hilo de audio. Los contadores de overflow y
 la medición de xruns se añadirán en la capa de diagnóstico.

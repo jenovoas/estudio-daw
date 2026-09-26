@@ -88,6 +88,8 @@
   descartadas y silencio de salida.
 - [x] Seleccionar automáticamente los nodos PipeWire de AudioBox por nombre e
   id de objeto.
+- [x] Diagnosticar y limitar el quantum PipeWire del callback mediante
+  `period_frames` y `node.latency`.
 - [x] Definir schema inicial de `project.json` para la fixture de interoperabilidad.
 - [ ] Definir entidades Track, Clip, Take, Device, Automation y AnalysisArtifact.
 - [ ] Definir relación original-proxy, timebase, canales y estado de disponibilidad.

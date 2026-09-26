@@ -17,6 +17,7 @@ use thiserror::Error;
 pub struct PipeWireStreamConfig {
     pub sample_rate: u32,
     pub channels: u32,
+    pub period_frames: usize,
     pub max_buffer_frames: usize,
 }
 
@@ -31,6 +32,7 @@ impl Default for PipeWireStreamConfig {
         Self {
             sample_rate: 48_000,
             channels: 2,
+            period_frames: 32,
             max_buffer_frames: 2_048,
         }
     }
@@ -60,7 +62,11 @@ pub struct PipeWireDuplexReport {
 
 impl PipeWireStreamConfig {
     pub fn validate(self) -> Result<Self, PipeWireError> {
-        if self.sample_rate == 0 || self.channels == 0 || self.max_buffer_frames == 0 {
+        if self.sample_rate == 0
+            || self.channels == 0
+            || self.period_frames == 0
+            || self.max_buffer_frames < self.period_frames
+        {
             return Err(PipeWireError::InvalidConfig);
         }
         Ok(self)
@@ -91,6 +97,7 @@ pub fn run_pipewire_output(
             *pw::keys::MEDIA_CATEGORY => "Playback",
             *pw::keys::MEDIA_ROLE => "Music",
             *pw::keys::AUDIO_CHANNELS => config.channels.to_string(),
+            *pw::keys::NODE_LATENCY => format!("{}/{}", config.period_frames, config.sample_rate),
         },
     )?;
 
@@ -210,8 +217,9 @@ fn run_pipewire_duplex_internal(
     let mut capture_properties = properties! {
         *pw::keys::MEDIA_TYPE => "Audio",
         *pw::keys::MEDIA_CATEGORY => "Capture",
-        *pw::keys::MEDIA_ROLE => "Music",
-        *pw::keys::AUDIO_CHANNELS => config.channels.to_string(),
+            *pw::keys::MEDIA_ROLE => "Music",
+            *pw::keys::AUDIO_CHANNELS => config.channels.to_string(),
+            *pw::keys::NODE_LATENCY => format!("{}/{}", config.period_frames, config.sample_rate),
     };
     if let Some(node) = targets.capture_node {
         capture_properties.insert(*pw::keys::TARGET_OBJECT, node.to_string());
@@ -277,7 +285,7 @@ fn run_pipewire_duplex_internal(
             // todavía no existe contenido producido. La capacidad mapeada es
             // maxsize; la acotamos al bloque configurado para no procesar
             // memoria de más si PipeWire entrega un pool sobredimensionado.
-            let valid_bytes = (config.max_buffer_frames * config.channels as usize)
+            let valid_bytes = (config.period_frames * config.channels as usize)
                 .saturating_mul(std::mem::size_of::<f32>())
                 .min(bytes.len());
             let (_, samples, _) = unsafe { bytes[..valid_bytes].align_to_mut::<f32>() };
@@ -365,6 +373,7 @@ mod tests {
             PipeWireStreamConfig {
                 sample_rate: 0,
                 channels: 2,
+                period_frames: 32,
                 max_buffer_frames: 2_048,
             }
             .validate()
