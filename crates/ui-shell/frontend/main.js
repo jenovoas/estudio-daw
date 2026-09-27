@@ -2,13 +2,19 @@ const platform = window.estudioPlatform;
 
 const elements = {
   open: document.querySelector("#open-project"),
+  browserOpen: document.querySelector("#browser-open"),
+  browserDemo: document.querySelector("#browser-demo"),
   newProject: document.querySelector("#new-project"),
   demoProject: document.querySelector("#demo-project"),
+  addMidiTrack: document.querySelector("#add-midi-track"),
+  addAudioTrack: document.querySelector("#add-audio-track"),
   save: document.querySelector("#save-project"),
   saveAs: document.querySelector("#save-project-as"),
   path: document.querySelector("#project-path"),
   name: document.querySelector("#project-name"),
+  browserName: document.querySelector("#browser-project-name"),
   tempo: document.querySelector("#tempo"),
+  transportTempo: document.querySelector("#transport-tempo"),
   transport: document.querySelector("#transport-state"),
   tracks: document.querySelector("#track-list"),
   lanes: document.querySelector("#arrangement-lanes"),
@@ -17,6 +23,7 @@ const elements = {
   midiCount: document.querySelector("#midi-count"),
   audioCount: document.querySelector("#audio-count"),
   revision: document.querySelector("#revision"),
+  projectStatus: document.querySelector("#project-status"),
   engine: document.querySelector("#engine-status"),
   noticeTitle: document.querySelector("#notice-title"),
   noticeText: document.querySelector("#notice-text"),
@@ -85,25 +92,48 @@ function setNotice(title, text) {
   elements.noticeText.textContent = text;
 }
 
+async function whileBusy(buttons, operation) {
+  const previous = buttons.map((button) => button.disabled);
+  for (const button of buttons) {
+    button.disabled = true;
+    button.setAttribute("aria-busy", "true");
+  }
+  try {
+    return await operation();
+  } finally {
+    buttons.forEach((button, index) => {
+      button.disabled = previous[index];
+      button.removeAttribute("aria-busy");
+    });
+  }
+}
+
 function setProjectEnabled(enabled) {
   hasProject = enabled;
-  for (const button of [elements.save, elements.saveAs, elements.play, elements.pause, elements.stop]) {
+  for (const button of [elements.save, elements.saveAs, elements.play, elements.pause, elements.stop, elements.addMidiTrack, elements.addAudioTrack]) {
     button.disabled = !enabled;
+    if (!enabled) button.title = `${button.getAttribute("aria-label") ?? "Acción"}: abre o crea un proyecto primero`;
   }
 }
 
 function renderSnapshot(snapshot) {
   setProjectEnabled(true);
   elements.save.disabled = !snapshot.projectPath;
+  elements.save.title = snapshot.projectPath ? "Guardar proyecto" : "Guarda como para elegir una ubicación";
   elements.path.textContent = snapshot.projectPath ?? "Proyecto sin ruta";
   elements.path.title = snapshot.projectPath ?? "";
-  elements.name.textContent = snapshot.projectId;
+  const projectLabel = snapshot.projectPath?.split(/[\\/]/).at(-1) ?? snapshot.projectId;
+  elements.name.textContent = projectLabel;
+  elements.browserName.textContent = projectLabel;
   elements.tempo.textContent = Number(snapshot.tempoBpm).toFixed(1);
+  elements.transportTempo.textContent = Number(snapshot.tempoBpm).toFixed(1);
   elements.transport.textContent = snapshot.transportState.toUpperCase();
+  document.querySelector(".transport-bar").dataset.state = snapshot.transportState.toLowerCase();
   elements.trackCount.textContent = snapshot.trackCount;
   elements.midiCount.textContent = snapshot.midiClipCount;
   elements.audioCount.textContent = snapshot.audioClipCount;
   elements.revision.textContent = `REV ${snapshot.projectRevision}`;
+  elements.projectStatus.textContent = snapshot.projectPath ? "PROYECTO ABIERTO" : "PROYECTO SIN GUARDAR";
   elements.engine.textContent = snapshot.audioEngineConnected
     ? "Core listo · motor de audio conectado"
     : "Core listo · motor de audio aún no conectado";
@@ -125,9 +155,10 @@ function renderSnapshot(snapshot) {
     return;
   }
 
-  for (const track of snapshot.tracks) {
+  for (const [trackIndex, track] of snapshot.tracks.entries()) {
     const row = document.createElement("div");
     row.className = "track-row";
+    row.style.setProperty("--track-color", track.color);
     const icon = document.createElement("span");
     icon.className = `track-icon ${track.kind}`;
     icon.textContent = track.kind === "audio" ? "◖" : "♫";
@@ -135,7 +166,8 @@ function renderSnapshot(snapshot) {
     label.textContent = track.name;
     const details = document.createElement("span");
     details.className = "track-meta";
-    details.textContent = `${track.kind === "audio" ? "AUDIO" : "MIDI"} · ${track.noteCount} notas`;
+    const mixState = [track.mute ? "MUTE" : null, track.solo ? "SOLO" : null, !track.active ? "OFF" : null].filter(Boolean).join(" · ");
+    details.textContent = `${track.kind === "audio" ? "AUDIO" : "MIDI"}${track.kind === "midi" ? ` · ${track.noteCount} notas` : ""}${mixState ? ` · ${mixState}` : ""}`;
     const name = document.createElement("div");
     name.className = "track-name";
     name.append(icon, label);
@@ -144,10 +176,12 @@ function renderSnapshot(snapshot) {
 
     const lane = document.createElement("div");
     lane.className = "timeline-lane";
+    lane.style.setProperty("--track-color", track.color);
     const clips = snapshot.midiClips.filter((clip) => clip.trackId === track.id);
     for (const clip of clips) {
       const block = document.createElement("div");
       block.className = "midi-clip";
+      block.style.setProperty("--clip-hue", String((trackIndex * 54 + 24) % 360));
       block.title = `${clip.name} · ${clip.noteCount} notas`;
       const left = Math.max(0, Number(clip.startBeats) || 0);
       const width = Math.max(0.25, Number(clip.durationBeats) || 0.25);
@@ -206,40 +240,56 @@ async function runCommand(title, operation) {
 }
 
 elements.open.addEventListener("click", async () => {
-  try {
+  await whileBusy([elements.open, elements.browserOpen], async () => { try {
     const snapshot = await platform.openProject();
     if (!snapshot) return;
     renderSnapshot(snapshot);
     setNotice("Proyecto abierto", "El estado se carga a través de ProjectApplication.");
   } catch (error) {
     setNotice("No se pudo abrir el proyecto", String(error));
-  }
+  } });
 });
 
+async function addTrack(kind, button) {
+  await whileBusy([button], async () => { try {
+    const snapshot = await platform.addTrack(kind);
+    renderSnapshot(snapshot);
+    setNotice(`${kind === "audio" ? "Pista de audio" : "Pista MIDI"} creada`, "La pista quedó en el proyecto y su creación puede deshacerse desde el historial.");
+  } catch (error) {
+    setNotice("No se pudo crear la pista", String(error));
+  } });
+}
+
+elements.addMidiTrack.addEventListener("click", () => addTrack("midi", elements.addMidiTrack));
+elements.addAudioTrack.addEventListener("click", () => addTrack("audio", elements.addAudioTrack));
+
 elements.newProject.addEventListener("click", async () => {
-  try {
+  await whileBusy([elements.newProject], async () => { try {
     const snapshot = await platform.newProject();
     renderSnapshot(snapshot);
     setNotice("Proyecto nuevo", "Sesión vacía lista. Abre un proyecto con clips MIDI para escuchar su reproducción.");
   } catch (error) {
     setNotice("No se pudo crear el proyecto", String(error));
-  }
+  } });
 });
 
 elements.demoProject.addEventListener("click", async () => {
-  try {
+  await whileBusy([elements.demoProject, elements.browserDemo], async () => { try {
     const snapshot = await platform.demoMidiProject();
     renderSnapshot(snapshot);
     setNotice("Demo MIDI lista", "Siete notas están preparadas en la pista. Pulsa Play para oírlas por la salida configurada.");
   } catch (error) {
     setNotice("No se pudo preparar la demo MIDI", String(error));
-  }
+  } });
 });
+
+elements.browserDemo.addEventListener("click", () => elements.demoProject.click());
+elements.browserOpen.addEventListener("click", () => elements.open.click());
 
 elements.save.addEventListener("click", () => runCommand("Proyecto guardado", () => platform.saveProject()));
 elements.saveAs.addEventListener("click", () => runCommand("Copia del proyecto guardada", () => platform.saveProjectAs()));
 elements.play.addEventListener("click", async () => {
-  try {
+  await whileBusy([elements.play], async () => { try {
     const snapshot = await platform.setTransport("play");
     renderSnapshot(snapshot);
     setNotice(snapshot.midiClipCount === 0
@@ -249,7 +299,7 @@ elements.play.addEventListener("click", async () => {
       : "Reproduciendo clips MIDI con los instrumentos asignados a sus pistas.");
   } catch (error) {
     setNotice("No se pudo iniciar la reproducción", String(error));
-  }
+  } });
 });
 elements.pause.addEventListener("click", () => runCommand("Transporte pausado", () => platform.setTransport("pause")));
 elements.stop.addEventListener("click", () => runCommand("Transporte detenido", () => platform.setTransport("stop")));

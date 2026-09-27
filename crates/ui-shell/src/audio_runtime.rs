@@ -379,13 +379,17 @@ fn schedule_events(
 mod tests {
     use super::*;
     use estudio_daw_midi_engine::{MidiSource, MidiTake, RecordedMidiEvent};
-    use estudio_daw_project_model::{ImportProvenance, MidiClip, TimeSignature, Track, Transport};
+    use estudio_daw_project_model::{
+        ImportProvenance, MidiClip, TimeSignature, Track, TrackMixerState, Transport,
+    };
 
     fn midi_track(id: &str) -> Track {
         Track {
             id: id.into(),
             name: id.into(),
             kind: TrackKind::Midi,
+            color: "#58a6b8".into(),
+            mixer: TrackMixerState::default(),
             notes: Vec::new(),
             audio_channels: None,
             media_source: None,
@@ -423,7 +427,7 @@ mod tests {
             ],
         };
         Project {
-            schema_version: "estudio-daw.project.v2".into(),
+            schema_version: "estudio-daw.project.v3".into(),
             project_id: "playback-test".into(),
             transport: Transport {
                 tempo_bpm: 120.0,

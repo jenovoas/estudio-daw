@@ -640,7 +640,7 @@ pub fn load_project_json(bytes: &[u8]) -> Result<Project, ProjectJsonError> {
                 serde_json::Value::String("estudio-daw.project.v1".into()),
             );
         }
-        "estudio-daw.project.v1" | "estudio-daw.project.v2" => {}
+        "estudio-daw.project.v1" | "estudio-daw.project.v2" | "estudio-daw.project.v3" => {}
         unsupported => {
             return Err(ProjectJsonError::UnsupportedVersion(unsupported.into()));
         }
@@ -649,7 +649,9 @@ pub fn load_project_json(bytes: &[u8]) -> Result<Project, ProjectJsonError> {
     // project.v2 añade el instrumento a cada pista MIDI. Los proyectos antiguos
     // mantienen las mismas notas y empiezan con el sinte de prueba, que no
     // depende de bibliotecas externas ni de SoundFonts instalados.
-    if object.get("schema_version").and_then(|v| v.as_str()) != Some("estudio-daw.project.v2") {
+    if object.get("schema_version").and_then(|v| v.as_str()) != Some("estudio-daw.project.v2")
+        && object.get("schema_version").and_then(|v| v.as_str()) != Some("estudio-daw.project.v3")
+    {
         if let Some(tracks) = object.get_mut("tracks").and_then(|v| v.as_array_mut()) {
             for track in tracks {
                 let Some(track) = track.as_object_mut() else {
@@ -665,6 +667,34 @@ pub fn load_project_json(bytes: &[u8]) -> Result<Project, ProjectJsonError> {
         object.insert(
             "schema_version".into(),
             serde_json::Value::String("estudio-daw.project.v2".into()),
+        );
+    }
+
+    // project.v3 añade estado persistente de mixer y color a cada pista.
+    // Los proyectos antiguos parten activos, sin mute/solo, en unidad y centrados.
+    if object.get("schema_version").and_then(|v| v.as_str()) != Some("estudio-daw.project.v3") {
+        if let Some(tracks) = object.get_mut("tracks").and_then(|v| v.as_array_mut()) {
+            for track in tracks {
+                let Some(track) = track.as_object_mut() else {
+                    continue;
+                };
+                track
+                    .entry("color")
+                    .or_insert_with(|| serde_json::Value::String("#58a6b8".to_owned()));
+                track.entry("mixer").or_insert_with(|| {
+                    serde_json::json!({
+                        "active": true,
+                        "mute": false,
+                        "solo": false,
+                        "gain_db": 0.0,
+                        "pan": 0.0
+                    })
+                });
+            }
+        }
+        object.insert(
+            "schema_version".into(),
+            serde_json::Value::String("estudio-daw.project.v3".into()),
         );
     }
 
@@ -857,6 +887,12 @@ pub struct Track {
     pub id: String,
     pub name: String,
     pub kind: TrackKind,
+    /// Color belongs to the project so Session and Arrangement remain visually linked.
+    #[serde(default = "default_track_color")]
+    pub color: String,
+    /// Mixer state is shared by all views; it is not presentation-only state.
+    #[serde(default)]
+    pub mixer: TrackMixerState,
     pub notes: Vec<Note>,
     pub audio_channels: Option<u32>,
     /// Procedencia original/proxy de una pista de audio. Las pistas MIDI no
@@ -868,6 +904,33 @@ pub struct Track {
     /// pistas sin instrumento hasta que el usuario elige uno explícitamente.
     #[serde(default)]
     pub instrument: Option<InstrumentConfig>,
+}
+
+fn default_track_color() -> String {
+    "#58a6b8".to_owned()
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(default)]
+pub struct TrackMixerState {
+    pub active: bool,
+    pub mute: bool,
+    pub solo: bool,
+    pub gain_db: f32,
+    /// Normalized stereo pan in the range -1.0 (left) to 1.0 (right).
+    pub pan: f32,
+}
+
+impl Default for TrackMixerState {
+    fn default() -> Self {
+        Self {
+            active: true,
+            mute: false,
+            solo: false,
+            gain_db: 0.0,
+            pan: 0.0,
+        }
+    }
 }
 
 /// Referencia portable a un banco local: el proyecto guarda la ruta/URI, nunca
@@ -1144,6 +1207,8 @@ pub fn import_project_xml(xml: &str) -> Result<ImportResult, ProjectError> {
                 id: track.id,
                 name: track.name,
                 kind,
+                color: default_track_color(),
+                mixer: TrackMixerState::default(),
                 notes,
                 audio_channels: track.channel.and_then(|c| c.audio_channels),
                 media_source: None,
@@ -1153,7 +1218,7 @@ pub fn import_project_xml(xml: &str) -> Result<ImportResult, ProjectError> {
         .collect();
 
     let project = Project {
-        schema_version: "estudio-daw.project.v2".into(),
+        schema_version: "estudio-daw.project.v3".into(),
         project_id: "imported-dawproject".into(),
         transport: Transport {
             tempo_bpm: tempo,
@@ -1512,11 +1577,13 @@ mod tests {
 
         let project = load_project_json(legacy).unwrap();
 
-        assert_eq!(project.schema_version, "estudio-daw.project.v2");
+        assert_eq!(project.schema_version, "estudio-daw.project.v3");
         assert_eq!(project.project_id, "legacy-song");
         assert_eq!(project.tracks[0].name, "Voice");
         assert!(project.tracks[0].media_source.is_none());
         assert!(project.tracks[0].instrument.is_none());
+        assert_eq!(project.tracks[0].color, "#58a6b8");
+        assert_eq!(project.tracks[0].mixer, TrackMixerState::default());
         assert!(project.midi_clips.is_empty());
         assert!(project.audio_clips.is_empty());
     }
@@ -1533,8 +1600,9 @@ mod tests {
 
         let project = load_project_json(v1).unwrap();
 
-        assert_eq!(project.schema_version, "estudio-daw.project.v2");
+        assert_eq!(project.schema_version, "estudio-daw.project.v3");
         assert_eq!(project.tracks[0].instrument, Some(InstrumentConfig::Sine));
+        assert_eq!(project.tracks[0].mixer, TrackMixerState::default());
     }
 
     #[test]

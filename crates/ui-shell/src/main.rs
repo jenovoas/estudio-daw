@@ -13,7 +13,7 @@ use estudio_daw_application::{
 use estudio_daw_midi_engine::{MidiSource, MidiTake, RecordedMidiEvent, RecordedMidiMessage};
 use estudio_daw_project_model::{
     ImportProvenance, InstrumentConfig, MidiClip, Project, TimeSignature, Track, TrackKind,
-    Transport,
+    TrackMixerState, Transport,
 };
 use serde::Serialize;
 use std::{path::PathBuf, sync::Mutex};
@@ -35,6 +35,12 @@ struct TrackSummary {
     name: String,
     kind: &'static str,
     note_count: usize,
+    color: String,
+    active: bool,
+    mute: bool,
+    solo: bool,
+    gain_db: f32,
+    pan: f32,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -176,6 +182,12 @@ fn summarize(application: &ProjectApplication, audio_engine_connected: bool) -> 
                     .flat_map(|clip| &clip.take.events)
                     .filter(|event| matches!(&event.message, RecordedMidiMessage::NoteOn { velocity, .. } if *velocity > 0))
                     .count(),
+            color: track.color.clone(),
+            active: track.mixer.active,
+            mute: track.mixer.mute,
+            solo: track.mixer.solo,
+            gain_db: track.mixer.gain_db,
+            pan: track.mixer.pan,
         })
         .collect();
     let midi_clips = project
@@ -269,6 +281,47 @@ fn new_project(state: State<'_, DesktopState>) -> Result<UiSnapshot, String> {
 }
 
 #[tauri::command]
+fn add_track(kind: String, state: State<'_, DesktopState>) -> Result<UiSnapshot, String> {
+    let mut application = state
+        .application
+        .lock()
+        .map_err(|_| "el estado de la aplicación quedó bloqueado".to_owned())?;
+    let application = application
+        .as_mut()
+        .ok_or_else(|| "primero crea o abre un proyecto".to_owned())?;
+    let (track_kind, name, instrument) = match kind.as_str() {
+        "audio" => (TrackKind::Audio, "Audio", None),
+        "midi" => (
+            TrackKind::Midi,
+            "MIDI",
+            Some(estudio_daw_project_model::InstrumentConfig::Sine),
+        ),
+        _ => return Err(format!("tipo de pista desconocido: {kind}")),
+    };
+    let index = application.snapshot().project.project.tracks.len();
+    let track = estudio_daw_project_model::Track {
+        id: format!("track-{}-{index}", unix_timestamp_millis()),
+        name: format!("{name} {}", index + 1),
+        kind: track_kind,
+        color: "#58a6b8".into(),
+        mixer: TrackMixerState::default(),
+        notes: Vec::new(),
+        audio_channels: if kind == "audio" { Some(2) } else { None },
+        media_source: None,
+        instrument,
+    };
+    application
+        .execute_project(ProjectCommand::AddTrack { track, index: None })
+        .map_err(|error| error.to_string())?;
+    let connected = state
+        .audio
+        .lock()
+        .map_err(|_| "el estado del motor de audio quedó bloqueado".to_owned())?
+        .is_connected();
+    Ok(summarize(application, connected))
+}
+
+#[tauri::command]
 fn demo_midi_project(state: State<'_, DesktopState>) -> Result<UiSnapshot, String> {
     let mut project = new_project_model();
     project.project_id = format!("demo-midi-{}", unix_timestamp_millis());
@@ -348,7 +401,7 @@ fn demo_midi_take() -> MidiTake {
 
 fn new_project_model() -> Project {
     Project {
-        schema_version: "estudio-daw.project.v2".into(),
+        schema_version: "estudio-daw.project.v3".into(),
         project_id: format!("proyecto-{}", unix_timestamp_millis()),
         transport: Transport {
             tempo_bpm: 120.0,
@@ -361,6 +414,8 @@ fn new_project_model() -> Project {
             id: "midi-1".into(),
             name: "MIDI 1".into(),
             kind: TrackKind::Midi,
+            color: "#58a6b8".into(),
+            mixer: TrackMixerState::default(),
             notes: Vec::new(),
             audio_channels: None,
             media_source: None,
@@ -572,6 +627,7 @@ fn main() {
         })
         .invoke_handler(tauri::generate_handler![
             new_project,
+            add_track,
             demo_midi_project,
             open_project,
             project_snapshot,

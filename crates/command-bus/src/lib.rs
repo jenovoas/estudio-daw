@@ -8,7 +8,7 @@ use estudio_daw_midi_engine::MidiTake;
 use estudio_daw_project_model::{
     add_audio_clip, attach_media_source, attach_midi_take, quantize_midi_clip,
     set_audio_clip_fades, set_audio_clip_gain, trim_audio_clip, MediaSource, Project, ProjectEvent,
-    ProjectHistory, ProjectSnapshot,
+    ProjectHistory, ProjectSnapshot, Track, TrackMixerState,
 };
 use estudio_daw_session::{Session, SessionCommand, TransportSnapshot, TransportState};
 use serde::{Deserialize, Serialize};
@@ -51,6 +51,25 @@ impl CommandMetadata {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ProjectCommand {
+    AddTrack {
+        track: Track,
+        index: Option<usize>,
+    },
+    RenameTrack {
+        track_id: String,
+        name: String,
+    },
+    MoveTrack {
+        track_id: String,
+        index: usize,
+    },
+    RemoveTrack {
+        track_id: String,
+    },
+    SetTrackMixer {
+        track_id: String,
+        mixer: TrackMixerState,
+    },
     AddAudioClip {
         track_id: String,
         name: String,
@@ -271,6 +290,108 @@ impl CommandRuntime {
 
     fn apply_project_command(&mut self, command: ProjectCommand) -> Result<(), CommandError> {
         match command {
+            ProjectCommand::AddTrack { track, index } => self
+                .project_history
+                .transact("add track", |project| -> Result<(), String> {
+                    if track.id.trim().is_empty() || track.name.trim().is_empty() {
+                        return Err(String::from("track id and name must not be empty"));
+                    }
+                    if project.tracks.iter().any(|item| item.id == track.id) {
+                        return Err(format!("track id already exists: {}", track.id));
+                    }
+                    match &track.kind {
+                        estudio_daw_project_model::TrackKind::Audio
+                            if track.instrument.is_some() || !track.notes.is_empty() =>
+                        {
+                            return Err(
+                                "audio tracks cannot contain MIDI notes or an instrument".into()
+                            );
+                        }
+                        estudio_daw_project_model::TrackKind::Midi
+                            if track.media_source.is_some() || track.audio_channels.is_some() =>
+                        {
+                            return Err(
+                                "MIDI tracks cannot own audio media or audio channels".into()
+                            );
+                        }
+                        _ => {}
+                    }
+                    if !track.mixer.gain_db.is_finite()
+                        || !(-60.0..=12.0).contains(&track.mixer.gain_db)
+                        || !track.mixer.pan.is_finite()
+                        || !(-1.0..=1.0).contains(&track.mixer.pan)
+                    {
+                        return Err("track mixer state is outside supported gain/pan bounds".into());
+                    }
+                    let insert_at = index
+                        .unwrap_or(project.tracks.len())
+                        .min(project.tracks.len());
+                    project.tracks.insert(insert_at, track);
+                    Ok(())
+                })
+                .map_err(|error| CommandError::Project(error.to_string()))?,
+            ProjectCommand::RenameTrack { track_id, name } => self
+                .project_history
+                .transact("rename track", |project| -> Result<(), String> {
+                    if name.trim().is_empty() {
+                        return Err(String::from("track name must not be empty"));
+                    }
+                    let track = project
+                        .tracks
+                        .iter_mut()
+                        .find(|item| item.id == track_id)
+                        .ok_or_else(|| format!("unknown track: {track_id}"))?;
+                    track.name = name;
+                    Ok(())
+                })
+                .map_err(|error| CommandError::Project(error.to_string()))?,
+            ProjectCommand::MoveTrack { track_id, index } => self
+                .project_history
+                .transact("move track", |project| -> Result<(), String> {
+                    let from = project
+                        .tracks
+                        .iter()
+                        .position(|item| item.id == track_id)
+                        .ok_or_else(|| format!("unknown track: {track_id}"))?;
+                    let track = project.tracks.remove(from);
+                    project
+                        .tracks
+                        .insert(index.min(project.tracks.len()), track);
+                    Ok(())
+                })
+                .map_err(|error| CommandError::Project(error.to_string()))?,
+            ProjectCommand::RemoveTrack { track_id } => self
+                .project_history
+                .transact("remove track", |project| -> Result<(), String> {
+                    let before = project.tracks.len();
+                    project.tracks.retain(|item| item.id != track_id);
+                    if project.tracks.len() == before {
+                        return Err(format!("unknown track: {track_id}"));
+                    }
+                    // Clips are project-owned; deleting a track removes its regions, never source files.
+                    project.midi_clips.retain(|clip| clip.track_id != track_id);
+                    project.audio_clips.retain(|clip| clip.track_id != track_id);
+                    Ok(())
+                })
+                .map_err(|error| CommandError::Project(error.to_string()))?,
+            ProjectCommand::SetTrackMixer { track_id, mixer } => self
+                .project_history
+                .transact("set track mixer", |project| -> Result<(), String> {
+                    if !mixer.gain_db.is_finite() || !(-60.0..=12.0).contains(&mixer.gain_db) {
+                        return Err(String::from("track gain must be between -60 and +12 dB"));
+                    }
+                    if !mixer.pan.is_finite() || !(-1.0..=1.0).contains(&mixer.pan) {
+                        return Err(String::from("track pan must be between -1 and +1"));
+                    }
+                    let track = project
+                        .tracks
+                        .iter_mut()
+                        .find(|item| item.id == track_id)
+                        .ok_or_else(|| format!("unknown track: {track_id}"))?;
+                    track.mixer = mixer;
+                    Ok(())
+                })
+                .map_err(|error| CommandError::Project(error.to_string()))?,
             ProjectCommand::AddAudioClip {
                 track_id,
                 name,
@@ -416,7 +537,7 @@ mod tests {
     use estudio_daw_midi_engine::{MidiSource, RecordedMidiEvent, RecordedMidiMessage};
     use estudio_daw_project_model::{
         AudioClip, ImportProvenance, InstrumentConfig, MidiClip, TimeSignature, Track, TrackKind,
-        Transport,
+        TrackMixerState, Transport,
     };
 
     fn project() -> Project {
@@ -435,6 +556,8 @@ mod tests {
                     id: "track-midi".into(),
                     name: "MIDI".into(),
                     kind: TrackKind::Midi,
+                    color: "#58a6b8".into(),
+                    mixer: TrackMixerState::default(),
                     notes: Vec::new(),
                     audio_channels: None,
                     media_source: None,
@@ -444,6 +567,8 @@ mod tests {
                     id: "track-audio".into(),
                     name: "Audio".into(),
                     kind: TrackKind::Audio,
+                    color: "#58a6b8".into(),
+                    mixer: TrackMixerState::default(),
                     notes: Vec::new(),
                     audio_channels: Some(2),
                     media_source: None,
@@ -487,7 +612,7 @@ mod tests {
             audio_clips: vec![AudioClip {
                 id: "clip-1".into(),
                 name: "Audio".into(),
-                track_id: "track-1".into(),
+                track_id: "track-audio".into(),
                 start_tick: 0,
                 source_start_samples: 0,
                 duration_samples: 48_000,
@@ -543,6 +668,99 @@ mod tests {
         assert_eq!(snapshot.project.project.audio_clips[0].gain_db, 0.0);
         assert_eq!(snapshot.project.revision, 2);
         assert_eq!(runtime.drain_events().len(), 3);
+    }
+
+    #[test]
+    fn track_commands_are_validated_reversible_and_remove_only_project_regions() {
+        let mut runtime = CommandRuntime::new(project());
+        let mut track = runtime.snapshot().project.project.tracks[1].clone();
+        track.id = "audio-new".into();
+        track.name = "Audio 2".into();
+        runtime
+            .apply(envelope(
+                "add-track",
+                DomainCommand::Project(ProjectCommand::AddTrack {
+                    track,
+                    index: Some(0),
+                }),
+            ))
+            .unwrap();
+        runtime
+            .apply(envelope(
+                "mix-track",
+                DomainCommand::Project(ProjectCommand::SetTrackMixer {
+                    track_id: "audio-new".into(),
+                    mixer: TrackMixerState {
+                        mute: true,
+                        pan: -0.25,
+                        ..TrackMixerState::default()
+                    },
+                }),
+            ))
+            .unwrap();
+        runtime
+            .apply(envelope(
+                "rename-track",
+                DomainCommand::Project(ProjectCommand::RenameTrack {
+                    track_id: "audio-new".into(),
+                    name: "Percusión".into(),
+                }),
+            ))
+            .unwrap();
+        runtime
+            .apply(envelope(
+                "move-track",
+                DomainCommand::Project(ProjectCommand::MoveTrack {
+                    track_id: "audio-new".into(),
+                    index: 1,
+                }),
+            ))
+            .unwrap();
+
+        let snapshot = runtime.snapshot().project.project;
+        let track = snapshot
+            .tracks
+            .iter()
+            .find(|track| track.id == "audio-new")
+            .unwrap();
+        assert_eq!(track.name, "Percusión");
+        assert!(track.mixer.mute);
+        assert_eq!(track.mixer.pan, -0.25);
+        assert_eq!(snapshot.tracks[1].id, "audio-new");
+
+        assert!(runtime
+            .apply(envelope(
+                "invalid-pan",
+                DomainCommand::Project(ProjectCommand::SetTrackMixer {
+                    track_id: "audio-new".into(),
+                    mixer: TrackMixerState {
+                        pan: 2.0,
+                        ..TrackMixerState::default()
+                    },
+                }),
+            ))
+            .is_err());
+        assert_eq!(
+            runtime.snapshot().project.project.tracks[1].mixer.pan,
+            -0.25
+        );
+
+        runtime
+            .apply(envelope(
+                "remove-track",
+                DomainCommand::Project(ProjectCommand::RemoveTrack {
+                    track_id: "track-audio".into(),
+                }),
+            ))
+            .unwrap();
+        assert!(runtime.snapshot().project.project.audio_clips.is_empty());
+        runtime
+            .apply(envelope(
+                "undo-remove-track",
+                DomainCommand::Project(ProjectCommand::Undo),
+            ))
+            .unwrap();
+        assert_eq!(runtime.snapshot().project.project.audio_clips.len(), 1);
     }
 
     #[test]

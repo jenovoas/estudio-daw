@@ -676,14 +676,21 @@ scripting, profesor IA e implementación WASM.
 - [Especificación de scripting y agente](openspec/changes/bootstrap-opendaw-architecture/specs/scripting-and-agent/spec.md)
 - [Tareas](openspec/changes/bootstrap-opendaw-architecture/tasks.md)
 
-### Shell gráfico experimental
+### Prototipo parcial de shell Tauri
 
 La primera interfaz de escritorio usa Tauri como adaptador sobre
 `estudio-daw-application`; el frontend está separado del bridge Tauri. Esta
 ventana permite abrir/guardar proyectos JSON, inspeccionar pistas y clips,
-reproducir tomas MIDI de las pistas de instrumento y probar los comandos de
-transporte e historial. Play/Pause/Stop controla el stream PipeWire y el
-`RenderPlan`; la edición de arreglo sigue siendo experimental.
+crear una sesión vacía, añadir pistas MIDI/audio vacías o cargar una Demo MIDI,
+reproducir clips MIDI de las pistas de instrumento y controlar transporte e
+historial. Es un prototipo de capacidades parciales: su composición visual actual no satisface todavía el
+flujo creativo de Ableton Live 12; no incluye Session View funcional, edición
+de clips/notas, un sistema utilizable de pistas de audio, reproducción de
+regiones de audio, grabación live ni monitorización de entrada. No se declara
+terminada la interfaz. La propuesta y las tareas abiertas de
+[workstation-arrangement-surface-v2](openspec/changes/workstation-arrangement-surface-v2/)
+registran Ableton Live 12 como referencia de UX prioritaria y Ardour sólo como
+consulta técnica secundaria para el flujo de audio.
 
 ```bash
 cargo run -p estudio-daw-ui-shell
@@ -693,3 +700,5 @@ El IPC transporta comandos y resúmenes serializables, nunca PCM ni buffers GPU.
 La reproducción y DSP permanecen en Rust; futuras waveform/espectrogramas usarán
 datos derivados y acotados. Para la primera compilación en Arch/Linux se requiere
 WebKitGTK 4.1 y GTK 3, además de las dependencias de desarrollo de Tauri.
+La guía de [diagnóstico de la UI](docs/ui-debugging.md) contiene comandos de
+verificación, resultados esperados y límites funcionales conocidos.

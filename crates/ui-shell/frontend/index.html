@@ -3,92 +3,111 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#101318" />
+    <meta name="theme-color" content="#1c1f22" />
     <title>Estudio DAW</title>
     <link rel="stylesheet" href="./styles.css" />
     <script src="./platform-tauri.js" defer></script>
     <script src="./main.js" defer></script>
   </head>
   <body>
-    <header class="topbar">
-      <a class="brand" href="#" aria-label="Estudio DAW inicio"><span class="brand-mark">E</span><span>estudio<span class="brand-light">daw</span></span></a>
-      <div class="project-actions">
-        <span id="project-path" class="project-path">Sin proyecto abierto</span>
-        <button id="new-project" class="button button-primary">Nuevo proyecto</button>
-        <button id="demo-project" class="button button-secondary">Demo MIDI</button>
-        <button id="open-project" class="button button-secondary">Abrir proyecto</button>
-        <button id="save-project-as" class="button button-secondary" disabled>Guardar como</button>
-        <button id="save-project" class="button button-primary" disabled>Guardar</button>
-      </div>
+    <header class="appbar">
+      <a class="brand" href="#" aria-label="Estudio DAW"><span class="brand-mark">E</span><span>estudio<span class="brand-light">daw</span></span></a>
+      <span class="appbar-divider"></span>
+      <div class="project-identity"><strong id="project-name">Sin proyecto</strong><span id="project-path" title="">Sin proyecto abierto</span></div>
+      <nav class="project-actions" aria-label="Acciones de proyecto">
+        <button id="new-project" class="icon-button" title="Crear un proyecto nuevo" aria-label="Nuevo proyecto">＋</button>
+        <button id="demo-project" class="button button-demo" title="Cargar una sesión MIDI de demostración">Demo MIDI</button>
+        <button id="open-project" class="icon-button" title="Abrir un proyecto" aria-label="Abrir proyecto">↗</button>
+        <button id="save-project-as" class="icon-button" title="Guardar proyecto como" aria-label="Guardar como" disabled>⤓</button>
+        <button id="save-project" class="icon-button icon-save" title="Guardar proyecto" aria-label="Guardar" disabled>▣</button>
+      </nav>
     </header>
 
-    <main class="workspace">
-      <section class="transport panel">
-        <div class="transport-controls">
-          <button id="stop" class="transport-button" title="Detener" disabled>■</button>
-          <button id="play" class="transport-button transport-play" title="Reproducir" disabled>▶</button>
-          <button id="pause" class="transport-button" title="Pausar" disabled>Ⅱ</button>
-        </div>
-        <div class="transport-readout"><span class="eyebrow">TEMPO</span><strong id="tempo">—</strong><span class="unit">BPM</span></div>
-        <div class="transport-readout"><span class="eyebrow">ESTADO</span><strong id="transport-state">DETENIDO</strong></div>
-        <div class="transport-spacer"></div>
-        <button id="undo" class="button button-quiet" disabled>↶ Deshacer</button>
-        <button id="redo" class="button button-quiet" disabled>↷ Rehacer</button>
-      </section>
+    <div class="workstation">
+      <aside class="tool-rail" aria-label="Vistas">
+        <div class="rail-logo" aria-hidden="true">♫</div>
+        <div class="rail-divider"></div>
+        <span class="rail-tool is-active" title="Arreglo" aria-label="Vista activa: arreglo">▥</span>
+        <span class="rail-tool" title="Vista de sesión aún no implementada" aria-label="Vista de sesión no disponible">▦</span>
+        <span class="rail-spacer"></span>
+        <span class="rail-tool rail-settings" title="Preferencias de audio en la parte inferior" aria-label="Preferencias de audio">⚙</span>
+      </aside>
 
-      <section class="session-heading">
-        <div><span class="eyebrow">SESIÓN</span><h1 id="project-name">Sin proyecto</h1></div>
-        <div class="session-stats">
-          <div class="stat"><strong id="track-count">0</strong><span>PISTAS</span></div>
-          <div class="stat"><strong id="midi-count">0</strong><span>CLIPS MIDI</span></div>
-          <div class="stat"><strong id="audio-count">0</strong><span>CLIPS AUDIO</span></div>
+      <aside class="browser" aria-label="Navegador del proyecto">
+        <div class="browser-title"><span>NAVEGADOR</span><span class="browser-chevron">⌄</span></div>
+        <div class="browser-section-label">SESIÓN</div>
+        <div class="browser-project"><span class="project-glyph">◈</span><span id="browser-project-name">Sin proyecto abierto</span><span class="browser-live-dot"></span></div>
+        <div class="browser-facts">
+          <div><span>Tempo</span><strong><span id="tempo">—</span> <small>BPM</small></strong></div>
+          <div><span>Pistas</span><strong id="track-count">0</strong></div>
+          <div><span>Clips MIDI</span><strong id="midi-count">0</strong></div>
+          <div><span>Clips audio</span><strong id="audio-count">0</strong></div>
         </div>
-      </section>
+        <div class="browser-section-label browser-section-spaced">ACCIONES RÁPIDAS</div>
+        <button id="browser-demo" class="browser-action"><span class="action-glyph action-orange">♫</span><span><strong>Demo MIDI</strong><small>Escuchar una sesión de prueba</small></span><span class="action-arrow">›</span></button>
+        <button id="browser-open" class="browser-action"><span class="action-glyph">▱</span><span><strong>Abrir proyecto</strong><small>Cargar una sesión existente</small></span><span class="action-arrow">›</span></button>
+        <div class="browser-bottom-note"><span class="note-mark">i</span><span>La sesión Demo reproduce una secuencia SineSynth lista para probar el transporte.</span></div>
+      </aside>
 
-      <section class="arrangement panel">
-        <div class="arrangement-heading"><div><span class="eyebrow">ARRANGEMENT</span><h2>Arreglo</h2></div><span id="revision" class="revision">—</span></div>
-        <div class="arrangement-scroll">
-          <div class="arrangement-grid">
-            <div class="ruler-label">PISTAS</div>
-            <div id="timeline-ruler" class="timeline-ruler" aria-label="Regla de compases"></div>
-            <div id="track-list" class="arrangement-track-list"><div class="empty-state">Crea un proyecto o abre una sesión MIDI.</div></div>
-            <div id="arrangement-lanes" class="arrangement-lanes"><div class="empty-state timeline-empty">Sin sesión activa</div></div>
+      <main class="editor">
+        <section class="transport-bar" aria-label="Transporte">
+          <div class="transport-controls">
+            <button id="stop" class="transport-button" title="Detener" aria-label="Detener" disabled>■</button>
+            <button id="play" class="transport-button transport-play" title="Reproducir" aria-label="Reproducir" disabled>▶</button>
+            <button id="pause" class="transport-button" title="Pausar" aria-label="Pausar" disabled>Ⅱ</button>
           </div>
-        </div>
-      </section>
+          <span class="transport-separator"></span>
+          <div class="transport-readout"><span class="eyebrow">TEMPO</span><strong id="transport-tempo">—</strong><span class="unit">BPM</span></div>
+          <span class="transport-separator"></span>
+          <div class="transport-state"><span class="state-led"></span><span id="transport-state">DETENIDO</span></div>
+          <span class="transport-spacer"></span>
+          <button id="undo" class="history-button" title="Deshacer último cambio" aria-label="Deshacer" disabled>↶</button>
+          <button id="redo" class="history-button" title="Rehacer último cambio" aria-label="Rehacer" disabled>↷</button>
+          <span id="revision" class="revision">REV —</span>
+        </section>
 
-      <details class="audio-settings panel">
-        <summary class="audio-summary"><span><span class="eyebrow">AUDIO</span><strong id="audio-settings-title">Buffers y latencia</strong></span><span id="audio-apply-state" class="revision">Cargando…</span></summary>
-        <div class="audio-settings-body">
-        <div class="audio-profile-row">
-          <label for="audio-profile">Perfil</label>
-          <select id="audio-profile">
-            <option value="liveRecord">Live / Grabar</option>
-            <option value="multitrackPlayback">Reproducción multipista</option>
-          </select>
-          <label for="device-period">Periodo del dispositivo</label>
-          <div class="audio-number"><input id="device-period" type="number" min="16" max="2048" step="32" /><span>frames</span></div>
-          <label for="playback-safety">Margen PCM de reproducción</label>
-          <div class="audio-number"><input id="playback-safety" type="number" min="0" max="2048" step="256" /><span>frames</span></div>
-          <button id="save-audio-settings" class="button button-primary">Aplicar al próximo inicio</button>
-        </div>
-        <div class="audio-readouts">
-          <span>Frecuencia solicitada <strong id="audio-sample-rate">—</strong></span>
-          <span>Periodo solicitado <strong id="audio-requested-period">—</strong></span>
-          <span>Periodo efectivo <strong id="audio-effective-period">No disponible</strong></span>
-          <span>Búfer extra <strong id="audio-safety-duration">—</strong></span>
-        </div>
-        <p class="audio-help">Un periodo menor puede reducir el tiempo de bloque y aumentar la exigencia de CPU y scheduling. El búfer extra agrega margen al audio que procesa; puede añadir demora a esa ruta. PipeWire puede negociar un periodo efectivo distinto al solicitado.</p>
-        <p id="audio-engine-note" class="audio-help audio-warning">El transporte ya reproduce clips MIDI del proyecto con el instrumento asignado a cada pista; Live/Grabar y la grabación de audio desde esta UI aún no están conectados. El periodo y el margen se toman al iniciar el siguiente stream. El margen PCM se aplica a pistas SoundFont; SineSynth no mantiene una cola PCM independiente.</p>
-        </div>
-      </details>
+        <section class="editor-heading">
+          <div class="view-tabs"><div class="view-tab is-selected"><span class="tab-icon">▥</span>Arreglo</div><div class="view-tab view-tab-muted" title="Vista de sesión aún no implementada"><span class="tab-icon">▦</span>Sesión <small>PRONTO</small></div></div>
+          <div class="session-indicators"><span><i class="indicator-dot midi-dot"></i>MIDI</span><span><i class="indicator-dot audio-dot"></i>AUDIO</span></div>
+        </section>
 
-      <section class="notice panel">
-        <span class="notice-icon">i</span>
-        <div><strong id="notice-title">Shell de escritorio experimental</strong><p id="notice-text">Abre un proyecto con clips MIDI y usa Play para reproducirlo por PipeWire.</p></div>
-      </section>
-    </main>
+        <section class="arrangement" aria-label="Arreglo musical">
+          <div class="arrangement-scroll">
+            <div class="arrangement-grid">
+              <div class="track-column-heading"><span>PISTAS</span><span class="track-create-actions"><button id="add-midi-track" title="Añadir pista MIDI" aria-label="Añadir pista MIDI" disabled>＋M</button><button id="add-audio-track" title="Añadir pista de audio vacía" aria-label="Añadir pista de audio vacía" disabled>＋A</button></span></div>
+              <div id="timeline-ruler" class="timeline-ruler" aria-label="Regla de compases"></div>
+              <div id="track-list" class="arrangement-track-list"><div class="empty-state">Crea un proyecto o abre una sesión MIDI.</div></div>
+              <div id="arrangement-lanes" class="arrangement-lanes"><div class="empty-state timeline-empty">Pulsa «Demo MIDI» para cargar una secuencia audible.</div></div>
+            </div>
+          </div>
+          <div class="arrangement-legend"><span><i class="legend-swatch"></i>Clip MIDI</span><span>Vista previa de notas · edición aún no disponible</span></div>
+        </section>
 
-    <footer><span class="connection-dot"></span><span id="engine-status">Core listo · motor de audio aún no conectado</span><span class="footer-right">TAURI · PROTOTIPO</span></footer>
+        <section class="lower-panel">
+          <div class="lower-panel-title"><span class="panel-grip">⠿</span><strong>DETALLES DE SESIÓN</strong><span class="lower-panel-subtitle">Revisión y configuración de audio</span></div>
+          <details id="audio-settings" class="audio-settings">
+            <summary class="audio-summary"><span class="audio-summary-icon">◉</span><span id="audio-settings-title">Buffers y latencia</span><span id="audio-apply-state" class="revision">Cargando…</span><span class="summary-chevron">⌄</span></summary>
+            <div class="audio-settings-body">
+              <div class="audio-profile-row">
+                <label for="audio-profile">Perfil</label>
+                <select id="audio-profile"><option value="liveRecord">Live / Grabar</option><option value="multitrackPlayback">Reproducción multipista</option></select>
+                <label for="device-period">Periodo del dispositivo</label>
+                <div class="audio-number"><input id="device-period" type="number" min="16" max="2048" step="32" /><span>frames</span></div>
+                <label for="playback-safety">Margen PCM</label>
+                <div class="audio-number"><input id="playback-safety" type="number" min="0" max="2048" step="256" /><span>frames</span></div>
+                <button id="save-audio-settings" class="button button-accent">Aplicar al próximo inicio</button>
+              </div>
+              <div class="audio-readouts"><span>Frecuencia<strong id="audio-sample-rate">—</strong></span><span>Periodo solicitado<strong id="audio-requested-period">—</strong></span><span>Periodo efectivo<strong id="audio-effective-period">No disponible</strong></span><span>Búfer extra<strong id="audio-safety-duration">—</strong></span></div>
+              <p class="audio-help">Los perfiles se aplican al iniciar el siguiente stream. PipeWire puede negociar un periodo distinto; el margen PCM sólo afecta la cola de pistas SoundFont.</p>
+              <p class="audio-help audio-warning">Esta shell reproduce clips MIDI. Grabación live, monitorización MIDI y clips de audio todavía no están disponibles aquí.</p>
+            </div>
+          </details>
+        </section>
+
+        <section class="status-message" role="status" aria-live="polite"><span class="status-icon">i</span><div><strong id="notice-title">Estudio DAW listo</strong><span id="notice-text">Crea un proyecto o abre Demo MIDI para ver el arreglo y probar el sonido.</span></div></section>
+      </main>
+    </div>
+
+    <footer class="statusbar"><span class="connection-dot"></span><span id="engine-status">Core listo · motor de audio aún no conectado</span><span class="statusbar-spacer"></span><span class="statusbar-label">ESTUDIO DAW</span><span class="statusbar-separator">·</span><span id="project-status">SIN PROYECTO</span></footer>
   </body>
 </html>

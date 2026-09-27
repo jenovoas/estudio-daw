@@ -1,22 +1,29 @@
 # Instrumentos MIDI nativos
 
-## Shell Tauri: inicio de sesión y transporte
+## Shell Tauri: capacidades actuales y estado de la UI
 
-La cabecera permite crear un proyecto nuevo con una pista MIDI vacía, cargar
-una Demo MIDI reproducible, abrir un proyecto existente o guardar la sesión
-actual con «Guardar como». Un proyecto nuevo comienza a 120 BPM y con SineSynth
-asignado a MIDI 1; no contiene clips, así que Play no produce sonido hasta
-añadir material. Demo MIDI adjunta siete notas de prueba mediante SineSynth,
-sin depender de SoundFont externo. Guardar se activa cuando la sesión ya tiene
-una ruta; «Guardar como» está disponible para una sesión nueva.
+La shell Tauri es experimental y parcial; no debe describirse como una
+workstation terminada ni como una implementación de la Session View de Ableton.
+La referencia de diseño y el inventario funcional comparado de Ableton Live 12
+y Ardour están en
+[`workstation-arrangement-surface-v2`](../openspec/changes/workstation-arrangement-surface-v2/).
+La pantalla actual contiene controles de proyecto/transporte y una vista de
+lectura de la sesión, pero su jerarquía visual, flujo creativo y sistema de
+pistas de audio no cumplen todavía ese contrato.
 
-La ventana muestra cabeceras de pista, una regla musical, los clips MIDI y una
-vista compacta de sus notas en un arreglo de 16 compases. La jerarquía visual
-usa chrome oscuro y compacto, una grilla de alto contraste y clips de color,
-inspirada en el flujo visual de Ableton Live 12 Suite sin incorporar recursos
-gráficos ni activos de Ableton. Play/Pause/Stop controla la reproducción MIDI
-PipeWire. El shell todavía no incluye edición de arreglo/notas, grabación live,
-monitorización MIDI ni reproducción de clips de audio.
+Nuevo proyecto crea una pista MIDI SineSynth vacía a 120 BPM; Play no produce
+sonido hasta añadir material. Demo MIDI carga siete notas de prueba SineSynth
+sin depender de un SoundFont externo. Abrir carga un JSON de proyecto; Guardar
+se habilita cuando existe una ruta y Guardar como permite elegirla. Transporte,
+historial y perfiles de audio usan las operaciones existentes del bridge Tauri.
+
+La shell puede presentar pistas/clips resumidos y una vista previa compacta de
+notas del snapshot, y reproducir material MIDI de instrumento mediante el
+runtime existente. No ofrece edición de clips/notas, Session clip launching,
+reproducción de regiones de audio, grabación live ni monitorización de entrada.
+El modelo ya incluye algunos metadatos y comandos de clips de audio, lo que no
+equivale a un flujo funcional de pista de audio. Las tareas de OpenSpec siguen
+abiertas hasta que los flujos end-to-end y la inspección visual sean verificados.
 
 `estudio-daw-synth` ofrece dos fuentes: el sinte sinusoidal polifónico (fallback
 sin dependencias) y un adaptador opcional a FluidSynth para reproducir
