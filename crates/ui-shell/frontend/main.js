@@ -186,10 +186,14 @@ function trackChannelDescription(track) {
   return `${input} · ${track.outputChannels} canales de salida`;
 }
 
-function trackOutputDescription(track, tracks) {
-  if (track.role === "master") return "Salida física: configuración de plataforma pendiente";
-  const target = tracks.find((candidate) => candidate.id === track.outputTrackId);
-  return target ? `Salida interna → ${target.name}` : "Sin salida interna asignada";
+function trackSignalFlow(track) {
+  if (track.virtualMaster || track.role === "master") {
+    return "Suma MIDI/audio/metrónomo → medidor Master → salida del plan";
+  }
+  if (track.kind === "audio") {
+    return "Regiones de audio → ganancia/desvanecimientos de región → ganancia/pan de pista → medidor → suma del plan";
+  }
+  return "Eventos MIDI → instrumento → ganancia/pan → medidor → suma del plan";
 }
 
 function createTrackMixerControls(track, compact = false) {
@@ -409,11 +413,8 @@ function renderMixerSurface(tracks) {
     role.className = "mixer-role";
     role.textContent = track.role === "master" ? "MASTER" : track.kind.toUpperCase();
     const routing = document.createElement("small");
-    routing.textContent = track.virtualMaster
-      ? "Medición de la salida final del plan"
-      : track.role === "master"
-        ? trackOutputDescription(track, tracks)
-        : `${trackChannelDescription(track)} · ${trackOutputDescription(track, tracks)}`;
+    routing.className = "mixer-flow";
+    routing.textContent = trackSignalFlow(track);
     const mix = document.createElement("span");
     mix.className = "mixer-values";
     mix.textContent = track.virtualMaster

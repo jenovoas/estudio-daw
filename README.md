@@ -693,7 +693,7 @@ guardan mediante comandos y se aplican a la reproducción. Los medidores de
 pista muestran pico y RMS de bloque para pistas MIDI y audio en las tres
 superficies; la selección y los grupos organizativos se comparten, pero no enlazan
 los valores de mezcla. El Mezclador añade un canal Master con pico/RMS de la salida
-estéreo final; los controles de master y el ruteo siguen pendientes. Se pueden
+estéreo final y describe el recorrido MIDI/audio ejecutado; controles de master, entradas en vivo y ruteo siguen pendientes. Se pueden
 importar archivos de audio a pistas existentes,
 copiándolos a la carpeta `media` junto al proyecto o vinculando el original,
 con metadatos básicos, preescucha corta antes de confirmar la importación,
