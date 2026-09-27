@@ -1,11 +1,12 @@
 {
     "schema_version": 2,
-    "commit": "faa54004a4b0d848d5debed61180c1d21e46304c",
-    "indexed_at": "2026-09-26T21:19:41Z",
-    "project": "estudio-daw",
-    "nodes": 1889,
-    "edges": 5194,
-    "original_size": 7143424,
-    "compressed_size": 966046,
-    "compression_level": 9
+    "commit": "de081cd10473c4772ee8a0a67e57a8efeca730a1",
+    "indexed_at": "2026-09-27T04:25:56Z",
+    "project": "home-jnovoas-proyectos-estudio-daw",
+    "nodes": 2272,
+    "edges": 6576,
+    "original_size": 11206656,
+    "compressed_size": 1640818,
+    "compression_level": 3,
+    "reconcile_basis": "git-clean-head"
 }
