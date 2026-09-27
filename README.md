@@ -697,9 +697,13 @@ clic en la regla o en un espacio vacío coloca el cursor de edición, que sirve
 como punto de inserción para la siguiente importación.
 Es un prototipo de capacidades parciales: su composición
 visual actual no satisface todavía el flujo creativo de Ableton Live 12; no
-incluye lanzamiento de clips en Session, edición de clips/notas, reproducción
-de regiones de audio, ruteo/downmix de canales durante la reproducción,
-selección de salidas físicas, grabación live ni monitorización de entrada. No
+incluye lanzamiento de clips en Session, edición de clips/notas ni
+posicionamiento compartido del transporte. Play decodifica las
+regiones de audio de forma incremental en workers, las precarga en rings PCM
+acotados y las mezcla con instrumentos MIDI; el callback no decodifica ni hace
+I/O. Todavía faltan bucles, búsqueda/seguimiento del cursor, actualizar el plan
+sin detener el transporte, selección de salidas físicas, grabación live y
+monitorización de entrada. No
 se declara terminada la interfaz. La propuesta y las tareas abiertas de
 [workstation-arrangement-surface-v2](openspec/changes/workstation-arrangement-surface-v2/)
 registran Ableton Live 12 como referencia de UX prioritaria y Ardour sólo como

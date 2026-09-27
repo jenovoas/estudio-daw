@@ -17,8 +17,9 @@ forma de onda limita la duración procesada a diez minutos y produce como máxim
 
 - Se puede seleccionar un canal mono o una pareja estéreo de la fuente; la
   selección se conserva en la región. Las regiones históricas sin selección
-  explícita mantienen la interpretación anterior de usar todos sus canales.
-  Esta elección aún no implementa el ruteo ni el downmix de reproducción.
+  explícita se convierten a estéreo con el downmix estándar de `ffmpeg`.
+  Durante reproducción, la selección mono se duplica a L/R y la pareja elegida
+  se enruta a L/R.
 - El diálogo permite inspeccionar metadatos y preescuchar hasta 30 segundos de
   Opus mediante WebAudio antes de confirmar la importación. Las regiones
   importadas conservan el mismo control de preescucha; no mueve el transporte.
@@ -35,11 +36,18 @@ forma de onda limita la duración procesada a diez minutos y produce como máxim
 - La preescucha está disponible después de seleccionar el archivo, antes de
   confirmarlo, pero todavía no hay una biblioteca para buscar/filtrar archivos
   ya importados. El recorte sólo reduce los límites actuales; no permite
-  extenderlos otra vez con el ratón. Tampoco hay reproducción de regiones en el
-  transporte. La forma de onda no implica que el audio se esté reproduciendo.
+  extenderlos otra vez con el ratón. Play decodifica incrementalmente cada
+  región con `ffmpeg` en un worker y un ring PCM acotado, y el plan mezcla esas
+  muestras con las pistas de instrumentos MIDI. El transporte empieza en cero;
+  todavía no hay bucles, búsqueda ni reconstrucción del plan durante la
+  reproducción. Los cambios de región se guardan de inmediato y se oyen al
+  detener e iniciar de nuevo; no reinician el dispositivo como parte de la
+  edición. La waveform sólo visualiza datos y no simula la señal reproducida.
 - Los procesos externos `ffmpeg` y `ffprobe` deben estar instalados. Un fallo se
   presenta como error de importación/forma de onda, sin registrar una región
   incompleta.
 
-La tarea OpenSpec 2.2 permanece abierta hasta cubrir colocación con cursor de
-edición y validar visualmente el flujo en la aplicación en ejecución.
+La tarea OpenSpec 2.2 permanece abierta hasta completar QA visual del flujo de
+importación y edición en la aplicación. La tarea 2.3 también sigue abierta por
+carecer de bucles, búsqueda/seguimiento del cursor y actualización del plan
+durante reproducción, además de QA acústica.

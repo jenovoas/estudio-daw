@@ -259,6 +259,12 @@ y el avance no marcado como completo en `tasks.md`.
 
 ## Handoff para reinicio — 2026-09-27
 
+### Avance posterior — reproducción de audio 2.3
+
+- HEAD publicado al iniciar el corte: `183e938`. Hay implementación local pendiente de publicar: decodificación `ffmpeg` incremental en workers, rings PCM acotados, mezcla de regiones con MIDI y aplicación de offset, duración, canales, ganancia y fades.
+- Verificación: `cargo check -p estudio-daw-ui-shell`, `cargo fmt --all -- --check`, `node --check crates/ui-shell/frontend/main.js`, `git diff --check` y `openspec validate workstation-arrangement-surface-v2` pasaron. No se ejecutaron pruebas ni QA acústica. OpenSpec 2.3 permanece abierta hasta cubrir loop, búsqueda/cursor compartido, actualización del plan en caliente y QA.
+- 2.2 permanece abierta por QA visual de importación/edición. Continuar desde el plan aprobado; no detener el trabajo sólo porque una verificación humana quede pendiente.
+
 Leer `docs/HANDOFF_CONTINUACION_2026-09-27.md` antes de continuar. HEAD
 funcional base: `e66b5fe8fe2e71b6d8be399a717f4a338de0f4f2`; consultar `git log`
 para el commit documental que guarda este handoff.

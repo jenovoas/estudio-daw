@@ -1,12 +1,21 @@
 # Handoff de continuación — 2026-09-27
 
-## Reanudación actualizada — edición de regiones de audio 2.2
+## Reanudación — reproducción incremental de regiones (OpenSpec 2.3)
+
+- HEAD publicado antes de este corte: `183e938` (`feat: coloca audio desde el cursor de edicion`). La implementación de reproducción está en curso y aún no está publicada; consultar `git status/log` al reanudar.
+- `AudioPcmDecoder` usa `ffmpeg` para transmitir PCM f32 estéreo. Un worker por región llena un ring PCM SPSC de un segundo, limitado a 64 regiones y precargado antes de abrir PipeWire. `AudioClipMixerNode` mezcla en el plan ya compilado con MIDI y aplica posición inicial, desplazamiento/duración, canales, ganancia y fades. El callback sólo consume el ring y mezcla en scratch preasignado.
+- Pause congela el plan; Stop libera los workers/cancela `ffmpeg`. Cambiar regiones mientras corre guarda el proyecto pero no reconstruye el plan activo; detener e iniciar carga los cambios. El transporte aún empieza en cero, sin búsqueda/seguimiento del cursor ni bucle.
+- `workstation-arrangement-surface-v2` permanece en 9/35; 2.2 sigue abierta por QA visual y 2.3 sigue abierta por las capacidades de transporte ausentes y QA acústica. No marcar ninguna completa por esta implementación parcial.
+- Verificación prevista para este corte: `cargo check -p estudio-daw-ui-shell`, `cargo fmt --all -- --check`, `node --check crates/ui-shell/frontend/main.js`, `git diff --check` y validación OpenSpec; no se ejecuta suite de pruebas ni QA física en esta intervención.
+- Próximo paso aprobado: continuar el plan de trabajo con las dependencias siguientes de 2.3 (loop/búsqueda/actualización de plan) y luego abrir los cortes 2.4/2.5 según OpenSpec. Mantener el callback libre de asignación, bloqueo e I/O.
+
+## Contexto histórico — edición de regiones de audio 2.2
 
 - HEAD de partida: `57f0e5f` (`feat: previsualiza e importa canales de audio`), publicado en `main`; esta continuación añade interacción de mover/recortar/quitar región.
 - Progreso OpenSpec: 9/35. 2.2 sigue abierta. Importación, copia/vínculo, metadatos, preescucha previa, elección mono/estéreo, waveform y ubicación por compás están implementados. Los gestos de edición usan comandos reversibles; quitar una región conserva el registro y los bytes de la fuente.
 - Límites: recorte sólo hacia dentro; no se puede reextender con ratón. Ahora hay cursor de inserción local en Arreglo, pero falta QA visual/auditiva de la app en ejecución. La selección de canal aún no dirige la reproducción. No marcar 2.2 completa.
 - Documento específico: `docs/audio-import.md`. Esta continuación pasó `cargo check --workspace`, fmt check, sintaxis de JS y diff check; no se ejecutó la suite de pruebas ni QA visual/auditiva.
-- Siguiente: QA del flujo de importación/cursor/edición en la aplicación y confirmar que los medios fuente se conservan tras recortes y borrado. No volver a alterar los artefactos generados de `.codebase-memory/` en commits de producto.
+- QA visual del flujo de importación/cursor/edición sigue pendiente, pero no bloquea el trabajo de implementación aprobado en 2.3. No volver a alterar los artefactos generados de `.codebase-memory/` en commits de producto.
 
 ## Punto exacto de reanudación
 
@@ -18,7 +27,7 @@
 
 ## Siguiente trabajo
 
-1. Avanzar la tarea 2.2: la importación ya registra procedencia, permite copiar/vincular, preescucha previa, selección mono/estéreo persistida y ubicación inicial por compás. Siguen pendientes el cursor de edición, los controles visuales de región y el QA en ejecución. 2.1 ya persiste la ruta interna al Master y muestra pistas en Arreglo, Session y Mezclador desde una instantánea común; el ruteo físico y la reproducción siguen pendientes.
+1. La tarea 2.2 tiene importación, cursor local de inserción y edición reversible; sigue pendiente QA visual. La implementación parcial de 2.3 decodifica y mezcla regiones con MIDI; continuar con loop, búsqueda/posición compartida y actualización del plan activo, según el alcance OpenSpec. 2.1 persiste la ruta interna al Master; el ruteo físico sigue pendiente.
 
 ## Acuerdos vigentes
 
@@ -37,7 +46,7 @@
 
 ## Pendientes que no deben perderse
 
-- En `workstation-arrangement-surface-v2`, 2.2–6.4 siguen abiertas salvo lo que `tasks.md` marque `[x]`; la vista Session sólo expone encabezados/casillas vacías y el Mezclador es de sólo lectura. Lanzamiento, edición, reproducción de audio, hardware, mezcla activa, menús y revisión visual no se consideran implícitos.
+- En `workstation-arrangement-surface-v2`, 2.2–6.4 siguen abiertas salvo lo que `tasks.md` marque `[x]`; la vista Session sólo expone encabezados/casillas vacías y el Mezclador es de sólo lectura. Lanzamiento, hardware, mezcla activa, menús y revisión visual no se consideran implícitos.
 - En `soundfont-instrument-rendering`: la tarea 4.3 permanece abierta para la comprobación física de latencia que requiere la especificación. La escucha confirmada y la medición digital pre-DAC no prueban latencia tecla→parlante.
 - La bitácora de la bóveda es append-only. Se añadieron entradas durante esta sesión; los archivos de la bóveda siguen como cambios locales por guardar, no se publicaron en remoto.
 - El índice de código estaba fechado `2026-09-26T21:19Z` al iniciar esta sesión y se señaló como atrasado respecto a código/`git`. Actualizarlo sólo si hace falta y restaurar sus artefactos versionados generados al terminar. La evidencia de comportamiento es código, pruebas y Git.
@@ -54,4 +63,4 @@
 - HEAD sigue en `0a615f83883337e2b459056b1b33b529b3f5f11e`; implementación/documentación local sin commit.
 - `AddTrack` crea pista de audio estéreo, la conecta por ID al Master y crea ese canal en la misma transacción cuando falta. Session y Mezclador presentan el mismo resumen de la instantánea que Arreglo; Session muestra encabezados/casillas vacías y el Mezclador es de sólo lectura.
 - Pasaron `cargo fmt --all`, `cargo test --workspace -- --test-threads=1`, `cargo check --workspace`, `cargo fmt --all -- --check`, `git diff --check` y `openspec validate workstation-arrangement-surface-v2`. La validación conserva ocho avisos lingüísticos sobre `MUST/SHALL`; no son fallos estructurales.
-- Progreso: 9/35. Próxima tarea: 2.2. No está disponible el ruteo a hardware, reproducción de audio, edición de Session ni controles activos de mezcla.
+- Progreso: 9/35. Seguir con 2.3, que está parcialmente implementada. No está disponible el ruteo a hardware, edición de Session ni controles activos de mezcla.

@@ -4,16 +4,19 @@
 //! callback PipeWire sólo procesa el plan ya compilado y memoria preasignada.
 
 use estudio_daw_application::AudioProfileSettings;
-use estudio_daw_audio_engine::{render_plan_exchange, RenderPlanBuilder};
+use estudio_daw_audio_engine::{
+    render_plan_exchange, AudioNode, AudioNodeError, RenderPlanBuilder, SampleRingBuffer,
+};
 use estudio_daw_audio_platform::{run_pipewire_output_until, PipeWireStreamConfig};
 use estudio_daw_midi_engine::RecordedMidiMessage;
-use estudio_daw_project_model::{InstrumentConfig, Project, TrackKind};
+use estudio_daw_project_model::{AudioClip, InstrumentConfig, Project, TrackKind};
 use estudio_daw_runtime_diagnostics::{audio_devices, DeviceInfo};
 use estudio_daw_synth::{
     midi_event_queue, InstrumentMixerNode, SineSynthNode, SoundFontEventSender,
     SoundFontInstrumentWorker, SynthEventSender, SynthMidiEvent,
 };
 use std::{
+    io::Read,
     sync::{
         atomic::{AtomicBool, Ordering},
         mpsc, Arc,
@@ -21,6 +24,198 @@ use std::{
     thread::{self, JoinHandle},
     time::{Duration, Instant},
 };
+
+const MAX_AUDIO_CLIP_STREAMS: usize = 64;
+
+struct AudioDecodePump {
+    stop: Arc<AtomicBool>,
+    finished: Arc<AtomicBool>,
+    failure: Arc<std::sync::Mutex<Option<String>>>,
+    ring: Arc<SampleRingBuffer>,
+    control: estudio_daw_media_adapter::AudioPcmDecoderControl,
+    thread: Option<JoinHandle<()>>,
+}
+
+impl AudioDecodePump {
+    fn start(
+        mut decoder: estudio_daw_media_adapter::AudioPcmDecoder,
+        ring: Arc<SampleRingBuffer>,
+    ) -> Result<Self, String> {
+        let control = decoder.control();
+        let stop = Arc::new(AtomicBool::new(false));
+        let finished = Arc::new(AtomicBool::new(false));
+        let failure = Arc::new(std::sync::Mutex::new(None));
+        let worker_stop = Arc::clone(&stop);
+        let worker_finished = Arc::clone(&finished);
+        let worker_failure = Arc::clone(&failure);
+        let worker_ring = Arc::clone(&ring);
+        let thread = thread::Builder::new()
+            .name("estudio-daw-audio-decoder".into())
+            .spawn(move || {
+                let mut bytes = vec![0_u8; 32 * 1024 + 4];
+                let mut samples = Vec::<f32>::with_capacity(bytes.len() / 4);
+                let mut carry = 0;
+                let result =
+                    loop {
+                        if worker_stop.load(Ordering::Acquire) {
+                            break Ok(());
+                        }
+                        let count = match decoder.read(&mut bytes[carry..]) {
+                            Ok(count) => count,
+                            Err(error) => break Err(error.to_string()),
+                        };
+                        let total = carry + count;
+                        let aligned = total - total % 4;
+                        samples.clear();
+                        samples.extend(bytes[..aligned].chunks_exact(4).map(|chunk| {
+                            f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]])
+                        }));
+                        let mut offset = 0;
+                        while offset < samples.len() {
+                            if worker_stop.load(Ordering::Acquire) {
+                                break;
+                            }
+                            offset += worker_ring.push(&samples[offset..]);
+                            if offset < samples.len() {
+                                thread::sleep(Duration::from_millis(1));
+                            }
+                        }
+                        carry = total - aligned;
+                        if carry > 0 {
+                            bytes.copy_within(aligned..total, 0);
+                        }
+                        if count == 0 {
+                            break Ok(());
+                        }
+                    };
+                if let Err(error) = result {
+                    if let Ok(mut failure) = worker_failure.lock() {
+                        *failure = Some(error);
+                    }
+                }
+                worker_finished.store(true, Ordering::Release);
+            })
+            .map_err(|error| error.to_string())?;
+        Ok(Self {
+            stop,
+            finished,
+            failure,
+            ring,
+            control,
+            thread: Some(thread),
+        })
+    }
+
+    fn wait_until_primed(&self, target_samples: usize, timeout: Duration) -> Result<(), String> {
+        let deadline = Instant::now() + timeout;
+        loop {
+            if let Some(error) = self
+                .failure
+                .lock()
+                .map_err(|_| "el estado del decodificador quedó bloqueado".to_owned())?
+                .as_ref()
+            {
+                return Err(format!("no se pudo decodificar la región: {error}"));
+            }
+            let available = self.ring.available();
+            if available >= target_samples
+                || (self.finished.load(Ordering::Acquire) && available > 0)
+            {
+                return Ok(());
+            }
+            if self.finished.load(Ordering::Acquire) {
+                return Err("el decodificador no produjo muestras de audio".into());
+            }
+            if Instant::now() >= deadline {
+                return Err("el decodificador tardó demasiado en preparar audio".into());
+            }
+            thread::sleep(Duration::from_millis(2));
+        }
+    }
+}
+
+impl Drop for AudioDecodePump {
+    fn drop(&mut self) {
+        self.stop.store(true, Ordering::Release);
+        self.control.terminate();
+        if let Some(thread) = self.thread.take() {
+            let _ = thread.join();
+        }
+    }
+}
+
+struct AudioClipStream {
+    ring: Arc<SampleRingBuffer>,
+    start_frame: u64,
+    duration_frames: u64,
+    fade_in_frames: u64,
+    fade_out_frames: u64,
+    gain: f32,
+}
+
+struct AudioClipMixerNode {
+    streams: Vec<AudioClipStream>,
+    scratch: Vec<f32>,
+    frame_cursor: u64,
+}
+
+impl AudioClipMixerNode {
+    fn new(streams: Vec<AudioClipStream>, max_samples: usize) -> Self {
+        Self {
+            streams,
+            scratch: vec![0.0; max_samples],
+            frame_cursor: 0,
+        }
+    }
+}
+
+impl AudioNode for AudioClipMixerNode {
+    fn process(&mut self, interleaved: &mut [f32]) -> Result<(), AudioNodeError> {
+        if interleaved.len() % 2 != 0 || interleaved.len() > self.scratch.len() {
+            return Err(AudioNodeError::InvalidBlockLength);
+        }
+        let frames = interleaved.len() / 2;
+        let block_start = self.frame_cursor;
+        for stream in &self.streams {
+            let block_offset = stream.start_frame.saturating_sub(block_start) as usize;
+            if block_offset >= frames {
+                continue;
+            }
+            let clip_frame_offset = block_start.saturating_sub(stream.start_frame);
+            if clip_frame_offset >= stream.duration_frames {
+                continue;
+            }
+            let active_frames = frames
+                .saturating_sub(block_offset)
+                .min((stream.duration_frames - clip_frame_offset) as usize);
+            let active_samples = active_frames * 2;
+            self.scratch[..active_samples].fill(0.0);
+            stream.ring.pop(&mut self.scratch[..active_samples]);
+            for frame in 0..active_frames {
+                let clip_frame = clip_frame_offset + frame as u64;
+                let mut gain = stream.gain;
+                if stream.fade_in_frames > 0 && clip_frame < stream.fade_in_frames {
+                    gain *= clip_frame as f32 / stream.fade_in_frames as f32;
+                }
+                if stream.fade_out_frames > 0
+                    && clip_frame
+                        >= stream
+                            .duration_frames
+                            .saturating_sub(stream.fade_out_frames)
+                {
+                    gain *= stream.duration_frames.saturating_sub(clip_frame + 1) as f32
+                        / stream.fade_out_frames as f32;
+                }
+                let output_offset = (block_offset + frame) * 2;
+                let input_offset = frame * 2;
+                interleaved[output_offset] += self.scratch[input_offset] * gain;
+                interleaved[output_offset + 1] += self.scratch[input_offset + 1] * gain;
+            }
+        }
+        self.frame_cursor = self.frame_cursor.saturating_add(frames as u64);
+        Ok(())
+    }
+}
 
 enum EventSender {
     Sine(SynthEventSender),
@@ -292,12 +487,84 @@ fn build_project_playback(
         }
     }
 
+    let mut audio_streams = Vec::new();
+    let mut decoder_pumps = Vec::new();
+    let audio_clips: Vec<&AudioClip> = project
+        .audio_clips
+        .iter()
+        .filter(|clip| clip.source_id.is_some())
+        .collect();
+    if audio_clips.len() > MAX_AUDIO_CLIP_STREAMS {
+        return Err(format!(
+            "el proyecto tiene {} regiones con fuente; el límite simultáneo de reproducción es {}",
+            audio_clips.len(),
+            MAX_AUDIO_CLIP_STREAMS
+        ));
+    }
+    for clip in audio_clips {
+        let Some(source_id) = clip.source_id.as_deref() else {
+            continue;
+        };
+        let source = project
+            .audio_sources
+            .iter()
+            .find(|source| source.id == source_id && source.owner_track_id == clip.track_id)
+            .ok_or_else(|| {
+                format!(
+                    "la región '{}' referencia una fuente inexistente",
+                    clip.name
+                )
+            })?;
+        let source_rate = source.sample_rate_hz.unwrap_or(clip.sample_rate);
+        let decoder = estudio_daw_media_adapter::AudioPcmDecoder::spawn(
+            &source.media.original_path,
+            source_rate,
+            source.channels.unwrap_or(clip.channels),
+            &clip.source_channel_selection,
+            clip.source_start_samples,
+            clip.duration_samples,
+            sample_rate,
+        )
+        .map_err(|error| format!("no se pudo preparar '{}': {error}", clip.name))?;
+        let ring = Arc::new(SampleRingBuffer::new(
+            (sample_rate as usize).saturating_mul(2).max(2),
+        ));
+        let pump = AudioDecodePump::start(decoder, Arc::clone(&ring))?;
+        let to_output_frames = |source_samples: u64| -> u64 {
+            ((u128::from(source_samples) * u128::from(sample_rate))
+                / u128::from(source_rate.max(1)))
+            .min(u128::from(u64::MAX)) as u64
+        };
+        let start_micros = ticks_to_micros(clip.start_tick, 480, bpm);
+        let start_frame = ((u128::from(start_micros) * u128::from(sample_rate)) / 1_000_000)
+            .min(u128::from(u64::MAX)) as u64;
+        audio_streams.push(AudioClipStream {
+            ring,
+            start_frame,
+            duration_frames: to_output_frames(clip.duration_samples).max(1),
+            fade_in_frames: to_output_frames(clip.fade_in_samples),
+            fade_out_frames: to_output_frames(clip.fade_out_samples),
+            gain: 10.0_f32.powf(clip.gain_db / 20.0),
+        });
+        decoder_pumps.push(pump);
+    }
+    let target_samples = ((sample_rate as usize / 10) * 2).max(2);
+    for pump in &decoder_pumps {
+        pump.wait_until_primed(target_samples, Duration::from_secs(5))?;
+    }
+
     schedule.sort_by_key(|event| (event.at, event.sequence));
     let mut builder = RenderPlanBuilder::new();
     builder.add_node(InstrumentMixerNode::new(sources, max_samples));
+    if !audio_streams.is_empty() {
+        builder.add_node(AudioClipMixerNode::new(audio_streams, max_samples));
+    }
     let mut plan = builder.build();
     for worker in workers {
         plan.retain_resource(worker);
+    }
+    for pump in decoder_pumps {
+        plan.retain_resource(pump);
     }
     Ok((plan, senders, schedule))
 }

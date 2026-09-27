@@ -525,7 +525,10 @@ function bindAudioRegionEditing(block, lane, clip, beatsPerBar, tempoBpm) {
     try {
       const snapshot = await platform.editAudioRegion(edit);
       renderSnapshot(snapshot);
-      setNotice("Región actualizada", "El archivo fuente permanece intacto. Puedes deshacer el cambio desde el historial.");
+      const playbackNote = projectTransportState === "stopped"
+        ? "La fuente permanece intacta; puedes deshacer el cambio desde el historial."
+        : "La fuente permanece intacta. Detén e inicia el transporte para cargar el cambio.";
+      setNotice("Región actualizada", playbackNote);
     } catch (error) {
       try {
         renderSnapshot(await platform.projectSnapshot());

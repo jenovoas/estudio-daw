@@ -8,9 +8,10 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
     fs::{self, File},
-    io::Read,
+    io::{self, Read},
     path::{Path, PathBuf},
-    process::Command,
+    process::{Child, ChildStdout, Command, Stdio},
+    sync::{Arc, Mutex},
 };
 use thiserror::Error;
 
@@ -22,6 +23,8 @@ pub enum ProxyJobError {
     SourceChanged,
     #[error("el proxy generado está vacío")]
     EmptyOutput,
+    #[error("la solicitud de decodificación no es válida: {0}")]
+    InvalidDecodeRequest(String),
     #[error("el transcoder ffmpeg terminó con error: {0}")]
     TranscoderFailed(String),
     #[error("el proxy no cumple el perfil de audio solicitado: {0}")]
@@ -30,6 +33,125 @@ pub enum ProxyJobError {
     AlreadyBuilding,
     #[error("no se pudo leer o escribir el manifiesto de proxies: {0}")]
     Manifest(String),
+}
+
+/// Control del proceso ffmpeg que produce PCM para un worker de reproducción.
+/// El consumidor de PCM conserva su propio `stdout`; este handle permite
+/// cancelar el proceso desde el ciclo de vida del plan, fuera del callback.
+#[derive(Clone)]
+pub struct AudioPcmDecoderControl(Arc<Mutex<Child>>);
+
+impl AudioPcmDecoderControl {
+    pub fn terminate(&self) {
+        if let Ok(mut child) = self.0.lock() {
+            let _ = child.kill();
+        }
+    }
+}
+
+/// Lector de PCM f32 estéreo generado incrementalmente por ffmpeg.
+pub struct AudioPcmDecoder {
+    child: Arc<Mutex<Child>>,
+    stdout: ChildStdout,
+    waited: bool,
+}
+
+impl AudioPcmDecoder {
+    pub fn spawn(
+        path: impl AsRef<Path>,
+        source_sample_rate_hz: u32,
+        source_channels: u16,
+        source_channel_selection: &[u16],
+        source_start_samples: u64,
+        duration_samples: u64,
+        output_sample_rate_hz: u32,
+    ) -> Result<Self, ProxyJobError> {
+        if source_sample_rate_hz == 0 || output_sample_rate_hz == 0 || duration_samples == 0 {
+            return Err(ProxyJobError::InvalidDecodeRequest(
+                "frecuencia y duración deben ser mayores que cero".into(),
+            ));
+        }
+        if !(1..=32).contains(&source_channels)
+            || source_channel_selection.len() > 2
+            || source_channel_selection
+                .iter()
+                .any(|channel| *channel >= source_channels)
+            || source_channel_selection
+                .iter()
+                .collect::<std::collections::HashSet<_>>()
+                .len()
+                != source_channel_selection.len()
+        {
+            return Err(ProxyJobError::InvalidDecodeRequest(
+                "los canales seleccionados deben ser únicos y pertenecer a la fuente".into(),
+            ));
+        }
+        let source_offset = source_start_samples as f64 / f64::from(source_sample_rate_hz);
+        let duration = duration_samples as f64 / f64::from(source_sample_rate_hz);
+        let mut command = Command::new("ffmpeg");
+        command
+            .args(["-nostdin", "-v", "error", "-i"])
+            .arg(path.as_ref())
+            .arg("-ss")
+            .arg(format!("{source_offset:.9}"))
+            .arg("-t")
+            .arg(format!("{duration:.9}"))
+            .args(["-vn", "-ar"])
+            .arg(output_sample_rate_hz.to_string())
+            .args(["-ac", "2"]);
+        if !source_channel_selection.is_empty() {
+            let left = source_channel_selection[0];
+            let right = source_channel_selection.get(1).copied().unwrap_or(left);
+            command
+                .args(["-af"])
+                .arg(format!("pan=stereo|c0=c{left}|c1=c{right}"));
+        }
+        let mut child = command
+            .args(["-c:a", "pcm_f32le", "-f", "f32le", "pipe:1"])
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .spawn()?;
+        let stdout = child.stdout.take().ok_or_else(|| {
+            ProxyJobError::TranscoderFailed("ffmpeg no abrió su salida PCM".into())
+        })?;
+        Ok(Self {
+            child: Arc::new(Mutex::new(child)),
+            stdout,
+            waited: false,
+        })
+    }
+
+    pub fn control(&self) -> AudioPcmDecoderControl {
+        AudioPcmDecoderControl(Arc::clone(&self.child))
+    }
+}
+
+impl Read for AudioPcmDecoder {
+    fn read(&mut self, output: &mut [u8]) -> io::Result<usize> {
+        if output.is_empty() {
+            return Ok(0);
+        }
+        let count = self.stdout.read(output)?;
+        if count == 0 && !self.waited {
+            self.waited = true;
+            let status = self
+                .child
+                .lock()
+                .map_err(|_| io::Error::other("el estado de ffmpeg quedó bloqueado"))?
+                .wait()?;
+            if !status.success() {
+                return Err(io::Error::other(format!("ffmpeg terminó con {status}")));
+            }
+        }
+        Ok(count)
+    }
+}
+
+impl Drop for AudioPcmDecoder {
+    fn drop(&mut self) {
+        self.control().terminate();
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
