@@ -24,6 +24,8 @@ const elements = {
   zoomOut: document.querySelector("#zoom-out"),
   zoomReset: document.querySelector("#zoom-reset"),
   zoomLevel: document.querySelector("#zoom-level"),
+  applicationMenu: document.querySelector("#application-menu"),
+  contextMenu: document.querySelector("#action-context-menu"),
   path: document.querySelector("#project-path"),
   name: document.querySelector("#project-name"),
   browserName: document.querySelector("#browser-project-name"),
@@ -108,6 +110,157 @@ const UI_ZOOM_MIN = 0.8;
 const UI_ZOOM_MAX = 1.5;
 const UI_ZOOM_STEP = 0.1;
 let uiZoom = 1;
+
+/** @typedef {{ id: string, label: string, menu: string, shortcut?: string, target?: string, contexts?: string[], requiresProject?: boolean }} UiAction */
+/** @type {UiAction[]} */
+const UI_ACTIONS = [
+  { id: "project.new", label: "Nuevo proyecto", menu: "Proyecto", target: "newProject" },
+  { id: "project.open", label: "Abrir proyecto…", menu: "Proyecto", target: "open" },
+  { id: "project.demo", label: "Cargar Demo MIDI", menu: "Proyecto", target: "demoProject" },
+  { id: "project.save", label: "Guardar", menu: "Proyecto", shortcut: "Ctrl+S", target: "save", requiresProject: true },
+  { id: "project.saveAs", label: "Guardar como…", menu: "Proyecto", shortcut: "Ctrl+Mayús+S", target: "saveAs", requiresProject: true },
+  { id: "edit.undo", label: "Deshacer", menu: "Edición", shortcut: "Ctrl+Z", target: "undo", requiresProject: true },
+  { id: "edit.redo", label: "Rehacer", menu: "Edición", shortcut: "Ctrl+Mayús+Z", target: "redo", requiresProject: true },
+  { id: "track.addMidi", label: "Añadir pista MIDI", menu: "Crear", target: "addMidiTrack", requiresProject: true },
+  { id: "track.addAudio", label: "Añadir pista de audio", menu: "Crear", target: "addAudioTrack", requiresProject: true },
+  { id: "track.addBus", label: "Añadir bus", menu: "Crear", target: "addBusTrack", requiresProject: true },
+  { id: "view.arrangement", label: "Arreglo", menu: "Vista", shortcut: "Ctrl+1", target: "showArrangement" },
+  { id: "view.session", label: "Sesión", menu: "Vista", shortcut: "Ctrl+2", target: "showSession" },
+  { id: "view.mixer", label: "Mezclador", menu: "Vista", shortcut: "Ctrl+3", target: "showMixer" },
+  { id: "view.audioSettings", label: "Preferencias de audio…", menu: "Vista", target: "railSettings" },
+  { id: "transport.play", label: "Reproducir", menu: "Transporte", target: "play", requiresProject: true },
+  { id: "transport.pause", label: "Pausar", menu: "Transporte", target: "pause", requiresProject: true },
+  { id: "transport.stop", label: "Detener", menu: "Transporte", target: "stop", requiresProject: true },
+  { id: "transport.record", label: "Grabar", menu: "Transporte", target: "record", requiresProject: true },
+  { id: "transport.panic", label: "Apagar notas MIDI", menu: "Transporte", target: "panic", requiresProject: true },
+  { id: "transport.metronome", label: "Metrónomo", menu: "Transporte", target: "metronome", requiresProject: true },
+  { id: "clip.select", label: "Seleccionar clip o región", menu: "Contexto", contexts: ["clip", "audio"] },
+  { id: "audio.preview", label: "Preescuchar región", menu: "Contexto", contexts: ["audio"] },
+  { id: "audio.remove", label: "Quitar región", menu: "Contexto", contexts: ["audio"] },
+  { id: "track.remove", label: "Quitar pista", menu: "Contexto", contexts: ["track"] },
+];
+
+function actionTarget(action) {
+  return action.target ? elements[action.target] : null;
+}
+
+function executeUiAction(action, context = null) {
+  if (action.id === "clip.select") {
+    context?.clip?.focus();
+    context?.clip?.click();
+  } else if (action.id === "audio.preview") {
+    context?.clip?.querySelector(".audio-preview-button")?.click();
+  } else if (action.id === "audio.remove") {
+    context?.clip?.querySelector(".audio-region-remove")?.click();
+  } else if (action.id === "track.remove") {
+    context?.track?.querySelector(".track-remove-button")?.click();
+  } else {
+    const target = actionTarget(action);
+    if (target && !target.disabled) target.click();
+  }
+  closeContextMenu();
+}
+
+function renderApplicationMenu() {
+  if (!elements.applicationMenu) return;
+  const groups = [...new Set(UI_ACTIONS.filter((action) => action.target).map((action) => action.menu))];
+  elements.applicationMenu.replaceChildren();
+  for (const group of groups) {
+    const wrapper = document.createElement("div");
+    wrapper.className = "application-menu-group";
+    const toggle = document.createElement("button");
+    toggle.type = "button";
+    toggle.className = "application-menu-toggle";
+    toggle.textContent = group;
+    toggle.setAttribute("aria-haspopup", "menu");
+    toggle.setAttribute("aria-expanded", "false");
+    const popup = document.createElement("div");
+    popup.className = "application-menu-popup";
+    popup.setAttribute("role", "menu");
+    for (const action of UI_ACTIONS.filter((item) => item.menu === group && item.target)) {
+      const item = document.createElement("button");
+      item.type = "button";
+      item.className = "application-menu-item";
+      item.setAttribute("role", "menuitem");
+      item.dataset.actionId = action.id;
+      item.setAttribute("aria-label", action.shortcut ? `${action.label} (${action.shortcut})` : action.label);
+      const label = document.createElement("span");
+      label.textContent = action.label;
+      item.append(label);
+      if (action.shortcut) {
+        const shortcut = document.createElement("kbd");
+        shortcut.textContent = action.shortcut;
+        item.append(shortcut);
+      }
+      item.addEventListener("click", () => {
+        executeUiAction(action);
+        wrapper.classList.remove("is-open");
+        toggle.setAttribute("aria-expanded", "false");
+      });
+      popup.append(item);
+    }
+    toggle.addEventListener("click", () => {
+      refreshActionAvailability();
+      const opening = !wrapper.classList.contains("is-open");
+      elements.applicationMenu.querySelectorAll(".application-menu-group.is-open").forEach((node) => {
+        node.classList.remove("is-open");
+        node.querySelector(".application-menu-toggle")?.setAttribute("aria-expanded", "false");
+      });
+      wrapper.classList.toggle("is-open", opening);
+      toggle.setAttribute("aria-expanded", String(opening));
+      if (opening) popup.querySelector("button:not(:disabled)")?.focus();
+    });
+    wrapper.append(toggle, popup);
+    elements.applicationMenu.append(wrapper);
+  }
+  refreshActionAvailability();
+}
+
+function refreshActionAvailability() {
+  for (const action of UI_ACTIONS) {
+    const target = actionTarget(action);
+    const item = elements.applicationMenu?.querySelector(`[data-action-id="${action.id}"]`);
+    if (item) item.disabled = !target || target.disabled || (action.requiresProject && !hasProject);
+  }
+}
+
+function closeContextMenu() {
+  if (!elements.contextMenu) return;
+  elements.contextMenu.hidden = true;
+  elements.contextMenu.replaceChildren();
+}
+
+function showContextMenu(event) {
+  const clip = event.target.closest(".audio-clip, .midi-clip");
+  const track = event.target.closest("[data-track-id]");
+  const context = { clip, track };
+  const kind = clip?.classList.contains("audio-clip") ? "audio" : clip ? "clip" : track ? "track" : null;
+  if (!kind) return;
+  const actions = UI_ACTIONS.filter((action) => action.menu === "Contexto" && action.contexts.includes(kind)).filter((action) => {
+    if (action.id === "audio.preview") return Boolean(clip?.querySelector(".audio-preview-button:not(:disabled)"));
+    if (action.id === "audio.remove") return Boolean(clip?.querySelector(".audio-region-remove:not(:disabled)"));
+    if (action.id === "track.remove") return Boolean(track?.querySelector(".track-remove-button:not(:disabled)"));
+    return true;
+  });
+  if (!actions.length) return;
+  event.preventDefault();
+  elements.contextMenu.replaceChildren();
+  for (const action of actions) {
+    const item = document.createElement("button");
+    item.type = "button";
+    item.setAttribute("role", "menuitem");
+    item.className = "context-menu-item";
+    item.textContent = action.label;
+    item.setAttribute("aria-label", action.label);
+    item.addEventListener("click", () => executeUiAction(action, context));
+    elements.contextMenu.append(item);
+  }
+  elements.contextMenu.hidden = false;
+  const bounds = elements.contextMenu.getBoundingClientRect();
+  elements.contextMenu.style.left = `${Math.max(6, Math.min(event.clientX, innerWidth - bounds.width - 6))}px`;
+  elements.contextMenu.style.top = `${Math.max(6, Math.min(event.clientY, innerHeight - bounds.height - 6))}px`;
+  elements.contextMenu.querySelector("button")?.focus();
+}
 
 function selectedAudioProfile() {
   return audioSettings?.[elements.audioProfile.value];
@@ -235,15 +388,17 @@ function handleWorkstationShortcut(event) {
   if (!event.ctrlKey || event.altKey || event.metaKey || event.repeat) return;
   if (event.target instanceof Element && event.target.closest("input, textarea, select, [contenteditable='true']")) return;
   const key = event.key.toLowerCase();
-  const button = key === "1" ? elements.showArrangement
-    : key === "2" ? elements.showSession
-      : key === "3" ? elements.showMixer
-        : key === "s" ? (event.shiftKey ? elements.saveAs : elements.save)
-          : key === "z" ? (event.shiftKey ? elements.redo : elements.undo)
-            : null;
+  const shortcut = key === "s" && event.shiftKey ? "Ctrl+Mayús+S"
+    : key === "s" ? "Ctrl+S"
+      : key === "z" && event.shiftKey ? "Ctrl+Mayús+Z"
+        : key === "z" ? "Ctrl+Z"
+          : ["1", "2", "3"].includes(key) && !event.shiftKey ? `Ctrl+${key}` : null;
+  const action = UI_ACTIONS.find((item) => item.shortcut === shortcut);
+  const button = action && actionTarget(action);
   if (!button) return;
+  if (button.disabled) return;
   event.preventDefault();
-  button.click();
+  executeUiAction(action);
 }
 
 async function whileBusy(buttons, operation) {
@@ -278,6 +433,7 @@ function setProjectEnabled(enabled) {
   }
   elements.importPreview.disabled = !enabled || !pendingAudioPath;
   elements.importCommit.disabled = !enabled || !pendingAudioPath;
+  refreshActionAvailability();
 }
 
 function selectSurface(surface) {
@@ -619,6 +775,7 @@ function renderSessionSurface(snapshot) {
   for (const track of tracks) {
     const header = document.createElement("div");
     header.className = "session-track-header";
+    header.dataset.trackId = track.id;
     header.style.setProperty("--track-color", track.color);
     header.append(createTrackSelectionControl(track));
     const name = document.createElement("strong");
@@ -757,6 +914,7 @@ function renderMixerSurface(tracks) {
   for (const track of mixerTracks) {
     const channel = document.createElement("article");
     channel.className = "mixer-channel";
+    channel.dataset.trackId = track.id;
     channel.style.setProperty("--track-color", track.color);
     const title = document.createElement("strong");
     title.textContent = track.name;
@@ -919,6 +1077,7 @@ function renderSnapshot(snapshot) {
   for (const [trackIndex, track] of snapshot.tracks.entries()) {
     const row = document.createElement("div");
     row.className = "track-row";
+    row.dataset.trackId = track.id;
     row.style.setProperty("--track-color", track.color);
     const icon = document.createElement("span");
     icon.className = `track-icon ${track.kind}`;
@@ -955,6 +1114,7 @@ function renderSnapshot(snapshot) {
     for (const clip of clips) {
       const block = document.createElement("div");
       block.className = "midi-clip";
+      block.dataset.clipId = clip.id;
       if (selectedClipId === clip.id) block.classList.add("is-inspected");
       block.style.setProperty("--clip-hue", String((trackIndex * 54 + 24) % 360));
       block.title = `${clip.name} · ${clip.noteCount} notas`;
@@ -1061,6 +1221,7 @@ function renderSnapshot(snapshot) {
   renderClipInspector(snapshot);
   renderProjectMedia(snapshot);
   syncTrackSelectionUi();
+  refreshActionAvailability();
 }
 
 function renderClipInspector(snapshot) {
@@ -1835,6 +1996,25 @@ elements.zoomOut.addEventListener("click", () => void setUiZoom(uiZoom - UI_ZOOM
 elements.zoomReset.addEventListener("click", () => void setUiZoom(1));
 document.addEventListener("keydown", handleUiZoomShortcut);
 document.addEventListener("keydown", handleWorkstationShortcut);
+document.addEventListener("contextmenu", showContextMenu);
+document.addEventListener("pointerdown", (event) => {
+  if (!event.target.closest("#action-context-menu")) closeContextMenu();
+  if (!event.target.closest(".application-menu-group")) {
+    elements.applicationMenu.querySelectorAll(".application-menu-group.is-open").forEach((group) => {
+      group.classList.remove("is-open");
+      group.querySelector(".application-menu-toggle")?.setAttribute("aria-expanded", "false");
+    });
+  }
+});
+document.addEventListener("keydown", (event) => {
+  if (event.key !== "Escape") return;
+  closeContextMenu();
+  elements.applicationMenu.querySelectorAll(".application-menu-group.is-open").forEach((group) => {
+    group.classList.remove("is-open");
+    group.querySelector(".application-menu-toggle")?.setAttribute("aria-expanded", "false");
+  });
+});
+renderApplicationMenu();
 
 // Este shell inicial sólo resume datos compactos; jamás solicita PCM o buffers
 // GPU al core a través del bridge.

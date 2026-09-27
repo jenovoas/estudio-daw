@@ -34,6 +34,20 @@ button:disabled { opacity: .4; cursor: not-allowed !important; }
 .project-identity { min-width: 0; display: flex; align-items: baseline; gap: 9px; flex: 1; }
 .project-identity strong { max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #f0f1f1; font-size: 11px; font-weight: 650; }
 .project-identity > span { max-width: 350px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #858b8f; font-size: 9px; }
+.application-menu { display: flex; align-items: center; gap: 2px; flex: none; }
+.application-menu-group { position: relative; }
+.application-menu-toggle { height: 27px; padding: 0 7px; border: 1px solid transparent; border-radius: 3px; background: transparent; color: #c8ccce; font: 500 10px sans-serif; cursor: pointer; }
+.application-menu-toggle:hover, .application-menu-group.is-open .application-menu-toggle { border-color: #454a4d; background: #2b2f32; color: #fff; }
+.application-menu-popup { position: absolute; z-index: 40; top: calc(100% + 5px); left: 0; display: none; min-width: 205px; padding: 4px; border: 1px solid #555b5e; border-radius: 4px; background: #292d30; box-shadow: 0 8px 22px #000a; }
+.application-menu-group.is-open .application-menu-popup { display: grid; }
+.application-menu-item, .context-menu-item { display: flex; align-items: center; justify-content: space-between; gap: 20px; min-height: 29px; padding: 0 8px; border: 0; border-radius: 3px; background: transparent; color: #e3e6e7; text-align: left; font: 10px sans-serif; cursor: pointer; }
+.application-menu-item:hover:not(:disabled), .context-menu-item:hover { background: #454b4e; color: #fff; }
+.application-menu-item:disabled { color: #777d80; cursor: default; }
+.application-menu-item kbd { color: #a4aaad; font: 9px ui-monospace, monospace; }
+.action-context-menu { position: fixed; z-index: 80; min-width: 190px; display: grid; padding: 4px; border: 1px solid #62696c; border-radius: 4px; background: #292d30; box-shadow: 0 8px 22px #000b; }
+.action-context-menu[hidden] { display: none; }
+.context-menu-item { justify-content: flex-start; }
+.application-menu button:focus-visible, .action-context-menu button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .ui-zoom-controls { display: flex; align-items: center; gap: 2px; padding: 2px; border: 1px solid #383d40; border-radius: 4px; background: #222527; }
 .ui-zoom-controls button { min-width: 24px; height: 21px; border: 0; border-radius: 3px; padding: 0 4px; background: transparent; color: #c7cbcd; font-size: 12px; cursor: pointer; }
 .ui-zoom-controls button:hover:not(:disabled) { background: #3b4043; color: #fff; }

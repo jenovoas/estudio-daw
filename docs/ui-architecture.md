@@ -119,6 +119,14 @@ El comando elimina sus clips, regiones y referencias de medios del proyecto,
 reasigna las pistas que apuntaban a ella y se puede deshacer desde el historial;
 no borra los archivos fuente del disco. El canal Master queda protegido en la UI.
 
+La barra superior ofrece menús de Proyecto, Edición, Crear, Vista y Transporte a
+partir de un registro único de acciones, que también aporta las etiquetas y los
+atajos de navegación, guardado e historial. Los menús contextuales de clips y
+pistas filtran acciones existentes: seleccionar, preescuchar/quitar una región y
+quitar una pista cuando esa pista lo permite. Sus acciones reutilizan los
+manejadores visibles y sus comandos reversibles. El catálogo todavía no cubre
+las familias completas de Proyecto, edición de clips, preferencias ni ayuda.
+
 La barra de herramientas lateral y las pestañas del encabezado cambian entre
 Arreglo, Session y Mezclador. Session presenta pistas por columnas y escenas
 por filas; sus escenas y asignaciones de clip son comandos reversibles, aunque
