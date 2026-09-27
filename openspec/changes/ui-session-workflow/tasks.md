@@ -13,3 +13,11 @@
 ## 3. Integración
 
 - [x] 3.1 Ejecutar `cargo fmt --all -- --check`, pruebas del crate ui-shell, `cargo check -p estudio-daw-ui-shell`, `git diff --check` y `openspec validate ui-session-workflow --strict`; compilar Tauri y dejar abierta la instancia actualizada para revisar el flujo interactivo.
+
+
+## 4. Sesión audible y arreglo DAW
+
+- [x] 4.1 Añadir comando Demo MIDI que adjunta por el command bus una toma breve a una sesión SineSynth; verificar con test que el snapshot incluye clip/eventos y actualizar indicaciones de sonido.
+- [x] 4.2 Añadir resúmenes compactos de clip al snapshot y renderizar regla de compases/lane por pista; verificar posiciones mediante fixtures con distintas PPQ y sesión vacía.
+- [x] 4.3 Reorganizar la shell como superficie de arreglo ocupando la ventana, con barra compacta, lanes y preferencias colapsables; verificar jerarquía visual al tamaño mínimo de ventana.
+- [x] 4.4 Actualizar documentación y correr `cargo fmt --all -- --check`, pruebas ui-shell, `cargo check -p estudio-daw-ui-shell`, `node --check`, `git diff --check` y `openspec validate ui-session-workflow --strict`; dejar Tauri ejecutándose con una ruta de prueba audible disponible.

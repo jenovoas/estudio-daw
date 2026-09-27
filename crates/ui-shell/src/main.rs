@@ -7,11 +7,13 @@ mod audio_runtime;
 
 use estudio_daw_application::{
     load_audio_runtime_settings, save_audio_runtime_settings, AudioRuntimeSettings,
-    AudioRuntimeView, CommandAuthor, DomainCommand, ProjectApplication, SessionCommand,
-    TransportState,
+    AudioRuntimeView, CommandAuthor, DomainCommand, ProjectApplication, ProjectCommand,
+    SessionCommand, TransportState,
 };
+use estudio_daw_midi_engine::{MidiSource, MidiTake, RecordedMidiEvent, RecordedMidiMessage};
 use estudio_daw_project_model::{
-    ImportProvenance, InstrumentConfig, Project, TimeSignature, Track, TrackKind, Transport,
+    ImportProvenance, InstrumentConfig, MidiClip, Project, TimeSignature, Track, TrackKind,
+    Transport,
 };
 use serde::Serialize;
 use std::{path::PathBuf, sync::Mutex};
@@ -37,6 +39,27 @@ struct TrackSummary {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+struct MidiClipSummary {
+    id: String,
+    name: String,
+    track_id: String,
+    start_beats: f64,
+    duration_beats: f64,
+    note_count: usize,
+    notes: Vec<MidiNoteSummary>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct MidiNoteSummary {
+    start_beats: f64,
+    duration_beats: f64,
+    key: u8,
+    velocity: u8,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 struct UiSnapshot {
     schema_version: &'static str,
     project_id: String,
@@ -47,7 +70,9 @@ struct UiSnapshot {
     track_count: usize,
     midi_clip_count: usize,
     audio_clip_count: usize,
+    beats_per_bar: f64,
     tracks: Vec<TrackSummary>,
+    midi_clips: Vec<MidiClipSummary>,
     can_undo: bool,
     can_redo: bool,
     audio_engine_connected: bool,
@@ -130,6 +155,8 @@ struct SpectrogramTileRefV1 {
 fn summarize(application: &ProjectApplication, audio_engine_connected: bool) -> UiSnapshot {
     let domain = application.snapshot();
     let project: Project = domain.project.project;
+    let beats_per_bar = f64::from(project.transport.time_signature.numerator) * 4.0
+        / f64::from(project.transport.time_signature.denominator.max(1));
     let (can_undo, can_redo) = application.history_state();
     let tracks = project
         .tracks
@@ -141,7 +168,35 @@ fn summarize(application: &ProjectApplication, audio_engine_connected: bool) -> 
                 TrackKind::Audio => "audio",
                 TrackKind::Midi => "midi",
             },
-            note_count: track.notes.len(),
+            note_count: track.notes.len()
+                + project
+                    .midi_clips
+                    .iter()
+                    .filter(|clip| clip.track_id == track.id)
+                    .flat_map(|clip| &clip.take.events)
+                    .filter(|event| matches!(&event.message, RecordedMidiMessage::NoteOn { velocity, .. } if *velocity > 0))
+                    .count(),
+        })
+        .collect();
+    let midi_clips = project
+        .midi_clips
+        .iter()
+        .map(|clip| {
+            let ppq = f64::from(clip.take.ppq.max(1));
+            MidiClipSummary {
+                id: clip.id.clone(),
+                name: clip.name.clone(),
+                track_id: clip.track_id.clone(),
+                start_beats: clip.start_tick as f64 / ppq,
+                duration_beats: clip.duration_ticks as f64 / ppq,
+                note_count: clip
+                    .take
+                    .events
+                    .iter()
+                    .filter(|event| matches!(&event.message, RecordedMidiMessage::NoteOn { velocity, .. } if *velocity > 0))
+                    .count(),
+                notes: summarize_midi_notes(clip),
+            }
         })
         .collect();
 
@@ -161,16 +216,76 @@ fn summarize(application: &ProjectApplication, audio_engine_connected: bool) -> 
         track_count: project.tracks.len(),
         midi_clip_count: project.midi_clips.len(),
         audio_clip_count: project.audio_clips.len(),
+        beats_per_bar,
         tracks,
+        midi_clips,
         can_undo,
         can_redo,
         audio_engine_connected,
     }
 }
 
+fn summarize_midi_notes(clip: &MidiClip) -> Vec<MidiNoteSummary> {
+    let ppq = f64::from(clip.take.ppq.max(1));
+    let mut active_notes = Vec::<(u8, u8, u64, u8)>::new();
+    let mut notes = Vec::new();
+    for event in &clip.take.events {
+        match &event.message {
+            RecordedMidiMessage::NoteOn {
+                channel,
+                note,
+                velocity,
+            } if *velocity > 0 => {
+                active_notes.push((*channel, *note, event.tick, (*velocity).clamp(1, 127) as u8))
+            }
+            RecordedMidiMessage::NoteOff { channel, note, .. }
+            | RecordedMidiMessage::NoteOn { channel, note, .. } => {
+                if let Some(index) =
+                    active_notes
+                        .iter()
+                        .rposition(|(active_channel, active_note, _, _)| {
+                            active_channel == channel && active_note == note
+                        })
+                {
+                    let (_, key, start_tick, velocity) = active_notes.remove(index);
+                    notes.push(MidiNoteSummary {
+                        start_beats: start_tick as f64 / ppq,
+                        duration_beats: event.tick.saturating_sub(start_tick) as f64 / ppq,
+                        key,
+                        velocity,
+                    });
+                }
+            }
+            _ => {}
+        }
+    }
+    notes.sort_by(|left, right| left.start_beats.total_cmp(&right.start_beats));
+    notes
+}
+
 #[tauri::command]
 fn new_project(state: State<'_, DesktopState>) -> Result<UiSnapshot, String> {
-    let application = ProjectApplication::new(new_project_model());
+    replace_application(state, ProjectApplication::new(new_project_model()))
+}
+
+#[tauri::command]
+fn demo_midi_project(state: State<'_, DesktopState>) -> Result<UiSnapshot, String> {
+    let mut project = new_project_model();
+    project.project_id = format!("demo-midi-{}", unix_timestamp_millis());
+    let mut application = ProjectApplication::new(project);
+    application
+        .execute_project(ProjectCommand::AttachMidiTake {
+            take: demo_midi_take(),
+            name: "Melodía de prueba".into(),
+        })
+        .map_err(|error| error.to_string())?;
+    replace_application(state, application)
+}
+
+fn replace_application(
+    state: State<'_, DesktopState>,
+    application: ProjectApplication,
+) -> Result<UiSnapshot, String> {
     let snapshot = summarize(&application, false);
     let mut current = state
         .application
@@ -183,6 +298,48 @@ fn new_project(state: State<'_, DesktopState>) -> Result<UiSnapshot, String> {
         .stop()?;
     *current = Some(application);
     Ok(snapshot)
+}
+
+fn demo_midi_take() -> MidiTake {
+    let notes = [
+        (0, 60),
+        (480, 62),
+        (960, 64),
+        (1440, 67),
+        (1920, 64),
+        (2400, 62),
+        (2880, 60),
+    ];
+    let mut events = Vec::with_capacity(notes.len() * 2);
+    for (tick, note) in notes {
+        events.push(RecordedMidiEvent {
+            tick,
+            micros_since_start: tick as u64 * 1_000_000 / 960,
+            source: MidiSource { client: 0, port: 0 },
+            message: RecordedMidiMessage::NoteOn {
+                channel: 0,
+                note,
+                velocity: 96,
+            },
+        });
+        events.push(RecordedMidiEvent {
+            tick: tick + 360,
+            micros_since_start: (tick as u64 + 360) * 1_000_000 / 960,
+            source: MidiSource { client: 0, port: 0 },
+            message: RecordedMidiMessage::NoteOff {
+                channel: 0,
+                note,
+                release_velocity: 0,
+            },
+        });
+    }
+    events.sort_by_key(|event| event.tick);
+    MidiTake {
+        ppq: 480,
+        tempo_bpm: 120,
+        duration_micros: 3_500_000,
+        events,
+    }
 }
 
 fn new_project_model() -> Project {
@@ -390,6 +547,7 @@ fn main() {
         })
         .invoke_handler(tauri::generate_handler![
             new_project,
+            demo_midi_project,
             open_project,
             project_snapshot,
             save_project,
@@ -416,8 +574,61 @@ mod tests {
         assert_eq!(snapshot.tempo_bpm, 120.0);
         assert_eq!(snapshot.track_count, 1);
         assert_eq!(snapshot.midi_clip_count, 0);
+        assert!(snapshot.midi_clips.is_empty());
         assert_eq!(snapshot.tracks[0].kind, "midi");
         assert_eq!(snapshot.tracks[0].name, "MIDI 1");
+    }
+
+    #[test]
+    fn demo_project_contains_playable_midi_notes_and_clip_summary() {
+        let mut application = ProjectApplication::new(new_project_model());
+        application
+            .execute_project(ProjectCommand::AttachMidiTake {
+                take: demo_midi_take(),
+                name: "Melodía de prueba".into(),
+            })
+            .unwrap();
+        let snapshot = summarize(&application, false);
+
+        assert_eq!(snapshot.midi_clip_count, 1);
+        assert_eq!(snapshot.midi_clips.len(), 1);
+        assert_eq!(snapshot.midi_clips[0].note_count, 7);
+        assert_eq!(snapshot.midi_clips[0].notes.len(), 7);
+        assert_eq!(snapshot.midi_clips[0].notes[0].key, 60);
+        assert_eq!(snapshot.midi_clips[0].notes[0].duration_beats, 0.75);
+        assert!((snapshot.midi_clips[0].duration_beats - 6.75).abs() < f64::EPSILON);
+        assert_eq!(snapshot.tracks[0].note_count, 7);
+    }
+
+    #[test]
+    fn clip_summary_converts_each_clip_to_beats_using_its_own_ppq() {
+        let mut project = new_project_model();
+        let mut take = demo_midi_take();
+        take.events.clear();
+        project.midi_clips = vec![
+            MidiClip {
+                id: "clip-480".into(),
+                name: "480 PPQ".into(),
+                track_id: "midi-1".into(),
+                start_tick: 480,
+                duration_ticks: 960,
+                take: take.clone(),
+            },
+            MidiClip {
+                id: "clip-960".into(),
+                name: "960 PPQ".into(),
+                track_id: "midi-1".into(),
+                start_tick: 1920,
+                duration_ticks: 1920,
+                take: MidiTake { ppq: 960, ..take },
+            },
+        ];
+        let snapshot = summarize(&ProjectApplication::new(project), false);
+
+        assert_eq!(snapshot.midi_clips[0].start_beats, 1.0);
+        assert_eq!(snapshot.midi_clips[0].duration_beats, 2.0);
+        assert_eq!(snapshot.midi_clips[1].start_beats, 2.0);
+        assert_eq!(snapshot.midi_clips[1].duration_beats, 2.0);
     }
 
     #[test]

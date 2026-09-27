@@ -20,3 +20,15 @@ La aplicación SHALL usar una composición compacta de escritorio, controles agr
 #### Scenario: Ajustar ventana estrecha
 - **WHEN** el ancho de la ventana se reduce dentro del mínimo soportado
 - **THEN** controles y preferencias siguen legibles y no se solapan
+
+
+### Requirement: Mostrar el arreglo musical
+La aplicación SHALL mostrar una regla de compases, cabeceras de pista y bloques correspondientes a los clips MIDI de la sesión activa.
+
+#### Scenario: Sesión con clips MIDI
+- **WHEN** se abre un proyecto con clips MIDI o se crea Demo MIDI
+- **THEN** el arreglo alinea cada bloque con su pista y posición musical en la regla
+
+#### Scenario: Sesión sin clips
+- **WHEN** se crea un proyecto nuevo vacío
+- **THEN** se muestran las pistas sin clips en una zona de arreglo vacía claramente identificada

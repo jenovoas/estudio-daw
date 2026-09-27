@@ -5,6 +5,7 @@ const { open, save } = window.__TAURI__.dialog;
 
 window.estudioPlatform = {
   newProject: () => invoke("new_project"),
+  demoMidiProject: () => invoke("demo_midi_project"),
   async openProject() {
     const path = await open({
       multiple: false,

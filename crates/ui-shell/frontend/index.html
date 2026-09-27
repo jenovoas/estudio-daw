@@ -15,6 +15,7 @@
       <div class="project-actions">
         <span id="project-path" class="project-path">Sin proyecto abierto</span>
         <button id="new-project" class="button button-primary">Nuevo proyecto</button>
+        <button id="demo-project" class="button button-secondary">Demo MIDI</button>
         <button id="open-project" class="button button-secondary">Abrir proyecto</button>
         <button id="save-project-as" class="button button-secondary" disabled>Guardar como</button>
         <button id="save-project" class="button button-primary" disabled>Guardar</button>
@@ -44,14 +45,21 @@
         </div>
       </section>
 
-      <section class="tracks panel">
-        <div class="panel-heading"><div><span class="eyebrow">ARRANGEMENT</span><h2>Pistas</h2></div><span id="revision" class="revision">—</span></div>
-        <div class="track-header"><span>PISTA</span><span>TIPO</span><span>NOTAS</span><span>ESTADO</span></div>
-        <div id="track-list" class="track-list"><div class="empty-state">Abre un proyecto para ver sus pistas.</div></div>
+      <section class="arrangement panel">
+        <div class="arrangement-heading"><div><span class="eyebrow">ARRANGEMENT</span><h2>Arreglo</h2></div><span id="revision" class="revision">—</span></div>
+        <div class="arrangement-scroll">
+          <div class="arrangement-grid">
+            <div class="ruler-label">PISTAS</div>
+            <div id="timeline-ruler" class="timeline-ruler" aria-label="Regla de compases"></div>
+            <div id="track-list" class="arrangement-track-list"><div class="empty-state">Crea un proyecto o abre una sesión MIDI.</div></div>
+            <div id="arrangement-lanes" class="arrangement-lanes"><div class="empty-state timeline-empty">Sin sesión activa</div></div>
+          </div>
+        </div>
       </section>
 
-      <section class="audio-settings panel" aria-labelledby="audio-settings-title">
-        <div class="panel-heading"><div><span class="eyebrow">AUDIO</span><h2 id="audio-settings-title">Buffers y latencia</h2></div><span id="audio-apply-state" class="revision">Cargando…</span></div>
+      <details class="audio-settings panel">
+        <summary class="audio-summary"><span><span class="eyebrow">AUDIO</span><strong id="audio-settings-title">Buffers y latencia</strong></span><span id="audio-apply-state" class="revision">Cargando…</span></summary>
+        <div class="audio-settings-body">
         <div class="audio-profile-row">
           <label for="audio-profile">Perfil</label>
           <select id="audio-profile">
@@ -72,7 +80,8 @@
         </div>
         <p class="audio-help">Un periodo menor puede reducir el tiempo de bloque y aumentar la exigencia de CPU y scheduling. El búfer extra agrega margen al audio que procesa; puede añadir demora a esa ruta. PipeWire puede negociar un periodo efectivo distinto al solicitado.</p>
         <p id="audio-engine-note" class="audio-help audio-warning">El transporte ya reproduce clips MIDI del proyecto con el instrumento asignado a cada pista; Live/Grabar y la grabación de audio desde esta UI aún no están conectados. El periodo y el margen se toman al iniciar el siguiente stream. El margen PCM se aplica a pistas SoundFont; SineSynth no mantiene una cola PCM independiente.</p>
-      </section>
+        </div>
+      </details>
 
       <section class="notice panel">
         <span class="notice-icon">i</span>

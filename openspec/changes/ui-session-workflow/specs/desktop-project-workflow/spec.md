@@ -27,3 +27,11 @@ La aplicación SHALL habilitar los controles Play, Pause y Stop cuando exista un
 #### Scenario: Proyecto vacío
 - **WHEN** el usuario pulsa Play en una sesión sin clips MIDI reproducibles
 - **THEN** la aplicación mantiene el transporte operativo y no presenta la sesión vacía como si contuviera audio
+
+
+### Requirement: Sesión demo reproducible
+La aplicación SHALL ofrecer un proyecto de demostración con un clip MIDI y notas que permitan verificar audiblemente la salida desde el transporte.
+
+#### Scenario: Crear demo y escucharla
+- **WHEN** el usuario selecciona Demo MIDI y luego Play
+- **THEN** la sesión contiene una secuencia corta visible en la pista MIDI y el motor reproduce las notas mediante el instrumento configurado

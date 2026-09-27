@@ -3,6 +3,7 @@ const platform = window.estudioPlatform;
 const elements = {
   open: document.querySelector("#open-project"),
   newProject: document.querySelector("#new-project"),
+  demoProject: document.querySelector("#demo-project"),
   save: document.querySelector("#save-project"),
   saveAs: document.querySelector("#save-project-as"),
   path: document.querySelector("#project-path"),
@@ -10,6 +11,8 @@ const elements = {
   tempo: document.querySelector("#tempo"),
   transport: document.querySelector("#transport-state"),
   tracks: document.querySelector("#track-list"),
+  lanes: document.querySelector("#arrangement-lanes"),
+  ruler: document.querySelector("#timeline-ruler"),
   trackCount: document.querySelector("#track-count"),
   midiCount: document.querySelector("#midi-count"),
   audioCount: document.querySelector("#audio-count"),
@@ -108,37 +111,87 @@ function renderSnapshot(snapshot) {
   elements.redo.disabled = !snapshot.canRedo;
 
   elements.tracks.replaceChildren();
+  elements.lanes.replaceChildren();
+  renderTimelineRuler(snapshot.beatsPerBar || 4);
   if (snapshot.tracks.length === 0) {
     const empty = document.createElement("div");
     empty.className = "empty-state";
     empty.textContent = "El proyecto todavía no tiene pistas.";
     elements.tracks.append(empty);
+    const emptyLane = document.createElement("div");
+    emptyLane.className = "empty-state timeline-empty";
+    emptyLane.textContent = "Sin pistas en el arreglo";
+    elements.lanes.append(emptyLane);
     return;
   }
 
   for (const track of snapshot.tracks) {
     const row = document.createElement("div");
     row.className = "track-row";
-    const name = document.createElement("div");
-    name.className = "track-name";
     const icon = document.createElement("span");
     icon.className = `track-icon ${track.kind}`;
     icon.textContent = track.kind === "audio" ? "◖" : "♫";
     const label = document.createElement("span");
     label.textContent = track.name;
+    const details = document.createElement("span");
+    details.className = "track-meta";
+    details.textContent = `${track.kind === "audio" ? "AUDIO" : "MIDI"} · ${track.noteCount} notas`;
+    const name = document.createElement("div");
+    name.className = "track-name";
     name.append(icon, label);
-    const kind = document.createElement("span");
-    kind.className = "track-kind";
-    kind.textContent = track.kind === "audio" ? "Audio" : "MIDI";
-    const notes = document.createElement("span");
-    notes.className = "track-notes";
-    notes.textContent = track.noteCount;
-    const state = document.createElement("span");
-    state.className = "track-badge";
-    state.textContent = "Preparada";
-    row.append(name, kind, notes, state);
+    row.append(name, details);
     elements.tracks.append(row);
+
+    const lane = document.createElement("div");
+    lane.className = "timeline-lane";
+    const clips = snapshot.midiClips.filter((clip) => clip.trackId === track.id);
+    for (const clip of clips) {
+      const block = document.createElement("div");
+      block.className = "midi-clip";
+      block.title = `${clip.name} · ${clip.noteCount} notas`;
+      const left = Math.max(0, Number(clip.startBeats) || 0);
+      const width = Math.max(0.25, Number(clip.durationBeats) || 0.25);
+      block.style.left = `${left / (snapshot.beatsPerBar * 16) * 100}%`;
+      block.style.width = `${Math.min(width / (snapshot.beatsPerBar * 16) * 100, 100)}%`;
+      const clipLabel = document.createElement("span");
+      clipLabel.className = "clip-label";
+      clipLabel.textContent = clip.name;
+      block.append(clipLabel);
+      const noteLayer = document.createElement("div");
+      noteLayer.className = "clip-note-layer";
+      for (const note of clip.notes) {
+        const noteMark = document.createElement("span");
+        noteMark.className = "clip-note";
+        const noteLeft = Math.max(0, Number(note.startBeats) || 0);
+        const noteWidth = Math.max(0.04, Number(note.durationBeats) || 0.04);
+        noteMark.style.left = `${noteLeft / width * 100}%`;
+        noteMark.style.width = `${Math.min(noteWidth / width * 100, 100)}%`;
+        noteMark.style.bottom = `${4 + Math.max(0, Math.min(1, (note.key - 48) / 36)) * 30}px`;
+        noteMark.style.opacity = String(0.5 + Math.max(0, Math.min(127, note.velocity)) / 254);
+        noteLayer.append(noteMark);
+      }
+      block.append(noteLayer);
+      lane.append(block);
+    }
+    if (clips.length === 0) {
+      const empty = document.createElement("span");
+      empty.className = "lane-empty-label";
+      empty.textContent = "Sin clips";
+      lane.append(empty);
+    }
+    elements.lanes.append(lane);
   }
+}
+
+function renderTimelineRuler(beatsPerBar) {
+  elements.ruler.replaceChildren();
+  for (let bar = 1; bar <= 16; bar += 1) {
+    const tick = document.createElement("span");
+    tick.className = "bar-tick";
+    tick.textContent = String(bar);
+    elements.ruler.append(tick);
+  }
+  elements.ruler.dataset.beatsPerBar = String(beatsPerBar);
 }
 
 async function runCommand(title, operation) {
@@ -170,6 +223,16 @@ elements.newProject.addEventListener("click", async () => {
     setNotice("Proyecto nuevo", "Sesión vacía lista. Abre un proyecto con clips MIDI para escuchar su reproducción.");
   } catch (error) {
     setNotice("No se pudo crear el proyecto", String(error));
+  }
+});
+
+elements.demoProject.addEventListener("click", async () => {
+  try {
+    const snapshot = await platform.demoMidiProject();
+    renderSnapshot(snapshot);
+    setNotice("Demo MIDI lista", "Siete notas están preparadas en la pista. Pulsa Play para oírlas por la salida configurada.");
+  } catch (error) {
+    setNotice("No se pudo preparar la demo MIDI", String(error));
   }
 });
 
@@ -220,4 +283,5 @@ elements.saveAudioSettings.addEventListener("click", async () => {
 setProjectEnabled(false);
 elements.undo.disabled = true;
 elements.redo.disabled = true;
+renderTimelineRuler(4);
 loadAudioSettings();
