@@ -154,7 +154,28 @@ struct AudioClipStream {
     clip_offset_frames: u64,
     fade_in_frames: u64,
     fade_out_frames: u64,
-    gain: f32,
+    gain_left: f32,
+    gain_right: f32,
+}
+
+struct TrackProcessingNode {
+    source: Box<dyn estudio_daw_audio_engine::AudioNode>,
+    gain_left: f32,
+    gain_right: f32,
+}
+
+impl AudioNode for TrackProcessingNode {
+    fn process(&mut self, interleaved: &mut [f32]) -> Result<(), AudioNodeError> {
+        self.source.process(interleaved)?;
+        if interleaved.len() % 2 != 0 {
+            return Err(AudioNodeError::InvalidBlockLength);
+        }
+        for stereo in interleaved.chunks_exact_mut(2) {
+            stereo[0] *= self.gain_left;
+            stereo[1] *= self.gain_right;
+        }
+        Ok(())
+    }
 }
 
 struct AudioClipMixerNode {
@@ -367,7 +388,7 @@ impl AudioNode for AudioClipMixerNode {
             stream.ring.pop(&mut self.scratch[..active_samples]);
             for frame in 0..active_frames {
                 let clip_frame = clip_frame_offset + frame as u64;
-                let mut gain = stream.gain;
+                let mut gain = 1.0;
                 if stream.fade_in_frames > 0 && clip_frame < stream.fade_in_frames {
                     gain *= clip_frame as f32 / stream.fade_in_frames as f32;
                 }
@@ -382,8 +403,9 @@ impl AudioNode for AudioClipMixerNode {
                 }
                 let output_offset = (block_offset + frame) * 2;
                 let input_offset = frame * 2;
-                interleaved[output_offset] += self.scratch[input_offset] * gain;
-                interleaved[output_offset + 1] += self.scratch[input_offset + 1] * gain;
+                interleaved[output_offset] += self.scratch[input_offset] * gain * stream.gain_left;
+                interleaved[output_offset + 1] +=
+                    self.scratch[input_offset + 1] * gain * stream.gain_right;
             }
         }
         self.frame_cursor = self.frame_cursor.saturating_add(frames as u64);
@@ -865,6 +887,25 @@ impl AudioRuntimeHost {
     }
 }
 
+fn track_is_audible(track: &estudio_daw_project_model::Track, has_solo: bool) -> bool {
+    track.mixer.active && (!has_solo || track.mixer.solo) && (!track.mixer.mute || track.mixer.solo)
+}
+
+fn track_gain_pan(track: &estudio_daw_project_model::Track) -> (f32, f32) {
+    let gain = 10.0_f32.powf(track.mixer.gain_db / 20.0);
+    let left = if track.mixer.pan > 0.0 {
+        1.0 - track.mixer.pan
+    } else {
+        1.0
+    };
+    let right = if track.mixer.pan < 0.0 {
+        1.0 + track.mixer.pan
+    } else {
+        1.0
+    };
+    (gain * left, gain * right)
+}
+
 fn preferred_playback_node() -> Option<String> {
     audio_devices()
         .ok()?
@@ -947,6 +988,11 @@ fn build_project_playback_with_end(
     let start_position_frame = ((u128::from(start_position_micros) * u128::from(sample_rate))
         / 1_000_000)
         .min(u128::from(u64::MAX)) as u64;
+    let has_solo = project.tracks.iter().any(|track| {
+        track.role != estudio_daw_project_model::TrackRole::Master
+            && track.mixer.active
+            && track.mixer.solo
+    });
     let mut sources: Vec<Box<dyn estudio_daw_audio_engine::AudioNode>> = Vec::new();
     sources.push(Box::new(MetronomeNode::new(
         metronome_enabled,
@@ -964,6 +1010,10 @@ fn build_project_playback_with_end(
         if !matches!(&track.kind, TrackKind::Midi) {
             continue;
         }
+        if !track_is_audible(track, has_solo) {
+            continue;
+        }
+        let (gain_left, gain_right) = track_gain_pan(track);
         let sender_index = senders.len();
         let mut has_events = false;
         for clip in project
@@ -1213,7 +1263,11 @@ fn build_project_playback_with_end(
                 let (sender, receiver) = midi_event_queue();
                 let node = SineSynthNode::new(sample_rate, channels, receiver)
                     .map_err(|error| error.to_string())?;
-                sources.push(Box::new(node));
+                sources.push(Box::new(TrackProcessingNode {
+                    source: Box::new(node),
+                    gain_left,
+                    gain_right,
+                }));
                 senders.push(EventSender::Sine(sender));
             }
             InstrumentConfig::FluidSynth {
@@ -1232,7 +1286,11 @@ fn build_project_playback_with_end(
                     )
                     .map_err(|error| error.to_string())?;
                 senders.push(EventSender::SoundFont(worker.event_sender()));
-                sources.push(Box::new(node));
+                sources.push(Box::new(TrackProcessingNode {
+                    source: Box::new(node),
+                    gain_left,
+                    gain_right,
+                }));
                 workers.push(worker);
             }
         }
@@ -1266,6 +1324,20 @@ fn build_project_playback_with_end(
                     clip.name
                 )
             })?;
+        let track = project
+            .tracks
+            .iter()
+            .find(|track| track.id == clip.track_id)
+            .ok_or_else(|| {
+                format!(
+                    "la región '{}' pertenece a una pista inexistente",
+                    clip.name
+                )
+            })?;
+        if !track_is_audible(track, has_solo) {
+            continue;
+        }
+        let (track_gain_left, track_gain_right) = track_gain_pan(track);
         let source_rate = source.sample_rate_hz.unwrap_or(clip.sample_rate);
         let to_output_frames = |source_samples: u64| -> u64 {
             ((u128::from(source_samples) * u128::from(sample_rate))
@@ -1313,7 +1385,8 @@ fn build_project_playback_with_end(
             clip_offset_frames,
             fade_in_frames: to_output_frames(clip.fade_in_samples),
             fade_out_frames: to_output_frames(clip.fade_out_samples),
-            gain: 10.0_f32.powf(clip.gain_db / 20.0),
+            gain_left: 10.0_f32.powf(clip.gain_db / 20.0) * track_gain_left,
+            gain_right: 10.0_f32.powf(clip.gain_db / 20.0) * track_gain_right,
         });
         decoder_pumps.push(pump);
     }

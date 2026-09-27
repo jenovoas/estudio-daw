@@ -120,3 +120,9 @@
 - Publicado en `9afd8dc`. `MetronomeNode` mezcla un clic de seno corto en el plan de instrumentos; acentúa el primer pulso del compás según tempo/métrica y alinea el siguiente pulso desde la posición inicial del plan. Un `AtomicBool` compartido con planes de seek/loop permite activar/desactivar sin reconstruir ni tocar el callback desde Tauri.
 - El botón «♪» conmuta el metrónomo desde detenido o durante Play y pausa; inicia apagado. Verificar auditivamente su pulso/acento cuando se haga QA de transporte.
 - OpenSpec sigue en 9/35; 4.3 permanece abierta por sincronía sample-accurate de eventos MIDI y QA funcional/acústica. No ejecutar pruebas en esta intervención.
+
+## Avance parcial — controles de mezcla de pista
+
+- El Mezclador añade ACT/M/S y sliders de ganancia/panorama para pistas no master. Las interacciones emiten `SetTrackMixer` reversible; el backend refresca el plan en Play y deja las ediciones listas para aplicar al reanudar si está pausado.
+- El plan hace efectivos active/mute/solo/gain/pan para MIDI y regiones de audio. El master no ofrece controles, y no hay medidores. Session/Arrangement aún no comparten controles gráficos, ni hay agrupación; no marcar 4.1 completa.
+- Verificación local: fmt/fmt check, `cargo check -p estudio-daw-ui-shell`, ambos `node --check`, diff check y OpenSpec normal (ocho avisos lingüísticos conocidos). No se ejecutaron suites ni QA visual/acústica. No marcar 4.1 completa.

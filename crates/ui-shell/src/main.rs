@@ -965,6 +965,50 @@ fn set_transport(
 }
 
 #[tauri::command]
+fn set_track_mixer(
+    track_id: String,
+    active: bool,
+    mute: bool,
+    solo: bool,
+    gain_db: f32,
+    pan: f32,
+    state: State<'_, DesktopState>,
+) -> Result<UiSnapshot, String> {
+    let mut application = state
+        .application
+        .lock()
+        .map_err(|_| "el estado de la aplicación quedó bloqueado".to_owned())?;
+    let application = application
+        .as_mut()
+        .ok_or_else(|| "primero abre un proyecto".to_owned())?;
+    application
+        .execute_project(ProjectCommand::SetTrackMixer {
+            track_id,
+            mixer: TrackMixerState {
+                active,
+                mute,
+                solo,
+                gain_db,
+                pan,
+            },
+        })
+        .map_err(|error| error.to_string())?;
+    let project = application.snapshot().project.project;
+    let mut audio = state
+        .audio
+        .lock()
+        .map_err(|_| "el estado del motor de audio quedó bloqueado".to_owned())?;
+    let connected = audio.is_connected();
+    if connected {
+        let settings = load_audio_runtime_settings().map_err(|error| error.to_string())?;
+        audio.refresh_project(&project, settings.active()).map_err(|error| {
+            format!("el cambio de mezcla quedó guardado, pero no se pudo actualizar el audio: {error}")
+        })?;
+    }
+    Ok(summarize(application, connected))
+}
+
+#[tauri::command]
 fn history_action(action: String, state: State<'_, DesktopState>) -> Result<UiSnapshot, String> {
     let mut application = state
         .application
@@ -1038,6 +1082,7 @@ fn main() {
             save_project,
             save_project_as,
             set_transport,
+            set_track_mixer,
             history_action,
             audio_runtime_settings,
             save_audio_settings

@@ -358,3 +358,9 @@ de evidencia descritos en el handoff.
 - Se añade `MetronomeNode` al plan DSP con clic tonal corto, acento de inicio de compás, tempo/métrica y fase calculada desde el tick inicial. El control atómico permite activarlo con el transporte detenido o cambiarlo durante Play sin recompilar el plan; las reconstrucciones por búsqueda y loop comparten el mismo control.
 - El metrónomo queda apagado al crear `AudioRuntimeHost`. La tarea 4.3 continúa abierta: el scheduler MIDI no es sample-accurate y falta QA funcional/acústica.
 - Implementado en `9afd8dc`. Verificación: `cargo fmt --all`, `cargo fmt --all -- --check`, `cargo check -p estudio-daw-ui-shell`, `node --check` de ambos scripts frontend, `git diff --check` y validación OpenSpec normal (ocho avisos lingüísticos conocidos). No se ejecutaron pruebas; queda pendiente QA auditiva/visual.
+
+## Avance de controles de pista — 2026-09-27
+
+- El Mezclador permite activar, silenciar, poner en solo y ajustar ganancia/panorama de pistas no master. Cada gesto emite `SetTrackMixer`, actualiza historial y, si suena el motor, recompila/publica el plan; al pausar aplica la mezcla al reanudar.
+- El plan aplica esos valores tanto a fuentes MIDI como a regiones de audio. Solo restringe a pistas activas en solo; solo prevalece sobre mute, mientras que inactiva siempre silencia. La panoramización implementada es balance L/R. No se muestran medidores ni controles de master.
+- Es avance parcial de 4.1; faltan controles compartidos en Session/Arrangement, medidores y agrupación. Verificación: `cargo fmt --all`, `cargo fmt --all -- --check`, `cargo check -p estudio-daw-ui-shell`, ambos `node --check`, `git diff --check` y OpenSpec normal (ocho avisos lingüísticos conocidos). No se ejecutaron suites ni QA visual/auditiva.

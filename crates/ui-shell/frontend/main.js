@@ -228,7 +228,7 @@ function renderMixerSurface(tracks) {
   elements.mixerView.replaceChildren();
   const heading = document.createElement("div");
   heading.className = "surface-heading";
-  heading.innerHTML = "<strong>MEZCLADOR</strong><span>Ruteo de proyecto · controles de señal aún no conectados</span>";
+  heading.innerHTML = "<strong>MEZCLADOR</strong><span>Controles de pista aplicados a la reproducción</span>";
   elements.mixerView.append(heading);
   if (tracks.length === 0) {
     const empty = document.createElement("div");
@@ -256,9 +256,60 @@ function renderMixerSurface(tracks) {
     mix.className = "mixer-values";
     mix.textContent = `${Number(track.gainDb).toFixed(1)} dB · Pan ${Number(track.pan).toFixed(2)}${track.mute ? " · Silencio" : ""}${track.solo ? " · Solo" : ""}${track.active ? "" : " · Inactiva"}`;
     channel.append(title, role, routing, mix);
+    if (track.role !== "master") {
+      const controls = document.createElement("div");
+      controls.className = "mixer-controls";
+      const toggle = (label, property, value) => {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "mixer-toggle";
+        button.textContent = label;
+        button.title = `${label}: ${track.name}`;
+        button.setAttribute("aria-label", `${label} ${track.name}`);
+        button.setAttribute("aria-pressed", String(value));
+        button.classList.toggle("is-selected", value);
+        button.addEventListener("click", () => updateTrackMixer(track, { [property]: !value }, `${label} actualizado`));
+        controls.append(button);
+      };
+      toggle("ACT", "active", track.active);
+      toggle("M", "mute", track.mute);
+      toggle("S", "solo", track.solo);
+
+      const slider = (label, property, value, min, max, step, suffix = "") => {
+        const field = document.createElement("label");
+        field.className = "mixer-slider";
+        const caption = document.createElement("span");
+        caption.textContent = `${label} ${Number(value).toFixed(property === "pan" ? 2 : 1)}${suffix}`;
+        const input = document.createElement("input");
+        input.type = "range";
+        input.min = String(min);
+        input.max = String(max);
+        input.step = String(step);
+        input.value = String(value);
+        input.setAttribute("aria-label", `${label} de ${track.name}`);
+        input.addEventListener("change", () => updateTrackMixer(track, { [property]: Number(input.value) }, `${label} actualizado`));
+        field.append(caption, input);
+        controls.append(field);
+      };
+      slider("Ganancia", "gainDb", track.gainDb, -60, 12, 0.5, " dB");
+      slider("Panorama", "pan", track.pan, -1, 1, 0.05);
+      channel.append(controls);
+    }
     channels.append(channel);
   }
   elements.mixerView.append(channels);
+}
+
+function updateTrackMixer(track, changes, title) {
+  const mixer = {
+    active: track.active,
+    mute: track.mute,
+    solo: track.solo,
+    gainDb: Number(track.gainDb),
+    pan: Number(track.pan),
+    ...changes,
+  };
+  return runCommand(title, () => platform.setTrackMixer(track.id, mixer));
 }
 
 function renderSnapshot(snapshot) {
