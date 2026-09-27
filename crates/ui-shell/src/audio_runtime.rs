@@ -520,32 +520,107 @@ fn build_project_playback(
                 Vec::new()
             };
             prior_events.sort_by_key(|event| event.tick);
-            let mut active_notes = Vec::<(u8, u8, u8)>::new();
+            let mut active_notes = Vec::<(u8, u8, u8, bool)>::new();
+            let mut prior_controllers = Vec::<(u8, u8, u8)>::new();
             for event in prior_events {
                 match &event.message {
                     RecordedMidiMessage::NoteOn {
                         channel,
                         note,
                         velocity,
-                    } if *velocity > 0 => active_notes.push((*channel, *note, *velocity)),
+                    } if *velocity > 0 => active_notes.push((*channel, *note, *velocity, true)),
                     RecordedMidiMessage::NoteOff { channel, note, .. }
                     | RecordedMidiMessage::NoteOn {
                         channel,
                         note,
                         velocity: 0,
                     } => {
-                        if let Some(index) =
-                            active_notes
+                        if let Some(index) = active_notes.iter().rposition(
+                            |(active_channel, active_note, _, key_down)| {
+                                active_channel == channel && active_note == note && *key_down
+                            },
+                        ) {
+                            let sustain_down = prior_controllers
                                 .iter()
-                                .rposition(|(active_channel, active_note, _)| {
-                                    active_channel == channel && active_note == note
+                                .rev()
+                                .find(|(active_channel, controller, _)| {
+                                    active_channel == channel && *controller == 64
                                 })
-                        {
-                            active_notes.remove(index);
+                                .is_some_and(|(_, _, value)| *value >= 64);
+                            if sustain_down {
+                                active_notes[index].3 = false;
+                            } else {
+                                active_notes.remove(index);
+                            }
                         }
                     }
+                    RecordedMidiMessage::ControlChange {
+                        channel,
+                        controller: 64,
+                        value,
+                    } => {
+                        let value = (*value).clamp(0, 127) as u8;
+                        if let Some((_, _, previous)) =
+                            prior_controllers
+                                .iter_mut()
+                                .find(|(active_channel, controller, _)| {
+                                    active_channel == channel && *controller == 64
+                                })
+                        {
+                            *previous = value;
+                        } else {
+                            prior_controllers.push((*channel, 64, value));
+                        }
+                        if value < 64 {
+                            active_notes.retain(|(active_channel, _, _, key_down)| {
+                                active_channel != channel || *key_down
+                            });
+                        }
+                    }
+                    RecordedMidiMessage::ControlChange {
+                        channel,
+                        controller: 123,
+                        ..
+                    } => active_notes.retain(|(active_channel, _, _, _)| active_channel != channel),
                     _ => {}
                 }
+            }
+            for (channel, controller, value) in prior_controllers {
+                schedule.push(ScheduledEvent {
+                    at: Duration::ZERO,
+                    sequence,
+                    sender: sender_index,
+                    midi: SynthMidiEvent::ControlChange {
+                        channel,
+                        controller,
+                        value,
+                    },
+                });
+                sequence = sequence.saturating_add(1);
+                has_events = true;
+            }
+            for (channel, note, velocity, key_down) in active_notes {
+                schedule.push(ScheduledEvent {
+                    at: Duration::ZERO,
+                    sequence,
+                    sender: sender_index,
+                    midi: SynthMidiEvent::NoteOn {
+                        channel,
+                        note,
+                        velocity,
+                    },
+                });
+                sequence = sequence.saturating_add(1);
+                if !key_down {
+                    schedule.push(ScheduledEvent {
+                        at: Duration::ZERO,
+                        sequence,
+                        sender: sender_index,
+                        midi: SynthMidiEvent::NoteOff { channel, note },
+                    });
+                    sequence = sequence.saturating_add(1);
+                }
+                has_events = true;
             }
             for event in &clip.take.events {
                 // Include events exactly at the clip boundary (notably a
@@ -566,20 +641,6 @@ fn build_project_playback(
                     sequence,
                     sender: sender_index,
                     midi,
-                });
-                sequence = sequence.saturating_add(1);
-                has_events = true;
-            }
-            for (channel, note, velocity) in active_notes {
-                schedule.push(ScheduledEvent {
-                    at: Duration::ZERO,
-                    sequence,
-                    sender: sender_index,
-                    midi: SynthMidiEvent::NoteOn {
-                        channel,
-                        note,
-                        velocity,
-                    },
                 });
                 sequence = sequence.saturating_add(1);
                 has_events = true;

@@ -699,12 +699,14 @@ Es un prototipo de capacidades parciales: su composición
 visual actual no satisface todavía el flujo creativo de Ableton Live 12; no
 incluye lanzamiento de clips en Session, edición de clips/notas ni
 posicionamiento compartido del transporte. Al iniciar desde detenido, Play
-parte del cursor de inserción del Arreglo. Play decodifica las
+parte del cursor de inserción del Arreglo. Al iniciar dentro de un clip MIDI,
+restaura las notas activas y el estado de sustain CC64 a partir de los eventos
+anteriores al cursor. Play decodifica las
 regiones de audio de forma incremental en workers, las precarga en rings PCM
 acotados y las mezcla con instrumentos MIDI; el callback no decodifica ni hace
 I/O. La posición y el cabezal de reproducción de Arreglo siguen los frames
 procesados y se congelan en pausa. Todavía faltan bucles, búsqueda durante la
-reproducción, restauración de controladores MIDI al buscar y actualización del
+reproducción, restauración del resto de controladores MIDI al buscar y actualización del
 plan, selección de salidas físicas, grabación live y monitorización de entrada. No
 se declara terminada la interfaz. La propuesta y las tareas abiertas de
 [workstation-arrangement-surface-v2](openspec/changes/workstation-arrangement-surface-v2/)
