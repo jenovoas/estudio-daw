@@ -231,6 +231,34 @@ function createTrackMixerControls(track, compact = false) {
   return controls;
 }
 
+function createTrackMeter(track) {
+  if (track.role === "master") return null;
+  const meter = document.createElement("div");
+  meter.className = "track-meter";
+  meter.dataset.trackId = track.id;
+  meter.setAttribute("role", "meter");
+  meter.setAttribute("aria-valuemin", "0");
+  meter.setAttribute("aria-valuemax", "100");
+  meter.setAttribute("aria-valuenow", "0");
+  meter.setAttribute("aria-label", `Nivel de ${track.name}`);
+  const fill = document.createElement("span");
+  fill.className = "track-meter-fill";
+  meter.append(fill);
+  return meter;
+}
+
+function updateTrackMeters(meters) {
+  for (const meter of document.querySelectorAll(".track-meter")) {
+    const reading = meters[meter.dataset.trackId];
+    const peak = Math.max(0, Number(reading?.peak) || 0);
+    const rms = Math.max(0, Number(reading?.rms) || 0);
+    const level = Math.min(100, peak * 100);
+    meter.style.setProperty("--meter-level", `${level}%`);
+    meter.setAttribute("aria-valuenow", level.toFixed(0));
+    meter.title = `Pico ${(20 * Math.log10(Math.max(peak, 1e-6))).toFixed(1)} dBFS · RMS ${(20 * Math.log10(Math.max(rms, 1e-6))).toFixed(1)} dBFS`;
+  }
+}
+
 function renderSessionSurface(tracks) {
   elements.sessionView.replaceChildren();
   const heading = document.createElement("div");
@@ -260,6 +288,8 @@ function renderSessionSurface(tracks) {
     emptySlot.className = "session-empty-slot";
     emptySlot.textContent = "Sin escena";
     column.append(name, type, channels, emptySlot);
+    const meter = createTrackMeter(track);
+    if (meter) column.append(meter);
     const controls = createTrackMixerControls(track, true);
     if (controls) column.append(controls);
     grid.append(column);
@@ -299,6 +329,8 @@ function renderMixerSurface(tracks) {
     mix.className = "mixer-values";
     mix.textContent = `${Number(track.gainDb).toFixed(1)} dB · Pan ${Number(track.pan).toFixed(2)}${track.mute ? " · Silencio" : ""}${track.solo ? " · Solo" : ""}${track.active ? "" : " · Inactiva"}`;
     channel.append(title, role, routing, mix);
+    const meter = createTrackMeter(track);
+    if (meter) channel.append(meter);
     const controls = createTrackMixerControls(track);
     if (controls) channel.append(controls);
     channels.append(channel);
@@ -404,6 +436,8 @@ function renderSnapshot(snapshot) {
     name.className = "track-name";
     name.append(icon, label);
     row.append(name, details);
+    const meter = createTrackMeter(track);
+    if (meter) row.append(meter);
     const mixerControls = createTrackMixerControls(track, true);
     if (mixerControls) row.append(mixerControls);
     elements.tracks.append(row);
@@ -1003,10 +1037,13 @@ elements.undo.addEventListener("click", () => runCommand("Undo aplicado", () => 
 elements.redo.addEventListener("click", () => runCommand("Redo aplicado", () => platform.historyAction("redo")));
 
 setInterval(async () => {
-  if (projectTransportState !== "playing" || transportPositionPollPending) return;
+  if (!["playing", "paused"].includes(projectTransportState) || transportPositionPollPending) return;
   transportPositionPollPending = true;
   try {
-    renderTransportPosition(await platform.transportPosition());
+    if (projectTransportState === "playing") {
+      renderTransportPosition(await platform.transportPosition());
+    }
+    updateTrackMeters(await platform.trackMeters());
   } catch (error) {
     if (!transportLoopErrorReported) {
       transportLoopErrorReported = true;

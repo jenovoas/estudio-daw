@@ -194,6 +194,8 @@ button:disabled { opacity: .4; cursor: not-allowed !important; }
 .mixer-channel > small { min-height: 30px; color: #a1a7aa; font-size: 8px; line-height: 1.5; }
 .mixer-values { margin-top: auto; padding-top: 7px; border-top: 1px solid #484e51; color: #c3c7c9; font-size: 8px; font-variant-numeric: tabular-nums; }
 .mixer-controls { display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; }
+.track-meter { display: block; width: 100%; height: 5px; overflow: hidden; border-radius: 4px; background: #171a1b; box-shadow: inset 0 0 0 1px #111; }
+.track-meter-fill { display: block; width: var(--meter-level, 0%); height: 100%; background: linear-gradient(90deg, #56b879 0 72%, #d4ba50 86%, #d96854 100%); transition: width 45ms linear; }
 .mixer-toggle { min-height: 23px; border: 1px solid #50575a; border-radius: 3px; background: #292d2f; color: #bbc0c2; font-size: 8px; font-weight: 700; cursor: pointer; }
 .mixer-toggle.is-selected { border-color: #c38a55; background: #51402f; color: #ffd4aa; }
 .mixer-slider { display: flex; flex-direction: column; gap: 3px; color: #aeb4b6; font-size: 8px; }

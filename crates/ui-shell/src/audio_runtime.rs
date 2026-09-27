@@ -19,10 +19,11 @@ use estudio_daw_synth::{
     SoundFontInstrumentWorker, SynthEventSender, SynthMidiEvent,
 };
 use std::{
+    collections::HashMap,
     io::Read,
     sync::{
-        atomic::{AtomicBool, AtomicU64, Ordering},
-        mpsc, Arc,
+        atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering},
+        mpsc, Arc, Mutex,
     },
     thread::{self, JoinHandle},
     time::{Duration, Instant},
@@ -162,6 +163,39 @@ struct TrackProcessingNode {
     source: Box<dyn estudio_daw_audio_engine::AudioNode>,
     gain_left: f32,
     gain_right: f32,
+    meter: Arc<TrackMeter>,
+}
+
+#[derive(Default)]
+struct TrackMeter {
+    peak: AtomicU32,
+    rms: AtomicU32,
+}
+
+impl TrackMeter {
+    fn update(&self, samples: &[f32]) {
+        if samples.is_empty() {
+            return;
+        }
+        let mut peak = 0.0_f32;
+        let mut sum_squares = 0.0_f64;
+        for &sample in samples {
+            if sample.is_finite() {
+                let magnitude = sample.abs();
+                peak = peak.max(magnitude);
+                sum_squares += f64::from(sample) * f64::from(sample);
+            }
+        }
+        let rms = (sum_squares / samples.len() as f64).sqrt() as f32;
+        // Fast attack, gentle block-rate release keeps the meter readable without
+        // allocating or locking in the audio callback.
+        let previous_peak = f32::from_bits(self.peak.load(Ordering::Relaxed));
+        let previous_rms = f32::from_bits(self.rms.load(Ordering::Relaxed));
+        self.peak
+            .store(peak.max(previous_peak * 0.88).to_bits(), Ordering::Release);
+        self.rms
+            .store(rms.max(previous_rms * 0.92).to_bits(), Ordering::Release);
+    }
 }
 
 impl AudioNode for TrackProcessingNode {
@@ -174,14 +208,93 @@ impl AudioNode for TrackProcessingNode {
             stereo[0] *= self.gain_left;
             stereo[1] *= self.gain_right;
         }
+        self.meter.update(interleaved);
         Ok(())
     }
 }
 
 struct AudioClipMixerNode {
     streams: Vec<AudioClipStream>,
-    scratch: Vec<f32>,
+    source_scratch: Vec<f32>,
+    mix_scratch: Vec<f32>,
     frame_cursor: u64,
+    meter: Arc<TrackMeter>,
+}
+
+impl AudioClipMixerNode {
+    fn new(streams: Vec<AudioClipStream>, max_samples: usize, meter: Arc<TrackMeter>) -> Self {
+        Self {
+            streams,
+            source_scratch: vec![0.0; max_samples],
+            mix_scratch: vec![0.0; max_samples],
+            frame_cursor: 0,
+            meter,
+        }
+    }
+}
+
+impl AudioNode for AudioClipMixerNode {
+    fn process(&mut self, interleaved: &mut [f32]) -> Result<(), AudioNodeError> {
+        if interleaved.len() % 2 != 0 || interleaved.len() > self.source_scratch.len() {
+            return Err(AudioNodeError::InvalidBlockLength);
+        }
+        let frames = interleaved.len() / 2;
+        let block_start = self.frame_cursor;
+        self.mix_scratch[..interleaved.len()].fill(0.0);
+        for stream in &self.streams {
+            let block_offset_frames = stream.start_frame.saturating_sub(block_start);
+            if block_offset_frames >= frames as u64 {
+                continue;
+            }
+            let block_offset = block_offset_frames as usize;
+            let clip_frame_offset = stream
+                .clip_offset_frames
+                .saturating_add(block_start.saturating_sub(stream.start_frame));
+            if clip_frame_offset >= stream.duration_frames {
+                continue;
+            }
+            let remaining_clip_frames =
+                usize::try_from(stream.duration_frames - clip_frame_offset).unwrap_or(usize::MAX);
+            let active_frames = frames
+                .saturating_sub(block_offset)
+                .min(remaining_clip_frames);
+            let active_samples = active_frames * 2;
+            self.source_scratch[..active_samples].fill(0.0);
+            stream.ring.pop(&mut self.source_scratch[..active_samples]);
+            for frame in 0..active_frames {
+                let clip_frame = clip_frame_offset + frame as u64;
+                let mut gain = 1.0;
+                if stream.fade_in_frames > 0 && clip_frame < stream.fade_in_frames {
+                    gain *= clip_frame as f32 / stream.fade_in_frames as f32;
+                }
+                if stream.fade_out_frames > 0
+                    && clip_frame
+                        >= stream
+                            .duration_frames
+                            .saturating_sub(stream.fade_out_frames)
+                {
+                    gain *= stream.duration_frames.saturating_sub(clip_frame + 1) as f32
+                        / stream.fade_out_frames as f32;
+                }
+                let output_offset = (block_offset + frame) * 2;
+                let input_offset = frame * 2;
+                self.mix_scratch[output_offset] +=
+                    self.source_scratch[input_offset] * gain * stream.gain_left;
+                self.mix_scratch[output_offset + 1] +=
+                    self.source_scratch[input_offset + 1] * gain * stream.gain_right;
+            }
+        }
+        self.meter.update(&self.mix_scratch[..interleaved.len()]);
+        let sample_count = interleaved.len();
+        for (output, track_sample) in interleaved
+            .iter_mut()
+            .zip(self.mix_scratch[..sample_count].iter())
+        {
+            *output += *track_sample;
+        }
+        self.frame_cursor = self.frame_cursor.saturating_add(frames as u64);
+        Ok(())
+    }
 }
 
 /// Publica la posición musical desde los mismos bloques que consume PipeWire.
@@ -349,70 +462,6 @@ impl AudioNode for LoopBoundaryGateNode {
     }
 }
 
-impl AudioClipMixerNode {
-    fn new(streams: Vec<AudioClipStream>, max_samples: usize) -> Self {
-        Self {
-            streams,
-            scratch: vec![0.0; max_samples],
-            frame_cursor: 0,
-        }
-    }
-}
-
-impl AudioNode for AudioClipMixerNode {
-    fn process(&mut self, interleaved: &mut [f32]) -> Result<(), AudioNodeError> {
-        if interleaved.len() % 2 != 0 || interleaved.len() > self.scratch.len() {
-            return Err(AudioNodeError::InvalidBlockLength);
-        }
-        let frames = interleaved.len() / 2;
-        let block_start = self.frame_cursor;
-        for stream in &self.streams {
-            let block_offset_frames = stream.start_frame.saturating_sub(block_start);
-            if block_offset_frames >= frames as u64 {
-                continue;
-            }
-            let block_offset = block_offset_frames as usize;
-            let clip_frame_offset = stream
-                .clip_offset_frames
-                .saturating_add(block_start.saturating_sub(stream.start_frame));
-            if clip_frame_offset >= stream.duration_frames {
-                continue;
-            }
-            let remaining_clip_frames =
-                usize::try_from(stream.duration_frames - clip_frame_offset).unwrap_or(usize::MAX);
-            let active_frames = frames
-                .saturating_sub(block_offset)
-                .min(remaining_clip_frames);
-            let active_samples = active_frames * 2;
-            self.scratch[..active_samples].fill(0.0);
-            stream.ring.pop(&mut self.scratch[..active_samples]);
-            for frame in 0..active_frames {
-                let clip_frame = clip_frame_offset + frame as u64;
-                let mut gain = 1.0;
-                if stream.fade_in_frames > 0 && clip_frame < stream.fade_in_frames {
-                    gain *= clip_frame as f32 / stream.fade_in_frames as f32;
-                }
-                if stream.fade_out_frames > 0
-                    && clip_frame
-                        >= stream
-                            .duration_frames
-                            .saturating_sub(stream.fade_out_frames)
-                {
-                    gain *= stream.duration_frames.saturating_sub(clip_frame + 1) as f32
-                        / stream.fade_out_frames as f32;
-                }
-                let output_offset = (block_offset + frame) * 2;
-                let input_offset = frame * 2;
-                interleaved[output_offset] += self.scratch[input_offset] * gain * stream.gain_left;
-                interleaved[output_offset + 1] +=
-                    self.scratch[input_offset + 1] * gain * stream.gain_right;
-            }
-        }
-        self.frame_cursor = self.frame_cursor.saturating_add(frames as u64);
-        Ok(())
-    }
-}
-
 enum EventSender {
     Sine(SynthEventSender),
     SoundFont(SoundFontEventSender),
@@ -502,6 +551,7 @@ pub struct AudioRuntimeHost {
     plan_control: Option<Arc<std::sync::Mutex<RenderPlanControl>>>,
     position_ticks: Arc<AtomicU64>,
     metronome_enabled: Arc<AtomicBool>,
+    track_meters: Arc<Mutex<HashMap<String, Arc<TrackMeter>>>>,
 }
 
 impl Default for AudioRuntimeHost {
@@ -511,6 +561,7 @@ impl Default for AudioRuntimeHost {
             plan_control: None,
             position_ticks: Arc::new(AtomicU64::new(0)),
             metronome_enabled: Arc::new(AtomicBool::new(false)),
+            track_meters: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 }
@@ -528,6 +579,34 @@ impl AudioRuntimeHost {
 
     pub fn set_metronome(&self, enabled: bool) {
         self.metronome_enabled.store(enabled, Ordering::Release);
+    }
+
+    pub fn track_meter_values(&self) -> Result<HashMap<String, (f32, f32)>, String> {
+        let meters = self
+            .track_meters
+            .lock()
+            .map_err(|_| "los medidores de pista quedaron bloqueados".to_owned())?;
+        Ok(meters
+            .iter()
+            .map(|(track_id, meter)| {
+                (
+                    track_id.clone(),
+                    (
+                        f32::from_bits(meter.peak.load(Ordering::Acquire)),
+                        f32::from_bits(meter.rms.load(Ordering::Acquire)),
+                    ),
+                )
+            })
+            .collect())
+    }
+
+    fn reset_track_meters(&self) -> Result<(), String> {
+        let mut meters = self
+            .track_meters
+            .lock()
+            .map_err(|_| "los medidores de pista quedaron bloqueados".to_owned())?;
+        meters.clear();
+        Ok(())
     }
 
     pub fn position_ticks_checked(&self) -> Result<u64, String> {
@@ -582,6 +661,7 @@ impl AudioRuntimeHost {
             return Ok(());
         }
         self.stop()?;
+        self.reset_track_meters()?;
         let loop_range = project.transport.loop_range;
         let start_position_ticks = loop_range.map_or(start_position_ticks, |range| {
             if start_position_ticks < range.start_tick || start_position_ticks >= range.end_tick {
@@ -613,6 +693,7 @@ impl AudioRuntimeHost {
             Arc::clone(&paused),
             Arc::clone(&self.position_ticks),
             Arc::clone(&self.metronome_enabled),
+            Arc::clone(&self.track_meters),
             start_position_ticks,
             loop_range.map(|range| range.end_tick),
         )?;
@@ -629,6 +710,7 @@ impl AudioRuntimeHost {
                 Arc::clone(&paused),
                 Arc::clone(&self.position_ticks),
                 Arc::clone(&self.metronome_enabled),
+                Arc::clone(&self.track_meters),
                 range.start_tick,
                 Some(range.end_tick),
             )?)
@@ -711,6 +793,7 @@ impl AudioRuntimeHost {
                     let loop_paused = Arc::clone(&paused);
                     let loop_position = Arc::clone(&self.position_ticks);
                     let loop_metronome = Arc::clone(&self.metronome_enabled);
+                    let loop_track_meters = Arc::clone(&self.track_meters);
                     let loop_control = Arc::clone(&control);
                     let loop_schedule = self.playback.as_ref().unwrap().schedule.clone();
                     let loop_project = Arc::clone(&project_model);
@@ -733,6 +816,7 @@ impl AudioRuntimeHost {
                                 loop_paused,
                                 loop_position,
                                 loop_metronome,
+                                loop_track_meters,
                                 loop_active_revision,
                             ) {
                                 if let Ok(mut state) = loop_error.lock() {
@@ -840,6 +924,7 @@ impl AudioRuntimeHost {
             Arc::clone(&playback.paused),
             Arc::clone(&self.position_ticks),
             Arc::clone(&self.metronome_enabled),
+            Arc::clone(&self.track_meters),
             position_ticks,
             range.map(|range| range.end_tick),
         )?;
@@ -951,9 +1036,24 @@ fn build_project_playback(
         paused,
         position_ticks,
         Arc::new(AtomicBool::new(false)),
+        Arc::new(Mutex::new(HashMap::new())),
         start_position_ticks,
         None,
     )
+}
+
+fn track_meter_for(
+    meters: &Arc<Mutex<HashMap<String, Arc<TrackMeter>>>>,
+    track_id: &str,
+) -> Result<Arc<TrackMeter>, String> {
+    let mut meters = meters
+        .lock()
+        .map_err(|_| "los medidores de pista quedaron bloqueados".to_owned())?;
+    Ok(Arc::clone(
+        meters
+            .entry(track_id.to_owned())
+            .or_insert_with(|| Arc::new(TrackMeter::default())),
+    ))
 }
 
 fn build_project_playback_with_end(
@@ -964,6 +1064,7 @@ fn build_project_playback_with_end(
     paused: Arc<AtomicBool>,
     position_ticks: Arc<AtomicU64>,
     metronome_enabled: Arc<AtomicBool>,
+    track_meters: Arc<Mutex<HashMap<String, Arc<TrackMeter>>>>,
     start_position_ticks: u64,
     end_position_ticks: Option<u64>,
 ) -> Result<
@@ -1263,10 +1364,12 @@ fn build_project_playback_with_end(
                 let (sender, receiver) = midi_event_queue();
                 let node = SineSynthNode::new(sample_rate, channels, receiver)
                     .map_err(|error| error.to_string())?;
+                let meter = track_meter_for(&track_meters, &track.id)?;
                 sources.push(Box::new(TrackProcessingNode {
                     source: Box::new(node),
                     gain_left,
                     gain_right,
+                    meter,
                 }));
                 senders.push(EventSender::Sine(sender));
             }
@@ -1286,17 +1389,19 @@ fn build_project_playback_with_end(
                     )
                     .map_err(|error| error.to_string())?;
                 senders.push(EventSender::SoundFont(worker.event_sender()));
+                let meter = track_meter_for(&track_meters, &track.id)?;
                 sources.push(Box::new(TrackProcessingNode {
                     source: Box::new(node),
                     gain_left,
                     gain_right,
+                    meter,
                 }));
                 workers.push(worker);
             }
         }
     }
 
-    let mut audio_streams = Vec::new();
+    let mut audio_streams: HashMap<String, Vec<AudioClipStream>> = HashMap::new();
     let mut decoder_pumps = Vec::new();
     let audio_clips: Vec<&AudioClip> = project
         .audio_clips
@@ -1378,16 +1483,19 @@ fn build_project_playback_with_end(
             (sample_rate as usize).saturating_mul(2).max(2),
         ));
         let pump = AudioDecodePump::start(decoder, Arc::clone(&ring))?;
-        audio_streams.push(AudioClipStream {
-            ring,
-            start_frame: clip_start_frame.saturating_sub(start_position_frame),
-            duration_frames,
-            clip_offset_frames,
-            fade_in_frames: to_output_frames(clip.fade_in_samples),
-            fade_out_frames: to_output_frames(clip.fade_out_samples),
-            gain_left: 10.0_f32.powf(clip.gain_db / 20.0) * track_gain_left,
-            gain_right: 10.0_f32.powf(clip.gain_db / 20.0) * track_gain_right,
-        });
+        audio_streams
+            .entry(clip.track_id.clone())
+            .or_default()
+            .push(AudioClipStream {
+                ring,
+                start_frame: clip_start_frame.saturating_sub(start_position_frame),
+                duration_frames,
+                clip_offset_frames,
+                fade_in_frames: to_output_frames(clip.fade_in_samples),
+                fade_out_frames: to_output_frames(clip.fade_out_samples),
+                gain_left: 10.0_f32.powf(clip.gain_db / 20.0) * track_gain_left,
+                gain_right: 10.0_f32.powf(clip.gain_db / 20.0) * track_gain_right,
+            });
         decoder_pumps.push(pump);
     }
     let target_samples = ((sample_rate as usize / 10) * 2).max(2);
@@ -1411,8 +1519,9 @@ fn build_project_playback_with_end(
     schedule.sort_by_key(|event| (event.at_tick, event.sequence));
     let mut builder = RenderPlanBuilder::new();
     builder.add_node(InstrumentMixerNode::new(sources, max_samples));
-    if !audio_streams.is_empty() {
-        builder.add_node(AudioClipMixerNode::new(audio_streams, max_samples));
+    for (track_id, streams) in audio_streams {
+        let meter = track_meter_for(&track_meters, &track_id)?;
+        builder.add_node(AudioClipMixerNode::new(streams, max_samples, meter));
     }
     if let Some(end_after_frames) = loop_end_frames {
         builder.add_node(LoopBoundaryGateNode {
@@ -1456,6 +1565,7 @@ fn coordinate_loop(
     paused: Arc<AtomicBool>,
     position_ticks: Arc<AtomicU64>,
     metronome_enabled: Arc<AtomicBool>,
+    track_meters: Arc<Mutex<HashMap<String, Arc<TrackMeter>>>>,
     active_project_revision: Arc<AtomicU64>,
 ) -> Result<(), String> {
     let mut prepared_revision = project_model.revision.load(Ordering::Acquire);
@@ -1475,6 +1585,7 @@ fn coordinate_loop(
                 Arc::clone(&paused),
                 Arc::clone(&position_ticks),
                 Arc::clone(&metronome_enabled),
+                Arc::clone(&track_meters),
             )?;
         }
         let (plan, senders, events) = prepared;
@@ -1494,6 +1605,7 @@ fn coordinate_loop(
                 Arc::clone(&paused),
                 Arc::clone(&position_ticks),
                 Arc::clone(&metronome_enabled),
+                Arc::clone(&track_meters),
             )?;
             continue;
         }
@@ -1530,6 +1642,7 @@ fn coordinate_loop(
             Arc::clone(&paused),
             Arc::clone(&position_ticks),
             Arc::clone(&metronome_enabled),
+            Arc::clone(&track_meters),
         )?;
     }
     Ok(())
@@ -1544,6 +1657,7 @@ fn prepare_latest_loop_plan(
     paused: Arc<AtomicBool>,
     position_ticks: Arc<AtomicU64>,
     metronome_enabled: Arc<AtomicBool>,
+    track_meters: Arc<Mutex<HashMap<String, Arc<TrackMeter>>>>,
 ) -> Result<
     (
         (
@@ -1565,6 +1679,7 @@ fn prepare_latest_loop_plan(
             Arc::clone(&paused),
             Arc::clone(&position_ticks),
             Arc::clone(&metronome_enabled),
+            Arc::clone(&track_meters),
             range.start_tick,
             Some(range.end_tick),
         )

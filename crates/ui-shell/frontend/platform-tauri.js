@@ -49,6 +49,7 @@ window.estudioPlatform = {
   setTransport: (command, positionTicks = null) => invoke("set_transport", { command, positionTicks }),
   setTrackMixer: (trackId, mixer) => invoke("set_track_mixer", { trackId, ...mixer }),
   transportPosition: () => invoke("transport_position"),
+  trackMeters: () => invoke("track_meters"),
   setLoopRange: (startTick, endTick) => invoke("set_loop_range", { startTick, endTick }),
   historyAction: (action) => invoke("history_action", { action }),
   audioRuntimeSettings: () => invoke("audio_runtime_settings"),

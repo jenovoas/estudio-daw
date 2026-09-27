@@ -16,7 +16,7 @@ use estudio_daw_project_model::{
     TrackChannelConfig, TrackKind, TrackMixerState, TrackRole, Transport, TransportLoopRange,
 };
 use serde::Serialize;
-use std::{path::PathBuf, sync::Mutex};
+use std::{collections::HashMap, path::PathBuf, sync::Mutex};
 use tauri::State;
 
 use audio_runtime::AudioRuntimeHost;
@@ -45,6 +45,13 @@ struct TrackSummary {
     solo: bool,
     gain_db: f32,
     pan: f32,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct TrackMeterSummary {
+    peak: f32,
+    rms: f32,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -805,6 +812,23 @@ fn transport_position(state: State<'_, DesktopState>) -> Result<u64, String> {
 }
 
 #[tauri::command]
+fn track_meters(
+    state: State<'_, DesktopState>,
+) -> Result<HashMap<String, TrackMeterSummary>, String> {
+    state
+        .audio
+        .lock()
+        .map_err(|_| "el estado del motor de audio quedó bloqueado".to_owned())?
+        .track_meter_values()
+        .map(|meters| {
+            meters
+                .into_iter()
+                .map(|(track_id, (peak, rms))| (track_id, TrackMeterSummary { peak, rms }))
+                .collect()
+        })
+}
+
+#[tauri::command]
 fn set_loop_range(
     start_tick: Option<u64>,
     end_tick: Option<u64>,
@@ -1078,6 +1102,7 @@ fn main() {
             open_project,
             project_snapshot,
             transport_position,
+            track_meters,
             set_loop_range,
             save_project,
             save_project_as,
