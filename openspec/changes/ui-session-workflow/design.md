@@ -1,0 +1,31 @@
+# Design
+
+## Context
+
+La shell Tauri ya separa UI y core mediante comandos IPC y renderiza snapshots compactos del proyecto. El transporte necesita una sesión `ProjectApplication`; sin ella las acciones de proyecto y transporte se desactivan. La interfaz actual organiza funciones como paneles amplios con estética de dashboard.
+
+## Goals / Non-Goals
+
+**Goals:**
+- Crear una sesión nueva válida dentro de `ProjectApplication` sin requerir archivo previo.
+- Parar el host de audio antes de sustituir una sesión.
+- Hacer evidente el flujo Nuevo/Abrir/Guardar y que transporte depende de una sesión.
+- Dar a la ventana una composición compacta de estación de trabajo oscura, usando el feeling de Live 12 como referencia cromática y de densidad.
+
+**Non-Goals:**
+- Crear una vista de arreglo editable ni herramientas para insertar notas o clips.
+- Cambiar el modelo de proyecto o agregar grabación live, monitorización o reproducción de clips de audio.
+- Copiar logos, iconos, tipografía propietaria u otros activos de Ableton.
+
+## Decisions
+
+- El comando `new_project` crea un modelo v2 sin ruta, tempo 120 BPM, compás 4/4 y una pista MIDI vacía con SineSynth. La primera acción Guardar como le asigna ruta usando el flujo ya existente.
+- El cambio de sesión toma locks en el mismo orden que el resto del adaptador (aplicación y luego host de audio), detiene reproducción y publica un snapshot de la nueva sesión.
+- El frontend reutiliza `renderSnapshot` para activar capacidades y actualizar los datos visibles; sin proyecto los controles de transporte siguen bloqueados.
+- El rediseño permanece en HTML/CSS nativo del bundle Tauri: barra superior compacta, transporte agrupado, tipografía y superficies más densas, colores neutros oscuros y acento naranja cálido. No se introduce framework visual ni recursos externos.
+
+## Risks / Trade-offs
+
+- Una sesión nueva no contiene clips y Play produce silencio: la UI debe indicarlo con claridad y no sugerir contenido sonoro.
+- El prototipo no incluye editor de arreglo; para una prueba audible se debe abrir un proyecto que ya tenga clips MIDI.
+- Los cambios de estilo pueden reducir espacio en ventanas estrechas → conservar el ancho mínimo existente y ajustar la fila de preferencias con breakpoints.

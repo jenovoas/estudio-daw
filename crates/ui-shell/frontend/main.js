@@ -2,6 +2,7 @@ const platform = window.estudioPlatform;
 
 const elements = {
   open: document.querySelector("#open-project"),
+  newProject: document.querySelector("#new-project"),
   save: document.querySelector("#save-project"),
   saveAs: document.querySelector("#save-project-as"),
   path: document.querySelector("#project-path"),
@@ -90,6 +91,7 @@ function setProjectEnabled(enabled) {
 
 function renderSnapshot(snapshot) {
   setProjectEnabled(true);
+  elements.save.disabled = !snapshot.projectPath;
   elements.path.textContent = snapshot.projectPath ?? "Proyecto sin ruta";
   elements.path.title = snapshot.projectPath ?? "";
   elements.name.textContent = snapshot.projectId;
@@ -141,7 +143,9 @@ function renderSnapshot(snapshot) {
 
 async function runCommand(title, operation) {
   try {
-    renderSnapshot(await operation());
+    const snapshot = await operation();
+    if (!snapshot) return;
+    renderSnapshot(snapshot);
     setNotice(title, "Cambios aplicados al estado del proyecto.");
   } catch (error) {
     setNotice("La operación falló", String(error));
@@ -159,9 +163,31 @@ elements.open.addEventListener("click", async () => {
   }
 });
 
+elements.newProject.addEventListener("click", async () => {
+  try {
+    const snapshot = await platform.newProject();
+    renderSnapshot(snapshot);
+    setNotice("Proyecto nuevo", "Sesión vacía lista. Abre un proyecto con clips MIDI para escuchar su reproducción.");
+  } catch (error) {
+    setNotice("No se pudo crear el proyecto", String(error));
+  }
+});
+
 elements.save.addEventListener("click", () => runCommand("Proyecto guardado", () => platform.saveProject()));
 elements.saveAs.addEventListener("click", () => runCommand("Copia del proyecto guardada", () => platform.saveProjectAs()));
-elements.play.addEventListener("click", () => runCommand("Transporte en Play", () => platform.setTransport("play")));
+elements.play.addEventListener("click", async () => {
+  try {
+    const snapshot = await platform.setTransport("play");
+    renderSnapshot(snapshot);
+    setNotice(snapshot.midiClipCount === 0
+      ? "Sesión vacía"
+      : "Transporte en Play", snapshot.midiClipCount === 0
+      ? "No hay clips MIDI en esta sesión; abre un proyecto con clips para escuchar instrumentos."
+      : "Reproduciendo clips MIDI con los instrumentos asignados a sus pistas.");
+  } catch (error) {
+    setNotice("No se pudo iniciar la reproducción", String(error));
+  }
+});
 elements.pause.addEventListener("click", () => runCommand("Transporte pausado", () => platform.setTransport("pause")));
 elements.stop.addEventListener("click", () => runCommand("Transporte detenido", () => platform.setTransport("stop")));
 elements.undo.addEventListener("click", () => runCommand("Undo aplicado", () => platform.historyAction("undo")));

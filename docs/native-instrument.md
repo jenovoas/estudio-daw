@@ -1,5 +1,21 @@
 # Instrumentos MIDI nativos
 
+## Shell Tauri: inicio de sesión y transporte
+
+La cabecera permite crear un proyecto nuevo con una pista MIDI vacía, abrir un
+proyecto existente o guardar la sesión actual con «Guardar como». Un proyecto
+nuevo comienza a 120 BPM y con SineSynth asignado a MIDI 1; no contiene clips,
+por lo que pulsar Play mantiene el transporte activo pero no produce sonido.
+Para una prueba audible, abre un proyecto que contenga clips MIDI. Guardar se
+activa cuando la sesión ya tiene una ruta; «Guardar como» está disponible para
+una sesión nueva.
+
+La ventana usa una composición compacta de DAW de escritorio con paleta oscura
+neutral y acento cálido, inspirada en el feeling de Ableton Live 12 Suite. No
+incorpora recursos gráficos ni activos de Ableton. El shell todavía no incluye
+edición de arreglo/notas, grabación live, monitorización MIDI ni reproducción
+de clips de audio.
+
 `estudio-daw-synth` ofrece dos fuentes: el sinte sinusoidal polifónico (fallback
 sin dependencias) y un adaptador opcional a FluidSynth para reproducir
 SoundFonts locales. FluidSynth se carga dinámicamente; compilar Estudio DAW no

@@ -10,7 +10,9 @@ use estudio_daw_application::{
     AudioRuntimeView, CommandAuthor, DomainCommand, ProjectApplication, SessionCommand,
     TransportState,
 };
-use estudio_daw_project_model::{Project, TrackKind};
+use estudio_daw_project_model::{
+    ImportProvenance, InstrumentConfig, Project, TimeSignature, Track, TrackKind, Transport,
+};
 use serde::Serialize;
 use std::{path::PathBuf, sync::Mutex};
 use tauri::State;
@@ -164,6 +166,61 @@ fn summarize(application: &ProjectApplication, audio_engine_connected: bool) -> 
         can_redo,
         audio_engine_connected,
     }
+}
+
+#[tauri::command]
+fn new_project(state: State<'_, DesktopState>) -> Result<UiSnapshot, String> {
+    let application = ProjectApplication::new(new_project_model());
+    let snapshot = summarize(&application, false);
+    let mut current = state
+        .application
+        .lock()
+        .map_err(|_| "el estado de la aplicación quedó bloqueado".to_owned())?;
+    state
+        .audio
+        .lock()
+        .map_err(|_| "el estado del motor de audio quedó bloqueado".to_owned())?
+        .stop()?;
+    *current = Some(application);
+    Ok(snapshot)
+}
+
+fn new_project_model() -> Project {
+    Project {
+        schema_version: "estudio-daw.project.v2".into(),
+        project_id: format!("proyecto-{}", unix_timestamp_millis()),
+        transport: Transport {
+            tempo_bpm: 120.0,
+            time_signature: TimeSignature {
+                numerator: 4,
+                denominator: 4,
+            },
+        },
+        tracks: vec![Track {
+            id: "midi-1".into(),
+            name: "MIDI 1".into(),
+            kind: TrackKind::Midi,
+            notes: Vec::new(),
+            audio_channels: None,
+            media_source: None,
+            instrument: Some(InstrumentConfig::Sine),
+        }],
+        midi_clips: Vec::new(),
+        audio_clips: Vec::new(),
+        import_provenance: ImportProvenance {
+            format: "estudio-daw".into(),
+            format_version: "2".into(),
+            source_file: String::new(),
+            warnings: Vec::new(),
+        },
+    }
+}
+
+fn unix_timestamp_millis() -> u128 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis()
 }
 
 #[tauri::command]
@@ -332,6 +389,7 @@ fn main() {
             audio: Mutex::new(AudioRuntimeHost::default()),
         })
         .invoke_handler(tauri::generate_handler![
+            new_project,
             open_project,
             project_snapshot,
             save_project,
@@ -348,6 +406,19 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn new_project_starts_with_one_empty_midi_track_and_enabled_session_state() {
+        let application = ProjectApplication::new(new_project_model());
+        let snapshot = summarize(&application, false);
+
+        assert!(snapshot.project_id.starts_with("proyecto-"));
+        assert_eq!(snapshot.tempo_bpm, 120.0);
+        assert_eq!(snapshot.track_count, 1);
+        assert_eq!(snapshot.midi_clip_count, 0);
+        assert_eq!(snapshot.tracks[0].kind, "midi");
+        assert_eq!(snapshot.tracks[0].name, "MIDI 1");
+    }
 
     #[test]
     fn ui_snapshot_serializes_summary_without_audio_payload() {

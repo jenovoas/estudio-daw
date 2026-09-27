@@ -4,6 +4,7 @@ const { invoke } = window.__TAURI__.core;
 const { open, save } = window.__TAURI__.dialog;
 
 window.estudioPlatform = {
+  newProject: () => invoke("new_project"),
   async openProject() {
     const path = await open({
       multiple: false,
