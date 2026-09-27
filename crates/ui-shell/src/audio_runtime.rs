@@ -876,32 +876,33 @@ fn build_project_playback_with_end(
                     }
                     RecordedMidiMessage::ControlChange {
                         channel,
-                        controller: 64,
+                        controller,
                         value,
-                    } => {
+                    } if *controller <= 127 => {
+                        let controller_id = *controller as u8;
                         let value = (*value).clamp(0, 127) as u8;
                         if let Some((_, _, previous)) =
                             prior_controllers
                                 .iter_mut()
                                 .find(|(active_channel, controller, _)| {
-                                    active_channel == channel && *controller == 64
+                                    active_channel == channel && *controller == controller_id
                                 })
                         {
                             *previous = value;
                         } else {
-                            prior_controllers.push((*channel, 64, value));
+                            prior_controllers.push((*channel, controller_id, value));
                         }
-                        if value < 64 {
-                            active_notes.retain(|(active_channel, _, _, key_down)| {
-                                active_channel != channel || *key_down
-                            });
+                        match controller_id {
+                            64 if value < 64 => {
+                                active_notes.retain(|(active_channel, _, _, key_down)| {
+                                    active_channel != channel || *key_down
+                                });
+                            }
+                            123 => active_notes
+                                .retain(|(active_channel, _, _, _)| active_channel != channel),
+                            _ => {}
                         }
                     }
-                    RecordedMidiMessage::ControlChange {
-                        channel,
-                        controller: 123,
-                        ..
-                    } => active_notes.retain(|(active_channel, _, _, _)| active_channel != channel),
                     _ => {}
                 }
             }
@@ -1276,7 +1277,7 @@ fn synth_event(message: &RecordedMidiMessage) -> Option<SynthMidiEvent> {
             channel,
             controller,
             value,
-        } if *controller == 64 || *controller == 123 => Some(SynthMidiEvent::ControlChange {
+        } if *controller <= 127 => Some(SynthMidiEvent::ControlChange {
             channel: *channel,
             controller: *controller as u8,
             value: (*value).clamp(0, 127) as u8,

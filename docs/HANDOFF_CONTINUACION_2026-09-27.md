@@ -96,3 +96,9 @@
 - El scheduler compara los ticks absolutos de cada evento con la posición publicada por `TransportPositionNode` después de procesar el bloque. Pause congela el reloj, y seek/loop reemplazan la agenda cuando el plan nuevo queda activo; ya no se acumula deriva de un `Instant` independiente.
 - El scheduler sondea el atómico cada 1 ms y los instrumentos consumen eventos por bloque/worker. Esto alinea la agenda con el transporte, pero no garantiza aplicación sample-accurate. Falta QA funcional/acústica y restauración de otros controladores MIDI.
 - Validar con `cargo check`, formato, sintaxis JS, diff check y OpenSpec; no ejecutar suites. Consultar el commit más reciente en `git log` y actualizar vault.
+
+## Actualización — restauración de estado CC al navegar
+
+- Al reconstruir el plan desde el cursor, se envía el último valor previo de cada CC 0–127 de los clips MIDI activos antes de NoteOn restaurados y eventos futuros. CC64 conserva su lógica de sustain y CC123 vacía las notas activas del canal.
+- Pitch Bend, Key/Channel Pressure y Program Change aún no forman parte de `SynthMidiEvent` ni del estado restaurado al buscar. No declarar restauración completa de todos los tipos MIDI.
+- Verificación: `cargo check -p estudio-daw-ui-shell`, fmt/fmt check y `git diff --check`; no se ejecutaron pruebas ni QA auditiva/visual. OpenSpec sigue 9/35.

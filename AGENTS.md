@@ -193,8 +193,10 @@ Para explorar estructuralmente el código, usa la habilidad instalada `codebase-
   reemplazo de agenda se serializan fuera del callback.
 - El scheduler compara los ticks MIDI con la posición atómica publicada por el
   plan tras procesar cada bloque; su sondeo es de 1 ms y no se afirma precisión
-  sample-accurate. Continúan pendientes QA funcional/acústica y otros
-  controladores MIDI. OpenSpec 2.3/4.3 sigue abierta;
+  sample-accurate. Al iniciar/buscar en medio de un clip se restauran los
+  últimos valores de CC (0–127), además de notas activas y sustain. Siguen
+  pendientes Pitch Bend, presión y cambio de programa, junto con QA funcional/
+  acústica. OpenSpec 2.3/4.3 sigue abierta;
   no ejecutar suites salvo instrucción del usuario.
 
 ## Avance posterior — búsqueda de transporte — 2026-09-27
