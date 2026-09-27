@@ -12,13 +12,18 @@ use estudio_daw_application::{
 };
 use estudio_daw_midi_engine::{MidiSource, MidiTake, RecordedMidiEvent, RecordedMidiMessage};
 use estudio_daw_project_model::{
-    ImportProvenance, InstrumentConfig, MidiClip, Project, TimeSignature, Track,
-    TrackChannelConfig, TrackInputRoute, TrackKind, TrackMixerState, TrackRole, Transport,
-    TransportLoopRange,
+    ClipReference, ClipSlot, ImportProvenance, InstrumentConfig, MidiClip, Project, Scene,
+    TimeSignature, Track, TrackChannelConfig, TrackInputRoute, TrackKind, TrackMixerState,
+    TrackRole, Transport, TransportLoopRange,
 };
 use estudio_daw_runtime_diagnostics::audio_devices;
 use serde::Serialize;
-use std::{collections::HashMap, path::PathBuf, sync::Mutex};
+use std::{
+    collections::HashMap,
+    path::PathBuf,
+    sync::Mutex,
+    time::{SystemTime, UNIX_EPOCH},
+};
 use tauri::State;
 
 use audio_runtime::AudioRuntimeHost;
@@ -98,6 +103,23 @@ struct AudioClipSummary {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+struct SceneSummary {
+    id: String,
+    name: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ClipSlotSummary {
+    id: String,
+    scene_id: String,
+    track_id: String,
+    clip_kind: Option<&'static str>,
+    clip_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 struct AudioImportMetadata {
     sample_rate_hz: u32,
     channels: u16,
@@ -130,6 +152,8 @@ struct UiSnapshot {
     tracks: Vec<TrackSummary>,
     midi_clips: Vec<MidiClipSummary>,
     audio_clips: Vec<AudioClipSummary>,
+    scenes: Vec<SceneSummary>,
+    clip_slots: Vec<ClipSlotSummary>,
     can_undo: bool,
     can_redo: bool,
     audio_engine_connected: bool,
@@ -304,6 +328,32 @@ fn summarize(application: &ProjectApplication, audio_engine_connected: bool) -> 
             }
         })
         .collect();
+    let scenes = project
+        .scenes
+        .iter()
+        .map(|scene| SceneSummary {
+            id: scene.id.clone(),
+            name: scene.name.clone(),
+        })
+        .collect();
+    let clip_slots = project
+        .clip_slots
+        .iter()
+        .map(|slot| {
+            let (clip_kind, clip_id) = match &slot.clip {
+                Some(ClipReference::Midi(id)) => (Some("midi"), Some(id.clone())),
+                Some(ClipReference::Audio(id)) => (Some("audio"), Some(id.clone())),
+                None => (None, None),
+            };
+            ClipSlotSummary {
+                id: slot.id.clone(),
+                scene_id: slot.scene_id.clone(),
+                track_id: slot.track_id.clone(),
+                clip_kind,
+                clip_id,
+            }
+        })
+        .collect();
 
     UiSnapshot {
         schema_version: "ui-snapshot.v1",
@@ -326,6 +376,8 @@ fn summarize(application: &ProjectApplication, audio_engine_connected: bool) -> 
         tracks,
         midi_clips,
         audio_clips,
+        scenes,
+        clip_slots,
         can_undo,
         can_redo,
         audio_engine_connected,
@@ -918,6 +970,162 @@ fn set_loop_range(
 }
 
 #[tauri::command]
+fn add_scene(state: State<'_, DesktopState>) -> Result<UiSnapshot, String> {
+    let mut application = state
+        .application
+        .lock()
+        .map_err(|_| "el estado de la aplicación quedó bloqueado".to_owned())?;
+    let application = application
+        .as_mut()
+        .ok_or_else(|| "primero abre un proyecto".to_owned())?;
+    let project = application.snapshot().project.project;
+    let scene = Scene {
+        id: format!("scene-{}", unix_timestamp_nanos()),
+        name: format!("Escena {}", project.scenes.len() + 1),
+    };
+    application
+        .execute_project(ProjectCommand::AddScene { scene, index: None })
+        .map_err(|error| error.to_string())?;
+    let connected = state
+        .audio
+        .lock()
+        .map_err(|_| "el estado del motor de audio quedó bloqueado".to_owned())?
+        .is_connected();
+    Ok(summarize(application, connected))
+}
+
+#[tauri::command]
+fn rename_scene(
+    scene_id: String,
+    name: String,
+    state: State<'_, DesktopState>,
+) -> Result<UiSnapshot, String> {
+    let mut application = state
+        .application
+        .lock()
+        .map_err(|_| "el estado de la aplicación quedó bloqueado".to_owned())?;
+    let application = application
+        .as_mut()
+        .ok_or_else(|| "primero abre un proyecto".to_owned())?;
+    application
+        .execute_project(ProjectCommand::RenameScene { scene_id, name })
+        .map_err(|error| error.to_string())?;
+    let connected = state
+        .audio
+        .lock()
+        .map_err(|_| "el estado del motor de audio quedó bloqueado".to_owned())?
+        .is_connected();
+    Ok(summarize(application, connected))
+}
+
+#[tauri::command]
+fn remove_scene(scene_id: String, state: State<'_, DesktopState>) -> Result<UiSnapshot, String> {
+    let mut application = state
+        .application
+        .lock()
+        .map_err(|_| "el estado de la aplicación quedó bloqueado".to_owned())?;
+    let application = application
+        .as_mut()
+        .ok_or_else(|| "primero abre un proyecto".to_owned())?;
+    application
+        .execute_project(ProjectCommand::RemoveScene { scene_id })
+        .map_err(|error| error.to_string())?;
+    let connected = state
+        .audio
+        .lock()
+        .map_err(|_| "el estado del motor de audio quedó bloqueado".to_owned())?
+        .is_connected();
+    Ok(summarize(application, connected))
+}
+
+#[tauri::command]
+fn move_scene(
+    scene_id: String,
+    index: usize,
+    state: State<'_, DesktopState>,
+) -> Result<UiSnapshot, String> {
+    let mut application = state
+        .application
+        .lock()
+        .map_err(|_| "el estado de la aplicación quedó bloqueado".to_owned())?;
+    let application = application
+        .as_mut()
+        .ok_or_else(|| "primero abre un proyecto".to_owned())?;
+    application
+        .execute_project(ProjectCommand::MoveScene { scene_id, index })
+        .map_err(|error| error.to_string())?;
+    let connected = state
+        .audio
+        .lock()
+        .map_err(|_| "el estado del motor de audio quedó bloqueado".to_owned())?
+        .is_connected();
+    Ok(summarize(application, connected))
+}
+
+#[tauri::command]
+fn set_clip_slot(
+    scene_id: String,
+    track_id: String,
+    clip_kind: Option<String>,
+    clip_id: Option<String>,
+    state: State<'_, DesktopState>,
+) -> Result<UiSnapshot, String> {
+    let mut application = state
+        .application
+        .lock()
+        .map_err(|_| "el estado de la aplicación quedó bloqueado".to_owned())?;
+    let application = application
+        .as_mut()
+        .ok_or_else(|| "primero abre un proyecto".to_owned())?;
+    let project = application.snapshot().project.project;
+    let existing = project
+        .clip_slots
+        .iter()
+        .find(|slot| slot.scene_id == scene_id && slot.track_id == track_id);
+    let clip = match (clip_kind.as_deref(), clip_id) {
+        (None, None) => None,
+        (Some("midi"), Some(id)) => Some(ClipReference::Midi(id)),
+        (Some("audio"), Some(id)) => Some(ClipReference::Audio(id)),
+        _ => return Err("elige un clip MIDI/audio válido o deja la casilla vacía".into()),
+    };
+    if clip.is_none() {
+        if let Some(existing) = existing {
+            application
+                .execute_project(ProjectCommand::RemoveClipSlot {
+                    slot_id: existing.id.clone(),
+                })
+                .map_err(|error| error.to_string())?;
+        }
+    } else {
+        let slot = ClipSlot {
+            id: existing.map_or_else(
+                || format!("slot-{}", unix_timestamp_nanos()),
+                |slot| slot.id.clone(),
+            ),
+            scene_id,
+            track_id,
+            clip,
+        };
+        application
+            .execute_project(ProjectCommand::SetClipSlot { slot })
+            .map_err(|error| error.to_string())?;
+    }
+    let connected = state
+        .audio
+        .lock()
+        .map_err(|_| "el estado del motor de audio quedó bloqueado".to_owned())?
+        .is_connected();
+    Ok(summarize(application, connected))
+}
+
+fn unix_timestamp_nanos() -> u128 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos()
+}
+
+#[tauri::command]
 fn save_project(state: State<'_, DesktopState>) -> Result<UiSnapshot, String> {
     let application = state
         .application
@@ -1413,6 +1621,11 @@ fn main() {
             transport_position,
             track_meters,
             set_loop_range,
+            add_scene,
+            rename_scene,
+            remove_scene,
+            move_scene,
+            set_clip_slot,
             save_project,
             save_project_as,
             set_transport,

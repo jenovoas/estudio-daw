@@ -32,10 +32,10 @@
       <aside class="tool-rail" aria-label="Vistas">
         <div class="rail-logo" aria-hidden="true">♫</div>
         <div class="rail-divider"></div>
-        <span class="rail-tool is-active" title="Arreglo" aria-label="Vista activa: arreglo">▥</span>
-        <span class="rail-tool" title="Vista de sesión aún no implementada" aria-label="Vista de sesión no disponible">▦</span>
+        <button id="rail-arrangement" class="rail-tool is-active" type="button" title="Mostrar Arreglo" aria-label="Mostrar vista de Arreglo" aria-current="page">▥</button>
+        <button id="rail-session" class="rail-tool" type="button" title="Mostrar Sesión" aria-label="Mostrar vista de Sesión">▦</button>
         <span class="rail-spacer"></span>
-        <span class="rail-tool rail-settings" title="Preferencias de audio en la parte inferior" aria-label="Preferencias de audio">⚙</span>
+        <button id="rail-settings" class="rail-tool rail-settings" type="button" title="Abrir preferencias de audio" aria-label="Abrir preferencias de audio">⚙</button>
       </aside>
 
       <aside class="browser" aria-label="Navegador del proyecto">
@@ -92,6 +92,7 @@
 
         <section class="editor-heading">
           <div class="view-tabs" role="tablist" aria-label="Superficies del proyecto"><button id="show-arrangement" class="view-tab is-selected" role="tab" aria-selected="true"><span class="tab-icon">▥</span>Arreglo</button><button id="show-session" class="view-tab" role="tab" aria-selected="false"><span class="tab-icon">▦</span>Sesión</button><button id="show-mixer" class="view-tab" role="tab" aria-selected="false"><span class="tab-icon">▤</span>Mezclador</button></div>
+          <label class="grid-snap-select">AJUSTE<select id="grid-snap" aria-label="Ajuste a rejilla"><option value="0.25">1/16</option><option value="0.5">1/8</option><option value="1">1/4</option><option value="bar">Compás</option><option value="0">Libre</option></select></label>
           <div class="session-indicators"><span><i class="indicator-dot midi-dot"></i>MIDI</span><span><i class="indicator-dot audio-dot"></i>AUDIO</span></div>
         </section>
 
@@ -110,7 +111,8 @@
         </section>
 
         <section class="lower-panel">
-          <div class="lower-panel-title"><span class="panel-grip">⠿</span><strong>DETALLES DE SESIÓN</strong><span class="lower-panel-subtitle">Revisión y configuración de audio</span></div>
+          <div class="lower-panel-title"><span class="panel-grip">⠿</span><strong>EDITOR CONTEXTUAL</strong><span class="lower-panel-subtitle">Selecciona un clip para consultar sus propiedades</span></div>
+          <div id="clip-inspector" class="clip-inspector" aria-live="polite"><span>Sin clip seleccionado</span></div>
           <details id="audio-settings" class="audio-settings">
             <summary class="audio-summary"><span class="audio-summary-icon">◉</span><span id="audio-settings-title">Buffers y latencia</span><span id="audio-apply-state" class="revision">Cargando…</span><span class="summary-chevron">⌄</span></summary>
             <div class="audio-settings-body">
@@ -126,7 +128,7 @@
               <div class="audio-device-row"><label for="audio-output-device">Salida de audio</label><select id="audio-output-device"><option value="pipewire:default">Automática (AudioBox si está disponible)</option></select><span>Se conecta al iniciar Play; el cambio no interrumpe un stream activo.</span></div>
               <div class="audio-readouts"><span>Frecuencia<strong id="audio-sample-rate">—</strong></span><span>Periodo solicitado<strong id="audio-requested-period">—</strong></span><span>Periodo efectivo<strong id="audio-effective-period">No disponible</strong></span><span>Búfer extra<strong id="audio-safety-duration">—</strong></span></div>
               <p class="audio-help">Los perfiles se aplican al iniciar el siguiente stream. PipeWire puede negociar un periodo distinto; el margen PCM sólo afecta la cola de pistas SoundFont.</p>
-              <p class="audio-help audio-warning">Esta shell reproduce clips MIDI. Grabación live, monitorización MIDI y clips de audio todavía no están disponibles aquí.</p>
+              <p class="audio-help audio-warning">Play reproduce clips MIDI y regiones de audio. Record graba pistas armadas como regiones. La captura MIDI live todavía se controla desde CLI.</p>
             </div>
           </details>
         </section>

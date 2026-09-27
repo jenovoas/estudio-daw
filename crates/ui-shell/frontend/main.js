@@ -45,6 +45,12 @@ const elements = {
   showArrangement: document.querySelector("#show-arrangement"),
   showSession: document.querySelector("#show-session"),
   showMixer: document.querySelector("#show-mixer"),
+  gridSnap: document.querySelector("#grid-snap"),
+  railArrangement: document.querySelector("#rail-arrangement"),
+  railSession: document.querySelector("#rail-session"),
+  railSettings: document.querySelector("#rail-settings"),
+  audioSettings: document.querySelector("#audio-settings"),
+  clipInspector: document.querySelector("#clip-inspector"),
   trackCount: document.querySelector("#track-count"),
   midiCount: document.querySelector("#midi-count"),
   audioCount: document.querySelector("#audio-count"),
@@ -89,6 +95,7 @@ let trackGroupDraft = "";
 let pendingAudioPath = null;
 let editCursorTick = 0;
 let editCursorProjectId = null;
+let selectedClipId = null;
 const waveformCache = new Map();
 let previewContext = null;
 let currentPreview = null;
@@ -260,6 +267,10 @@ function selectSurface(surface) {
     session: elements.showSession,
     mixer: elements.showMixer,
   };
+  const rail = {
+    arrangement: elements.railArrangement,
+    session: elements.railSession,
+  };
   elements.arrangementView.hidden = surface !== "arrangement";
   elements.sessionView.hidden = surface !== "session";
   elements.mixerView.hidden = surface !== "mixer";
@@ -268,6 +279,12 @@ function selectSurface(surface) {
     const active = name === surface;
     button.classList.toggle("is-selected", active);
     button.setAttribute("aria-selected", String(active));
+  }
+  for (const [name, button] of Object.entries(rail)) {
+    const active = name === surface;
+    button.classList.toggle("is-active", active);
+    if (active) button.setAttribute("aria-current", "page");
+    else button.removeAttribute("aria-current");
   }
 }
 
@@ -549,46 +566,141 @@ function updateTrackMeters(meters) {
   }
 }
 
-function renderSessionSurface(tracks) {
+function renderSessionSurface(snapshot) {
+  const tracks = snapshot.tracks.filter((track) => !["master", "bus", "return"].includes(track.role));
   elements.sessionView.replaceChildren();
   const heading = document.createElement("div");
   heading.className = "surface-heading";
-  heading.innerHTML = "<strong>SESSION</strong><span>Identidad compartida · lanzamiento de clips pendiente</span>";
+  const title = document.createElement("strong");
+  title.textContent = "SESSION";
+  const hint = document.createElement("span");
+  hint.textContent = "Matriz de escenas y clips · lanzamiento pendiente del planificador";
+  const addScene = document.createElement("button");
+  addScene.className = "button button-accent session-add-scene";
+  addScene.type = "button";
+  addScene.textContent = "+ Escena";
+  addScene.title = "Añadir una escena vacía al proyecto";
+  addScene.addEventListener("click", () => runCommand("Escena añadida", () => platform.addScene()));
+  heading.append(title, hint, addScene);
   elements.sessionView.append(heading);
   if (tracks.length === 0) {
     const empty = document.createElement("div");
     empty.className = "surface-empty";
-    empty.textContent = "El proyecto todavía no tiene pistas.";
+    empty.textContent = "Añade una pista MIDI o de audio para crear casillas de Session.";
     elements.sessionView.append(empty);
     return;
   }
   const grid = document.createElement("div");
-  grid.className = "session-track-grid";
+  grid.className = "session-matrix";
+  grid.style.setProperty("--session-track-columns", String(tracks.length));
+  const corner = document.createElement("div");
+  corner.className = "session-matrix-corner";
+  corner.textContent = "ESCENA";
+  grid.append(corner);
   for (const track of tracks) {
-    const column = document.createElement("article");
-    column.className = "session-track-card";
-    column.style.setProperty("--track-color", track.color);
+    const header = document.createElement("div");
+    header.className = "session-track-header";
+    header.style.setProperty("--track-color", track.color);
+    header.append(createTrackSelectionControl(track));
     const name = document.createElement("strong");
     name.textContent = track.name;
-    const type = document.createElement("span");
-    type.textContent = track.role === "master" ? "MASTER" : track.role === "bus" ? "BUS" : track.kind.toUpperCase();
-    const channels = document.createElement("small");
-    channels.textContent = trackChannelDescription(track);
-    if (track.groupName) channels.textContent += ` · Grupo: ${track.groupName}`;
-    const emptySlot = document.createElement("div");
-    emptySlot.className = "session-empty-slot";
-    emptySlot.textContent = "Sin escena";
-    const headingRow = document.createElement("div");
-    headingRow.className = "session-track-heading";
-    headingRow.append(name);
-    const removeButton = createTrackRemovalButton(track);
-    if (removeButton) headingRow.append(removeButton);
-    column.append(createTrackSelectionControl(track), headingRow, type, channels, emptySlot);
+    const type = document.createElement("small");
+    type.textContent = track.kind.toUpperCase();
     const meter = createTrackMeter(track);
-    if (meter) column.append(meter);
+    header.append(name, type);
+    if (meter) header.append(meter);
     const controls = createTrackMixerControls(track, true);
-    if (controls) column.append(controls);
-    grid.append(column);
+    if (controls) header.append(controls);
+    const removeButton = createTrackRemovalButton(track);
+    if (removeButton) header.append(removeButton);
+    grid.append(header);
+  }
+  for (const [sceneIndex, scene] of (snapshot.scenes ?? []).entries()) {
+    const sceneHeader = document.createElement("div");
+    sceneHeader.className = "session-scene-header";
+    const sceneName = document.createElement("input");
+    sceneName.value = scene.name;
+    sceneName.setAttribute("aria-label", `Nombre de escena ${scene.name}`);
+    sceneName.title = "Renombrar escena";
+    sceneName.addEventListener("change", () => {
+      const name = sceneName.value.trim();
+      if (name && name !== scene.name) {
+        runCommand("Escena renombrada", () => platform.renameScene(scene.id, name));
+      } else {
+        sceneName.value = scene.name;
+      }
+    });
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "icon-button session-remove-scene";
+    remove.textContent = "×";
+    remove.title = `Quitar escena ${scene.name} y sus casillas`;
+    remove.setAttribute("aria-label", remove.title);
+    remove.addEventListener("click", () => runCommand("Escena quitada", () => platform.removeScene(scene.id)));
+    const moveUp = document.createElement("button");
+    moveUp.type = "button";
+    moveUp.className = "icon-button session-order-button";
+    moveUp.textContent = "↑";
+    moveUp.disabled = sceneIndex === 0;
+    moveUp.title = `Mover ${scene.name} antes`;
+    moveUp.setAttribute("aria-label", moveUp.title);
+    moveUp.addEventListener("click", () => runCommand("Orden de escenas actualizado", () => platform.moveScene(scene.id, sceneIndex - 1)));
+    const moveDown = document.createElement("button");
+    moveDown.type = "button";
+    moveDown.className = "icon-button session-order-button";
+    moveDown.textContent = "↓";
+    moveDown.disabled = sceneIndex === snapshot.scenes.length - 1;
+    moveDown.title = `Mover ${scene.name} después`;
+    moveDown.setAttribute("aria-label", moveDown.title);
+    moveDown.addEventListener("click", () => runCommand("Orden de escenas actualizado", () => platform.moveScene(scene.id, sceneIndex + 1)));
+    const launchScene = document.createElement("button");
+    launchScene.type = "button";
+    launchScene.className = "session-launch session-launch-scene";
+    launchScene.textContent = "▶";
+    launchScene.disabled = true;
+    launchScene.title = "El lanzamiento de escenas requiere conectar el planificador cuantizado de Session";
+    launchScene.setAttribute("aria-label", launchScene.title);
+    sceneHeader.append(launchScene, sceneName, moveUp, moveDown, remove);
+    grid.append(sceneHeader);
+    for (const track of tracks) {
+      const cell = document.createElement("div");
+      cell.className = "session-cell";
+      const slot = (snapshot.clipSlots ?? []).find((item) => item.sceneId === scene.id && item.trackId === track.id);
+      const select = document.createElement("select");
+      select.setAttribute("aria-label", `Clip de ${track.name} en ${scene.name}`);
+      select.title = "Asignar un clip existente a esta casilla";
+      select.append(new Option("Casilla vacía", ""));
+      for (const clip of snapshot.midiClips.filter((item) => item.trackId === track.id)) {
+        select.append(new Option(`MIDI · ${clip.name}`, `midi:${clip.id}`));
+      }
+      for (const clip of (snapshot.audioClips ?? []).filter((item) => item.trackId === track.id)) {
+        select.append(new Option(`Audio · ${clip.name}`, `audio:${clip.id}`));
+      }
+      select.value = slot?.clipKind && slot.clipId ? `${slot.clipKind}:${slot.clipId}` : "";
+      select.addEventListener("change", () => {
+        const [kind, id] = select.value ? select.value.split(":", 2) : [null, null];
+        runCommand("Casilla de Session actualizada", () => platform.setClipSlot(scene.id, track.id, kind, id));
+      });
+      const launch = document.createElement("button");
+      launch.type = "button";
+      launch.className = `session-launch${slot?.clipId ? " has-clip" : ""}`;
+      launch.textContent = slot?.clipId ? "▶" : "+";
+      launch.disabled = Boolean(slot?.clipId);
+      launch.title = slot?.clipId
+        ? "El lanzamiento de clips requiere conectar el planificador cuantizado de Session"
+        : "Asigna un clip existente a esta casilla";
+      if (!slot?.clipId) {
+        launch.addEventListener("click", () => select.focus());
+      }
+      cell.append(launch, select);
+      grid.append(cell);
+    }
+  }
+  if (!(snapshot.scenes ?? []).length) {
+    const empty = document.createElement("div");
+    empty.className = "surface-empty session-empty-state";
+    empty.textContent = "Aún no hay escenas. Añade una escena y asigna clips existentes a las casillas.";
+    grid.append(empty);
   }
   elements.sessionView.append(grid);
 }
@@ -689,6 +801,7 @@ function renderSnapshot(snapshot) {
   setProjectEnabled(true);
   if (snapshot.projectId !== editCursorProjectId) {
     selectedTrackIds = new Set();
+    selectedClipId = null;
     trackGroupDraft = "";
     editCursorTick = 0;
     transportPositionTick = 0;
@@ -748,7 +861,7 @@ function renderSnapshot(snapshot) {
   const groupInput = document.querySelector(".track-group-toolbar input");
   if (groupInput && groupInput.value !== trackGroupDraft) groupInput.value = trackGroupDraft;
   syncTrackSelectionUi();
-  renderSessionSurface(snapshot.tracks);
+  renderSessionSurface(snapshot);
   renderMixerSurface(snapshot.tracks);
   const previousTrack = elements.importTrack.value;
   elements.importTrack.replaceChildren();
@@ -776,6 +889,7 @@ function renderSnapshot(snapshot) {
     emptyLane.className = "empty-state timeline-empty";
     emptyLane.textContent = "Sin pistas en el arreglo";
     elements.lanes.append(emptyLane);
+    renderClipInspector(snapshot);
     renderEditCursor();
     renderTransportPosition(transportPositionTick);
     return;
@@ -820,8 +934,12 @@ function renderSnapshot(snapshot) {
     for (const clip of clips) {
       const block = document.createElement("div");
       block.className = "midi-clip";
+      if (selectedClipId === clip.id) block.classList.add("is-inspected");
       block.style.setProperty("--clip-hue", String((trackIndex * 54 + 24) % 360));
       block.title = `${clip.name} · ${clip.noteCount} notas`;
+      block.tabIndex = 0;
+      block.setAttribute("aria-label", `Seleccionar clip MIDI ${clip.name}, ${clip.noteCount} notas`);
+      bindClipSelection(block, clip.id, snapshot);
       const left = Math.max(0, Number(clip.startBeats) || 0);
       const width = Math.max(0.25, Number(clip.durationBeats) || 0.25);
       block.style.left = `${left / (snapshot.beatsPerBar * 16) * 100}%`;
@@ -850,7 +968,11 @@ function renderSnapshot(snapshot) {
     for (const clip of audioClips) {
       const block = document.createElement("div");
       block.className = "audio-clip";
+      if (selectedClipId === clip.id) block.classList.add("is-inspected");
+      block.tabIndex = 0;
+      block.setAttribute("aria-label", `Seleccionar región de audio ${clip.name}`);
       block.title = `${clip.name} · ${clip.sourceName ?? "fuente"} · ${clip.sampleRateHz} Hz · ${clip.channels} canales · ${clip.durationBeats.toFixed(2)} pulsos. Arrastra para mover; usa los bordes para recortar.`;
+      bindClipSelection(block, clip.id, snapshot);
       const left = Math.max(0, Number(clip.startBeats) || 0);
       const width = Math.max(0.25, Number(clip.durationBeats) || 0.25);
       block.style.left = `${left / (snapshot.beatsPerBar * 16) * 100}%`;
@@ -914,7 +1036,67 @@ function renderSnapshot(snapshot) {
   }
   renderEditCursor();
   renderTransportPosition(transportPositionTick);
+  renderClipInspector(snapshot);
   syncTrackSelectionUi();
+}
+
+function renderClipInspector(snapshot) {
+  elements.clipInspector.replaceChildren();
+  const midiClip = snapshot.midiClips.find((clip) => clip.id === selectedClipId);
+  const audioClip = (snapshot.audioClips ?? []).find((clip) => clip.id === selectedClipId);
+  const clip = audioClip ?? midiClip;
+  if (!clip) {
+    selectedClipId = null;
+    const empty = document.createElement("span");
+    empty.textContent = "Selecciona una región de audio o un clip MIDI en Arreglo.";
+    elements.clipInspector.append(empty);
+    return;
+  }
+  const track = snapshot.tracks.find((item) => item.id === clip.trackId);
+  const name = document.createElement("strong");
+  name.textContent = clip.name;
+  const type = document.createElement("span");
+  type.className = "clip-inspector-type";
+  type.textContent = audioClip ? "AUDIO" : "MIDI";
+  const trackName = document.createElement("span");
+  trackName.textContent = `Pista: ${track?.name ?? "desconocida"}`;
+  const position = document.createElement("span");
+  position.textContent = `Inicio: ${formatBarBeat(Math.round((Number(clip.startBeats) || 0) * 960))}`;
+  const length = document.createElement("span");
+  length.textContent = audioClip
+    ? `Duración: ${audioClip.durationBeats.toFixed(2)} pulsos · ${audioClip.sampleRateHz} Hz · ${audioClip.channels} canales`
+    : `Duración: ${midiClip.durationBeats.toFixed(2)} pulsos · ${midiClip.noteCount} notas`;
+  elements.clipInspector.append(type, name, trackName, position, length);
+  if (audioClip?.sourceName) {
+    const source = document.createElement("span");
+    source.className = "clip-inspector-source";
+    source.textContent = `Fuente: ${audioClip.sourceName}`;
+    elements.clipInspector.append(source);
+  }
+}
+
+function bindClipSelection(block, clipId, snapshot) {
+  const select = () => {
+    selectedClipId = clipId;
+    for (const selected of elements.lanes.querySelectorAll(".is-inspected")) {
+      selected.classList.remove("is-inspected");
+    }
+    renderClipInspector(snapshot);
+    block.classList.add("is-inspected");
+  };
+  block.addEventListener("click", (event) => {
+    if (event.target.closest("button")) return;
+    select();
+  });
+  block.addEventListener("pointerdown", (event) => {
+    if (event.target.closest("button")) return;
+    select();
+  });
+  block.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    event.preventDefault();
+    select();
+  });
 }
 
 function makeAudioTrimHandle(edge, name) {
@@ -986,15 +1168,22 @@ function bindAudioRegionEditing(block, lane, clip, beatsPerBar, tempoBpm) {
     }
     const deltaBeats = delta / current.laneWidth * timelineBeats;
     const samplesPerBeat = clip.sampleRateHz * 60 / Math.max(1, Number(tempoBpm) || 120);
+    const snapValue = elements.gridSnap.value;
+    const snapBeats = snapValue === "bar"
+      ? Math.max(1, Number(beatsPerBar) || 4)
+      : Number(snapValue);
     let edit;
     if (current.edge === "move") {
+      const proposedStart = originalLeft + deltaBeats;
+      const snappedStart = snapBeats > 0 ? Math.round(proposedStart / snapBeats) * snapBeats : proposedStart;
       edit = {
         action: "move",
         clipId: clip.id,
-        startTick: Math.round(Math.max(0, Math.min(timelineBeats - originalWidth, originalLeft + deltaBeats)) * 480),
+        startTick: Math.round(Math.max(0, Math.min(timelineBeats - originalWidth, snappedStart)) * 480),
       };
     } else {
-      const trimBeats = current.edge === "left" ? Math.max(0, deltaBeats) : Math.max(0, -deltaBeats);
+      const rawTrimBeats = current.edge === "left" ? Math.max(0, deltaBeats) : Math.max(0, -deltaBeats);
+      const trimBeats = snapBeats > 0 ? Math.round(rawTrimBeats / snapBeats) * snapBeats : rawTrimBeats;
       if (trimBeats === 0) {
         block.style.left = `${originalLeft / timelineBeats * 100}%`;
         block.style.width = `${originalWidth / timelineBeats * 100}%`;
@@ -1342,6 +1531,17 @@ elements.importBar.addEventListener("change", () => {
 elements.showArrangement.addEventListener("click", () => selectSurface("arrangement"));
 elements.showSession.addEventListener("click", () => selectSurface("session"));
 elements.showMixer.addEventListener("click", () => selectSurface("mixer"));
+elements.gridSnap.addEventListener("change", () => {
+  const label = elements.gridSnap.selectedOptions[0]?.textContent ?? "rejilla";
+  setNotice("Ajuste actualizado", `El movimiento y recorte de regiones de audio usarán ${label}.`);
+});
+elements.railArrangement.addEventListener("click", () => selectSurface("arrangement"));
+elements.railSession.addEventListener("click", () => selectSurface("session"));
+elements.railSettings.addEventListener("click", () => {
+  elements.audioSettings.open = true;
+  elements.audioSettings.scrollIntoView({ block: "nearest" });
+  elements.audioSettings.querySelector("summary").focus();
+});
 
 elements.newProject.addEventListener("click", async () => {
   await whileBusy([elements.newProject], async () => { try {

@@ -101,9 +101,11 @@ pista ni implementa entradas, envíos, retornos o procesadores.
 
 Los ajustes de aplicación permiten escoger un sink PipeWire para el stream
 Master del próximo inicio. La opción automática conserva la preferencia por
-AudioBox y usa el destino predeterminado cuando no hay una disponible. La
-enumeración y la selección ocurren fuera del callback; aún faltan entrada física
-y ruteo de hardware por pista.
+AudioBox y usa el destino predeterminado cuando no hay una disponible. El
+Mezclador permite asignar fuentes PipeWire y canales 1/2 por pista de audio;
+Record captura las pistas armadas a WAV y Stop crea regiones de proyecto. La
+enumeración y selección ocurren fuera del callback; aún faltan salidas físicas
+independientes por pista, medidor de entrada y QA con AudioBox.
 
 La escala de la interfaz es una preferencia local del WebView, no del proyecto.
 Tauri controla el zoom entre 80 % y 150 %; Ctrl++/Ctrl+- ajusta en pasos de 10 %
@@ -113,6 +115,20 @@ Las pistas editables tienen una acción de quitar en Arreglo, Session y Mezclado
 El comando elimina sus clips, regiones y referencias de medios del proyecto,
 reasigna las pistas que apuntaban a ella y se puede deshacer desde el historial;
 no borra los archivos fuente del disco. El canal Master queda protegido en la UI.
+
+La barra de herramientas lateral y las pestañas del encabezado cambian entre
+Arreglo, Session y Mezclador. Session presenta pistas por columnas y escenas
+por filas; sus escenas y asignaciones de clip son comandos reversibles, aunque
+se pueden reordenar con controles arriba/abajo. El lanzamiento permanece
+deshabilitado hasta conectar el planificador. El botón
+de ajustes abre Preferencias de audio. Al seleccionar un clip MIDI o una región
+de audio en Arreglo, el panel inferior presenta un inspector con pista,
+ubicación, duración y, para audio, su fuente; la edición contextual MIDI/audio
+todavía no está conectada. Las regiones de audio se pueden mover y recortar por
+sus bordes con la rejilla seleccionada (1/16, 1/8, negra, compás o libre); el
+recorte del inicio avanza también el desplazamiento de fuente y los cambios
+usan el historial del proyecto. Los clips MIDI aún son de sólo lectura en
+Arrangement.
 
 En modo navegador el dominio portable podrá compartir modelos y comandos, pero el
 backend de audio/compute será otro adaptador (por ejemplo Web Audio/AudioWorklet y

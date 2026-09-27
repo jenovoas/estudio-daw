@@ -700,7 +700,10 @@ Las pistas que no sean Master se pueden quitar desde Arreglo, Session o Mezclado
 la acción también es reversible y elimina clips/regiones del proyecto sin borrar
 los archivos fuente del disco.
 Arreglo, Session y Mezclador muestran las pistas desde la misma instantánea.
-Session muestra encabezados/casillas vacías y controles compartidos de mezcla;
+Session muestra pistas por columnas y escenas por filas; permite crear, renombrar,
+reordenar y quitar escenas, y asignar clips existentes de manera reversible,
+pero aún no lanzarlos.
+Sus encabezados tienen controles compartidos de mezcla;
 Arrangement y Mezclador exponen ACT/M/S y ganancia/panorama para pistas no master.
 Los grupos sólo organizan: no enlazan la mezcla de sus pistas. Los medidores de
 pista muestran pico y RMS de bloque; el canal Master aplica activa/silencio/
@@ -721,7 +724,10 @@ selección mono/estéreo de canales de origen, posición inicial por compás y
 forma de onda real reducida. En Arreglo se pueden mover, recortar hacia dentro
 y quitar regiones sin reescribir la fuente; los cambios son reversibles. Un
 clic en la regla o en un espacio vacío coloca el cursor de edición, que sirve
-como punto de inserción para la siguiente importación.
+como punto de inserción para la siguiente importación. El movimiento y recorte
+se ajustan a 1/16, 1/8, negra, compás o movimiento libre. Al recortar el inicio,
+el desplazamiento dentro del archivo avanza junto con la región; la fuente no
+se modifica.
 Es un prototipo de capacidades parciales: su composición
 visual actual no satisface todavía el flujo creativo de Ableton Live 12; no
 incluye lanzamiento de clips en Session, edición de clips/notas ni
