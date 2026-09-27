@@ -10,14 +10,14 @@ Define el comportamiento determinista de una cadena DSP modificada en el sitio y
 El `RenderPlan` actual MUST procesar los nodos en orden de inserción sobre un mismo bloque de audio modificado en el sitio. El constructor MUST NOT exponer una API de conexiones que sugiera ramas de grafo independientes o suma automática.
 
 #### Scenario: cadena de procesamiento ordenada
-- **WHEN** multiple nodes are added and a block is processed
-- **THEN** each node receives the block after the preceding node has processed it
-- **AND** processing order is deterministic and matches insertion order
+- **WHEN** se añaden varios nodos y se procesa un bloque
+- **THEN** cada nodo recibe el bloque que procesó el nodo anterior
+- **AND** el orden de procesamiento es determinista y coincide con el orden de inserción
 
 ### Requirement: las fuentes de instrumentos en paralelo se mezclan de forma explícita
 Las fuentes en paralelo MUST combinarse mediante un mezclador que ofrezca memoria temporal preasignada independiente para cada fuente y sume sus muestras antes de escribir el bloque de salida.
 
 #### Scenario: dos fuentes de instrumento simultáneas
-- **WHEN** a mixer renders two source nodes for one block
-- **THEN** output contains the sum of both source signals
-- **AND** the callback performs no allocation to mix them
+- **WHEN** un mezclador procesa dos nodos de origen en un bloque
+- **THEN** la salida contiene la suma de ambas señales de origen
+- **AND** la llamada de retorno no reserva memoria para mezclarlas

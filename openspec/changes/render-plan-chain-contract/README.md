@@ -1,3 +1,3 @@
-# render-plan-chain-contract
+# Contrato de cadena de RenderPlan
 
-Make RenderPlan semantics an explicit in-place processing chain
+Definir que RenderPlan procesa explícitamente los datos en el mismo bloque y en orden

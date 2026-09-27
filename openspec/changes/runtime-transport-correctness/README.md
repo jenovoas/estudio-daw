@@ -1,3 +1,3 @@
-# runtime-transport-correctness
+# Corrección del transporte
 
-Correct transport pause, MIDI clip bounds, and realtime safety in desktop playback
+Corregir la pausa del transporte, los límites de clips MIDI y la seguridad de tiempo real en la reproducción de escritorio

@@ -159,7 +159,7 @@ de formatos como OpenSpec; no se usan como excusa para añadir prosa en inglés.
   a Neovim porque VS Code se vuelve pesado.
 
 <!-- codebase-memory-mcp:start -->
-For structural codebase exploration, use the installed `codebase-memory` skill.
+Para explorar estructuralmente el código, usa la habilidad instalada `codebase-memory`.
 <!-- codebase-memory-mcp:end -->
 
 ## Corrección de auditoría — 2026-09-27
