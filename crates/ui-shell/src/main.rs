@@ -887,6 +887,14 @@ fn set_transport(
     let application = application
         .as_mut()
         .ok_or_else(|| "primero abre un proyecto".to_owned())?;
+    if command == "metronome-on" || command == "metronome-off" {
+        let audio = state
+            .audio
+            .lock()
+            .map_err(|_| "el estado del motor de audio quedó bloqueado".to_owned())?;
+        audio.set_metronome(command == "metronome-on");
+        return Ok(summarize(application, audio.is_connected()));
+    }
     if command == "panic" {
         let mut audio = state
             .audio

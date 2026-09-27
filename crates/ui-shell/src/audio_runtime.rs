@@ -175,6 +175,114 @@ struct TransportPositionNode {
     end_position_ticks: Option<u64>,
 }
 
+struct MetronomeNode {
+    enabled: Arc<AtomicBool>,
+    sample_rate: f64,
+    frames_per_beat: f64,
+    phase_offset_frames: f64,
+    beat_offset: u64,
+    beats_per_bar: u32,
+    frame_cursor: u64,
+    next_beat_ordinal: u64,
+    next_beat_frame: u64,
+    click_start_frame: Option<u64>,
+    accented_click: bool,
+}
+
+impl MetronomeNode {
+    fn new(
+        enabled: Arc<AtomicBool>,
+        sample_rate: u32,
+        tempo_bpm: f64,
+        time_signature: &estudio_daw_project_model::TimeSignature,
+        start_position_ticks: u64,
+    ) -> Self {
+        let ticks_per_quarter = u64::from(estudio_daw_application::TICKS_PER_QUARTER);
+        let beat_ticks = (ticks_per_quarter.saturating_mul(4)
+            / u64::from(time_signature.denominator.max(1)))
+        .max(1);
+        let frames_per_beat = f64::from(sample_rate) * 60.0 / tempo_bpm
+            * (4.0 / f64::from(time_signature.denominator.max(1)));
+        let phase_offset_frames =
+            (start_position_ticks % beat_ticks) as f64 * frames_per_beat / beat_ticks as f64;
+        let next_beat_ordinal = u64::from(phase_offset_frames != 0.0);
+        let next_beat_frame = ((next_beat_ordinal as f64 * frames_per_beat - phase_offset_frames)
+            .ceil()
+            .max(0.0)) as u64;
+        Self {
+            enabled,
+            sample_rate: f64::from(sample_rate),
+            frames_per_beat,
+            phase_offset_frames,
+            beat_offset: start_position_ticks / beat_ticks,
+            beats_per_bar: time_signature.numerator.max(1),
+            frame_cursor: 0,
+            next_beat_ordinal,
+            next_beat_frame,
+            click_start_frame: None,
+            accented_click: false,
+        }
+    }
+}
+
+impl AudioNode for MetronomeNode {
+    fn process(&mut self, interleaved: &mut [f32]) -> Result<(), AudioNodeError> {
+        if interleaved.len() % 2 != 0 {
+            return Err(AudioNodeError::InvalidBlockLength);
+        }
+        if !self.enabled.load(Ordering::Acquire) {
+            self.frame_cursor = self
+                .frame_cursor
+                .saturating_add((interleaved.len() / 2) as u64);
+            self.next_beat_ordinal = (((self.frame_cursor as f64 + self.phase_offset_frames)
+                / self.frames_per_beat)
+                .floor() as u64)
+                .saturating_add(1);
+            self.next_beat_frame = ((self.next_beat_ordinal as f64 * self.frames_per_beat
+                - self.phase_offset_frames)
+                .ceil()
+                .max(0.0)) as u64;
+            self.click_start_frame = None;
+            return Ok(());
+        }
+
+        for (frame_index, stereo) in interleaved.chunks_exact_mut(2).enumerate() {
+            let current_frame = self.frame_cursor.saturating_add(frame_index as u64);
+            if current_frame >= self.next_beat_frame {
+                let absolute_beat = self.beat_offset.saturating_add(self.next_beat_ordinal);
+                self.accented_click = absolute_beat % u64::from(self.beats_per_bar) == 0;
+                self.click_start_frame = Some(current_frame);
+                self.next_beat_ordinal = self.next_beat_ordinal.saturating_add(1);
+                self.next_beat_frame = ((self.next_beat_ordinal as f64 * self.frames_per_beat
+                    - self.phase_offset_frames)
+                    .ceil()
+                    .max(0.0)) as u64;
+            }
+            let Some(click_start) = self.click_start_frame else {
+                continue;
+            };
+            let elapsed_frames = current_frame.saturating_sub(click_start);
+            let click_frames = (self.sample_rate * 0.012) as u64;
+            if elapsed_frames >= click_frames {
+                self.click_start_frame = None;
+                continue;
+            }
+            let frequency = if self.accented_click { 1_320.0 } else { 880.0 };
+            let phase =
+                std::f64::consts::TAU * frequency * elapsed_frames as f64 / self.sample_rate;
+            let envelope = 1.0 - elapsed_frames as f64 / click_frames.max(1) as f64;
+            let amplitude = if self.accented_click { 0.28 } else { 0.18 };
+            let sample = (phase.sin() * envelope * amplitude) as f32;
+            stereo[0] += sample;
+            stereo[1] += sample;
+        }
+        self.frame_cursor = self
+            .frame_cursor
+            .saturating_add((interleaved.len() / 2) as u64);
+        Ok(())
+    }
+}
+
 impl AudioNode for TransportPositionNode {
     fn process(&mut self, interleaved: &mut [f32]) -> Result<(), AudioNodeError> {
         if interleaved.len() % 2 != 0 {
@@ -371,6 +479,7 @@ pub struct AudioRuntimeHost {
     playback: Option<PlaybackSession>,
     plan_control: Option<Arc<std::sync::Mutex<RenderPlanControl>>>,
     position_ticks: Arc<AtomicU64>,
+    metronome_enabled: Arc<AtomicBool>,
 }
 
 impl Default for AudioRuntimeHost {
@@ -379,6 +488,7 @@ impl Default for AudioRuntimeHost {
             playback: None,
             plan_control: None,
             position_ticks: Arc::new(AtomicU64::new(0)),
+            metronome_enabled: Arc::new(AtomicBool::new(false)),
         }
     }
 }
@@ -392,6 +502,10 @@ impl AudioRuntimeHost {
 
     pub fn position_ticks(&self) -> u64 {
         self.position_ticks.load(Ordering::Acquire)
+    }
+
+    pub fn set_metronome(&self, enabled: bool) {
+        self.metronome_enabled.store(enabled, Ordering::Release);
     }
 
     pub fn position_ticks_checked(&self) -> Result<u64, String> {
@@ -476,6 +590,7 @@ impl AudioRuntimeHost {
             profile.playback_safety_frames as usize,
             Arc::clone(&paused),
             Arc::clone(&self.position_ticks),
+            Arc::clone(&self.metronome_enabled),
             start_position_ticks,
             loop_range.map(|range| range.end_tick),
         )?;
@@ -491,6 +606,7 @@ impl AudioRuntimeHost {
                 profile.playback_safety_frames as usize,
                 Arc::clone(&paused),
                 Arc::clone(&self.position_ticks),
+                Arc::clone(&self.metronome_enabled),
                 range.start_tick,
                 Some(range.end_tick),
             )?)
@@ -572,6 +688,7 @@ impl AudioRuntimeHost {
                     let loop_stop = Arc::clone(&self.playback.as_ref().unwrap().stop);
                     let loop_paused = Arc::clone(&paused);
                     let loop_position = Arc::clone(&self.position_ticks);
+                    let loop_metronome = Arc::clone(&self.metronome_enabled);
                     let loop_control = Arc::clone(&control);
                     let loop_schedule = self.playback.as_ref().unwrap().schedule.clone();
                     let loop_project = Arc::clone(&project_model);
@@ -593,6 +710,7 @@ impl AudioRuntimeHost {
                                 loop_stop,
                                 loop_paused,
                                 loop_position,
+                                loop_metronome,
                                 loop_active_revision,
                             ) {
                                 if let Ok(mut state) = loop_error.lock() {
@@ -699,6 +817,7 @@ impl AudioRuntimeHost {
             profile.playback_safety_frames as usize,
             Arc::clone(&playback.paused),
             Arc::clone(&self.position_ticks),
+            Arc::clone(&self.metronome_enabled),
             position_ticks,
             range.map(|range| range.end_tick),
         )?;
@@ -790,6 +909,7 @@ fn build_project_playback(
         queue_target_frames,
         paused,
         position_ticks,
+        Arc::new(AtomicBool::new(false)),
         start_position_ticks,
         None,
     )
@@ -802,6 +922,7 @@ fn build_project_playback_with_end(
     queue_target_frames: usize,
     paused: Arc<AtomicBool>,
     position_ticks: Arc<AtomicU64>,
+    metronome_enabled: Arc<AtomicBool>,
     start_position_ticks: u64,
     end_position_ticks: Option<u64>,
 ) -> Result<
@@ -827,6 +948,13 @@ fn build_project_playback_with_end(
         / 1_000_000)
         .min(u128::from(u64::MAX)) as u64;
     let mut sources: Vec<Box<dyn estudio_daw_audio_engine::AudioNode>> = Vec::new();
+    sources.push(Box::new(MetronomeNode::new(
+        metronome_enabled,
+        sample_rate,
+        bpm,
+        &project.transport.time_signature,
+        start_position_ticks,
+    )));
     let mut workers = Vec::new();
     let mut senders = Vec::new();
     let mut schedule = Vec::new();
@@ -1254,6 +1382,7 @@ fn coordinate_loop(
     stop: Arc<AtomicBool>,
     paused: Arc<AtomicBool>,
     position_ticks: Arc<AtomicU64>,
+    metronome_enabled: Arc<AtomicBool>,
     active_project_revision: Arc<AtomicU64>,
 ) -> Result<(), String> {
     let mut prepared_revision = project_model.revision.load(Ordering::Acquire);
@@ -1272,6 +1401,7 @@ fn coordinate_loop(
                 range,
                 Arc::clone(&paused),
                 Arc::clone(&position_ticks),
+                Arc::clone(&metronome_enabled),
             )?;
         }
         let (plan, senders, events) = prepared;
@@ -1290,6 +1420,7 @@ fn coordinate_loop(
                 range,
                 Arc::clone(&paused),
                 Arc::clone(&position_ticks),
+                Arc::clone(&metronome_enabled),
             )?;
             continue;
         }
@@ -1325,6 +1456,7 @@ fn coordinate_loop(
             range,
             Arc::clone(&paused),
             Arc::clone(&position_ticks),
+            Arc::clone(&metronome_enabled),
         )?;
     }
     Ok(())
@@ -1338,6 +1470,7 @@ fn prepare_latest_loop_plan(
     range: TransportLoopRange,
     paused: Arc<AtomicBool>,
     position_ticks: Arc<AtomicU64>,
+    metronome_enabled: Arc<AtomicBool>,
 ) -> Result<
     (
         (
@@ -1358,6 +1491,7 @@ fn prepare_latest_loop_plan(
             profile.playback_safety_frames as usize,
             Arc::clone(&paused),
             Arc::clone(&position_ticks),
+            Arc::clone(&metronome_enabled),
             range.start_tick,
             Some(range.end_tick),
         )

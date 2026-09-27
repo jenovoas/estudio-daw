@@ -114,3 +114,9 @@
 - El botón «!» envía CC64=0 seguido de CC123 por los 16 canales de cada instrumento MIDI activo. El comando se entrega al scheduler fuera del callback; está disponible durante Play o pausa y no detiene ni altera el estado del proyecto.
 - OpenSpec `workstation-arrangement-surface-v2` continúa 9/35 y 4.3 sigue abierta: falta metrónomo, precisión sample-accurate y QA funcional/acústica. La tarea no se marca completa.
 - En esta intervención: formato, `cargo check -p estudio-daw-ui-shell`, `node --check` de scripts frontend, `git diff --check` y validación OpenSpec; no ejecutar suites de pruebas. Consultar `git log` para SHAs publicados y actualizar la bitácora de bóveda.
+
+## Avance — metrónomo de transporte
+
+- `MetronomeNode` mezcla un clic de seno corto en el plan de instrumentos; acentúa el primer pulso del compás según tempo/métrica y alinea el siguiente pulso desde la posición inicial del plan. Un `AtomicBool` compartido con planes de seek/loop permite activar/desactivar sin reconstruir ni tocar el callback desde Tauri.
+- El botón «♪» conmuta el metrónomo desde detenido o durante Play y pausa; inicia apagado. Verificar auditivamente su pulso/acento cuando se haga QA de transporte.
+- OpenSpec sigue en 9/35; 4.3 permanece abierta por sincronía sample-accurate de eventos MIDI y QA funcional/acústica. No ejecutar pruebas en esta intervención.

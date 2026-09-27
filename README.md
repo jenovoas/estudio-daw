@@ -718,7 +718,9 @@ región durante Play, el plan activo se recompila en un límite de bloque sin
 cerrar PipeWire; si la edición ocurre en pausa, se aplica al reanudar. El botón
 «!» del transporte envía CC64=0 y CC123 a los 16 canales de cada instrumento
 activo para soltar sustain y apagar notas; sólo está disponible durante Play o
-pausa. Faltan validación funcional/acústica de los cambios de transporte,
+pausa. El botón «♪» activa el clic de metrónomo con acento de compás según
+tempo y métrica; se puede conmutar mientras suena, y queda apagado al abrir la
+aplicación. Faltan validación funcional/acústica de los cambios de transporte,
 selección de salidas físicas,
 grabación live y monitorización de entrada. El scheduler MIDI compara los ticks
 de evento con la posición del plan después de cada bloque; el sondeo es de 1 ms

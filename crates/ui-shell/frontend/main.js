@@ -52,6 +52,7 @@ const elements = {
   pause: document.querySelector("#pause"),
   stop: document.querySelector("#stop"),
   panic: document.querySelector("#panic"),
+  metronome: document.querySelector("#metronome"),
   undo: document.querySelector("#undo"),
   redo: document.querySelector("#redo"),
   audioProfile: document.querySelector("#audio-profile"),
@@ -71,6 +72,7 @@ let projectTransportState = "stopped";
 let transportPositionTick = 0;
 let transportPositionPollPending = false;
 let transportLoopErrorReported = false;
+let metronomeEnabled = false;
 let loopRange = null;
 let pendingLoopStartTick = null;
 let pendingAudioPath = null;
@@ -151,6 +153,7 @@ function setProjectEnabled(enabled) {
   for (const button of [elements.loopPointA, elements.loopPointB, elements.loopRangeClear]) {
     button.disabled = !enabled;
   }
+  elements.metronome.disabled = !enabled;
   elements.panic.disabled = !enabled || !["playing", "paused"].includes(projectTransportState);
   for (const control of [elements.importAudio, elements.importTrack, elements.importBar, elements.importMode, elements.importChannels]) {
     control.disabled = !enabled;
@@ -923,6 +926,20 @@ elements.play.addEventListener("click", async () => {
 elements.pause.addEventListener("click", () => runCommand("Transporte pausado", () => platform.setTransport("pause")));
 elements.stop.addEventListener("click", () => runCommand("Transporte detenido", () => platform.setTransport("stop")));
 elements.panic.addEventListener("click", () => runCommand("Notas MIDI apagadas", () => platform.setTransport("panic")));
+elements.metronome.addEventListener("click", async () => {
+  const enabled = !metronomeEnabled;
+  try {
+    const snapshot = await platform.setTransport(enabled ? "metronome-on" : "metronome-off");
+    metronomeEnabled = enabled;
+    renderSnapshot(snapshot);
+    elements.metronome.setAttribute("aria-pressed", String(enabled));
+    elements.metronome.title = enabled ? "Desactivar metrónomo" : "Activar metrónomo";
+    elements.metronome.classList.toggle("is-selected", enabled);
+    setNotice(enabled ? "Metrónomo activado" : "Metrónomo desactivado", "El clic sigue el tempo y la métrica del proyecto.");
+  } catch (error) {
+    setNotice("No se pudo cambiar el metrónomo", String(error));
+  }
+});
 elements.undo.addEventListener("click", () => runCommand("Undo aplicado", () => platform.historyAction("undo")));
 elements.redo.addEventListener("click", () => runCommand("Redo aplicado", () => platform.historyAction("redo")));
 
