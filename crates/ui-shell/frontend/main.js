@@ -205,7 +205,10 @@ function trackSignalFlow(track, tracks) {
 function createTrackOutputControl(track, tracks) {
   if (track.virtualMaster || track.role === "master") return null;
   const targets = tracks.filter((candidate) => ["audio", "bus", "master"].includes(candidate.role));
-  if (targets.length === 0) return null;
+  const hasPersistedMaster = targets.some((candidate) => candidate.role === "master");
+  if (!hasPersistedMaster) {
+    targets.push({ id: "", name: "Master", role: "master", virtualMaster: true });
+  }
   const field = document.createElement("label");
   field.className = "mixer-output-select";
   const caption = document.createElement("span");
@@ -215,7 +218,7 @@ function createTrackOutputControl(track, tracks) {
   for (const target of targets) {
     if (target.id === track.id) continue;
     const option = document.createElement("option");
-    option.value = target.id;
+    option.value = target.virtualMaster ? "" : target.id;
     option.textContent = target.role === "master" ? "Master" : target.name;
     select.append(option);
   }
