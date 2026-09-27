@@ -117,6 +117,6 @@
 
 ## Avance — metrónomo de transporte
 
-- `MetronomeNode` mezcla un clic de seno corto en el plan de instrumentos; acentúa el primer pulso del compás según tempo/métrica y alinea el siguiente pulso desde la posición inicial del plan. Un `AtomicBool` compartido con planes de seek/loop permite activar/desactivar sin reconstruir ni tocar el callback desde Tauri.
+- Publicado en `9afd8dc`. `MetronomeNode` mezcla un clic de seno corto en el plan de instrumentos; acentúa el primer pulso del compás según tempo/métrica y alinea el siguiente pulso desde la posición inicial del plan. Un `AtomicBool` compartido con planes de seek/loop permite activar/desactivar sin reconstruir ni tocar el callback desde Tauri.
 - El botón «♪» conmuta el metrónomo desde detenido o durante Play y pausa; inicia apagado. Verificar auditivamente su pulso/acento cuando se haga QA de transporte.
 - OpenSpec sigue en 9/35; 4.3 permanece abierta por sincronía sample-accurate de eventos MIDI y QA funcional/acústica. No ejecutar pruebas en esta intervención.

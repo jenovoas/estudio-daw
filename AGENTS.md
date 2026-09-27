@@ -350,11 +350,11 @@ de evidencia descritos en el handoff.
 ## Continuación — pánico MIDI de transporte — 2026-09-27
 
 - Se añade un botón de pánico que el scheduler procesa fuera del callback: envía CC64=0 y CC123 por los 16 canales de cada emisor de instrumento activo. Tauri sólo lo admite con el motor conectado en Play o pausa; no modifica el proyecto ni detiene el transporte.
-- La tarea 4.3 sigue abierta por metrónomo, aplicación sample-accurate y QA funcional/acústica. OpenSpec permanece 9/35; esto es progreso parcial, no cierre de tarea.
+- Al registrar el corte del pánico, 4.3 seguía abierta por metrónomo, sincronía sample-accurate y QA funcional/acústica. OpenSpec permanece 9/35; esto es progreso parcial, no cierre de tarea.
 - Verificación de este corte: formato, compilación de `ui-shell`, sintaxis JavaScript, diff y validación OpenSpec. No ejecutar suites de pruebas.
 
 ## Avance de metrónomo — 2026-09-27
 
 - Se añade `MetronomeNode` al plan DSP con clic tonal corto, acento de inicio de compás, tempo/métrica y fase calculada desde el tick inicial. El control atómico permite activarlo con el transporte detenido o cambiarlo durante Play sin recompilar el plan; las reconstrucciones por búsqueda y loop comparten el mismo control.
 - El metrónomo queda apagado al crear `AudioRuntimeHost`. La tarea 4.3 continúa abierta: el scheduler MIDI no es sample-accurate y falta QA funcional/acústica.
-- Verificación prevista: fmt/fmt check, `cargo check -p estudio-daw-ui-shell`, sintaxis de los scripts frontend, diff check y validación OpenSpec. No ejecutar suites.
+- Implementado en `9afd8dc`. Verificación: `cargo fmt --all`, `cargo fmt --all -- --check`, `cargo check -p estudio-daw-ui-shell`, `node --check` de ambos scripts frontend, `git diff --check` y validación OpenSpec normal (ocho avisos lingüísticos conocidos). No se ejecutaron pruebas; queda pendiente QA auditiva/visual.
