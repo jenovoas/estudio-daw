@@ -2,7 +2,7 @@
 
 ## Runtime behavior
 
-- In the PipeWire callback, a paused stream fills the device buffer with silence and does not call `RenderPlanProcessor::process`; this freezes node state and avoids popping SoundFont PCM. The MIDI scheduler already offsets event deadlines by paused duration and remains the transport clock for this playback adapter.
+- In the PipeWire callback, a paused stream fills the device buffer with silence and does not call `RenderPlanProcessor::process`; this freezes node state and avoids popping SoundFont PCM. The SoundFont worker shares the pause flag, continues handling Stop/MIDI controls, and waits without rendering new chunks. The MIDI scheduler offsets event deadlines by paused duration and remains the transport clock for this playback adapter.
 - Clip events are eligible when their local tick is at or before `duration_ticks`, preserving a NoteOff exactly on the final boundary. Their absolute position is `start_tick + event.tick`.
 - The render-plan exchange must return silence on an absent active plan instead of unwinding in the audio callback. SineSynth clamps NoteOn pitch to 0–127 before indexing its frequency table.
 - The UI demo take derives microseconds from its own PPQ and tempo constants.

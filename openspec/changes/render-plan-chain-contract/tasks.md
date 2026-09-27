@@ -10,4 +10,4 @@
 ## 2. Verify and record
 
 - [x] 2.1 Run `cargo fmt --all`, `cargo test --workspace -- --test-threads=1`, `cargo check --workspace`, strict OpenSpec validation, and `git diff --check`.
-- [ ] 2.2 Append the verified SHA and outcome to AGENTS/vault handoff.
+- [x] 2.2 Append the verified SHA and outcome to AGENTS/vault handoff.

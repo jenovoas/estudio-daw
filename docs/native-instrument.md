@@ -45,7 +45,8 @@ proyecto. El sinte sinusoidal se conserva como fallback explícito.
 Al terminar `midi-synth-live` o `midi-synth-play`, el CLI informa la ocupación
 actual y el máximo observado del ring PCM, su capacidad, la duración equivalente
 del pico (`frames / sample_rate`) y el periodo PipeWire solicitado. La ocupación
-se toma antes de consumir cada bloque; por eso el máximo describe cuánto audio
+se actualiza al producir cada bloque y antes de que el callback lo consuma; por
+eso el máximo describe cuánto audio
 ya renderizado puede quedar por delante de un evento MIDI. No equivale a la
 latencia completa desde una tecla hasta la salida acústica: esa medición requiere
 sincronizar la entrada MIDI con un loopback físico de AudioBox y considerar el

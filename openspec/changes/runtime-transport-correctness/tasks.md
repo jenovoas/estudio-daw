@@ -8,6 +8,7 @@
 - [x] 1.4 Derive demo MIDI microsecond metadata from its declared PPQ and tempo.
 - [x] 1.5 Add regression tests for clip boundaries, out-of-range notes, and empty render-plan slots.
 - [x] 1.6 Keep domain and device transport state consistent when starting playback fails.
+- [x] 1.7 Freeze SoundFont worker rendering during Pause and verify its PCM queue stops advancing.
 
 ## 2. Desktop workstation presentation
 
@@ -18,4 +19,4 @@
 ## 3. Verification and traceability
 
 - [x] 3.1 Run `cargo fmt --all`, `cargo test --workspace -- --test-threads=1`, `cargo check --workspace`, strict OpenSpec validation, and `git diff --check`.
-- [x] 3.2 Update the project handoff and append a factual vault log entry with SHA, files, tests, outcome, and remaining audit items.
+- [ ] 3.2 Update the project handoff and append a factual vault log entry with SHA, files, tests, outcome, and remaining audit items.

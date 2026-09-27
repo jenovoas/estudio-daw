@@ -8,7 +8,7 @@ use crate::{FluidSynthEngine, SynthMidiEvent};
 use estudio_daw_audio_engine::{AudioNode, AudioNodeError, SampleRingBuffer};
 use std::{
     sync::{
-        atomic::{AtomicUsize, Ordering},
+        atomic::{AtomicBool, AtomicUsize, Ordering},
         mpsc::{self, Receiver, SyncSender, TryRecvError},
         Arc,
     },
@@ -155,6 +155,26 @@ impl SoundFontInstrumentWorker {
         program: u8,
         queue_target_frames: usize,
     ) -> Result<(Self, FluidSynthPcmNode), SoundFontWorkerError> {
+        Self::start_with_queue_target_frames_paused(
+            soundfont_path,
+            sample_rate,
+            bank,
+            program,
+            queue_target_frames,
+            Arc::new(AtomicBool::new(false)),
+        )
+    }
+
+    /// Abre el worker con un indicador de pausa compartido con el callback.
+    /// Mientras esté activo, el worker atiende controles pero no avanza voces.
+    pub fn start_with_queue_target_frames_paused(
+        soundfont_path: impl Into<String>,
+        sample_rate: u32,
+        bank: u16,
+        program: u8,
+        queue_target_frames: usize,
+        paused: Arc<AtomicBool>,
+    ) -> Result<(Self, FluidSynthPcmNode), SoundFontWorkerError> {
         let ring = Arc::new(SampleRingBuffer::new(RING_SAMPLES));
         let dropped_events = Arc::new(AtomicUsize::new(0));
         let worker_errors = Arc::new(AtomicUsize::new(0));
@@ -165,6 +185,9 @@ impl SoundFontInstrumentWorker {
         let (ready_tx, ready_rx) = mpsc::sync_channel::<Result<(), String>>(1);
         let worker_ring = Arc::clone(&ring);
         let worker_errors_inner = Arc::clone(&worker_errors);
+        let worker_paused = Arc::clone(&paused);
+        let worker_current_queue = Arc::clone(&current_queue_samples);
+        let worker_peak_queue = Arc::clone(&peak_queue_samples);
         let path = soundfont_path.into();
         let queue_target_samples =
             effective_queue_target_frames(queue_target_frames).saturating_mul(2);
@@ -178,6 +201,9 @@ impl SoundFontInstrumentWorker {
                         return Err(error);
                     }
                     let _ = worker_ring.push(&block);
+                    let queued = worker_ring.available();
+                    worker_current_queue.store(queued, Ordering::Relaxed);
+                    worker_peak_queue.fetch_max(queued, Ordering::Relaxed);
                     Ok(engine)
                 });
                 let mut engine = match result {
@@ -206,6 +232,22 @@ impl SoundFontInstrumentWorker {
                         Err(TryRecvError::Empty) => {}
                     }
 
+                    if worker_paused.load(Ordering::Acquire) {
+                        match command_rx.recv_timeout(Duration::from_millis(1)) {
+                            Ok(WorkerCommand::Stop) | Err(mpsc::RecvTimeoutError::Disconnected) => {
+                                break
+                            }
+                            Ok(WorkerCommand::Midi(event)) => {
+                                if apply_midi_event(&mut engine, event, &mut active_notes).is_err()
+                                {
+                                    worker_errors_inner.fetch_add(1, Ordering::Relaxed);
+                                }
+                            }
+                            Err(mpsc::RecvTimeoutError::Timeout) => {}
+                        }
+                        continue;
+                    }
+
                     // El ring reserva capacidad para tolerar scheduling, pero
                     // no se debe llenar: PCM antiguo delante de un NoteOn se
                     // convierte directamente en latencia audible.
@@ -218,6 +260,9 @@ impl SoundFontInstrumentWorker {
                             block.fill(0.0);
                         }
                         let _ = worker_ring.push(&block);
+                        let queued = worker_ring.available();
+                        worker_current_queue.store(queued, Ordering::Relaxed);
+                        worker_peak_queue.fetch_max(queued, Ordering::Relaxed);
                     } else {
                         // Fuera de RT: permite que MIDI/Stop se atiendan aunque
                         // el consumidor de audio esté pausado.
@@ -457,6 +502,27 @@ mod tests {
         );
         assert_eq!(node.underrun_samples(), 0);
         assert_eq!(worker.worker_errors(), 0);
+    }
+
+    #[test]
+    fn paused_worker_keeps_soundfont_voice_and_pcm_queue_stationary() {
+        let _guard = crate::fluidsynth::FLUIDSYNTH_TEST_LOCK.lock().unwrap();
+        let path = "/usr/share/soundfonts/FluidR3_GM.sf2";
+        if !std::path::Path::new(path).is_file() {
+            return;
+        }
+        let paused = Arc::new(AtomicBool::new(true));
+        let (worker, _node) = SoundFontInstrumentWorker::start_with_queue_target_frames_paused(
+            path, 48_000, 0, 0, 512, paused,
+        )
+        .unwrap();
+        thread::sleep(Duration::from_millis(10));
+        let first = worker.pcm_queue_metrics();
+        thread::sleep(Duration::from_millis(10));
+        let second = worker.pcm_queue_metrics();
+        assert_eq!(first.current_frames, 256);
+        assert_eq!(second.current_frames, first.current_frames);
+        assert_eq!(second.peak_frames, first.peak_frames);
     }
 
     #[test]

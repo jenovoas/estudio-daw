@@ -81,17 +81,18 @@ impl AudioRuntimeHost {
         let max_samples = config
             .period_frames
             .saturating_mul(config.channels as usize);
+        let paused = Arc::new(AtomicBool::new(false));
         let (plan, senders, schedule) = build_project_playback(
             project,
             config.sample_rate,
             max_samples,
             profile.playback_safety_frames as usize,
+            Arc::clone(&paused),
         )?;
         let (control, processor) = render_plan_exchange(plan);
         drop(control);
 
         let stop = Arc::new(AtomicBool::new(false));
-        let paused = Arc::new(AtomicBool::new(false));
         let connected = Arc::new(AtomicBool::new(false));
         let playback_node = preferred_playback_node();
         let worker_stop = Arc::clone(&stop);
@@ -203,6 +204,7 @@ fn build_project_playback(
     sample_rate: u32,
     max_samples: usize,
     queue_target_frames: usize,
+    paused: Arc<AtomicBool>,
 ) -> Result<
     (
         estudio_daw_audio_engine::RenderPlan,
@@ -273,14 +275,16 @@ fn build_project_playback(
                 bank,
                 program,
             } => {
-                let (worker, node) = SoundFontInstrumentWorker::start_with_queue_target_frames(
-                    soundfont.path,
-                    sample_rate,
-                    bank,
-                    program,
-                    queue_target_frames,
-                )
-                .map_err(|error| error.to_string())?;
+                let (worker, node) =
+                    SoundFontInstrumentWorker::start_with_queue_target_frames_paused(
+                        soundfont.path,
+                        sample_rate,
+                        bank,
+                        program,
+                        queue_target_frames,
+                        Arc::clone(&paused),
+                    )
+                    .map_err(|error| error.to_string())?;
                 senders.push(EventSender::SoundFont(worker.event_sender()));
                 sources.push(Box::new(node));
                 workers.push(worker);
@@ -460,8 +464,14 @@ mod tests {
     #[test]
     fn compiles_midi_clips_from_multiple_tracks_at_project_tempo_and_clip_offsets() {
         let project = project_with_two_clips();
-        let (plan, senders, schedule) =
-            build_project_playback(&project, 48_000, 512, 1024).unwrap();
+        let (plan, senders, schedule) = build_project_playback(
+            &project,
+            48_000,
+            512,
+            1024,
+            Arc::new(AtomicBool::new(false)),
+        )
+        .unwrap();
 
         assert_eq!(plan.node_count(), 1);
         assert_eq!(senders.len(), 2);
@@ -489,7 +499,14 @@ mod tests {
                 },
             });
         }
-        let (_, _, schedule) = build_project_playback(&project, 48_000, 512, 1024).unwrap();
+        let (_, _, schedule) = build_project_playback(
+            &project,
+            48_000,
+            512,
+            1024,
+            Arc::new(AtomicBool::new(false)),
+        )
+        .unwrap();
         assert_eq!(schedule.len(), 4);
         assert!(schedule.iter().any(|event| {
             event.at == Duration::from_millis(500)

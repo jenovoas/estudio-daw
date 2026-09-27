@@ -174,7 +174,17 @@ For structural codebase exploration, use the installed `codebase-memory` skill.
   `openspec validate runtime-transport-correctness --strict` y
   `git diff --check` pasaron.
 - Auditoría aún abierta para un cambio separado: límites de dependencias del
-  Portable Domain/ALSA/ffmpeg, semántica real de `RenderPlanBuilder::connect`
-  (orden in-place frente a DAG mezclado), reloj/posición musical Tauri y
-  recompilación del plan tras cambios de proyecto. No declarar esos puntos
-  resueltos por el cambio de transporte.
+  Portable Domain/ALSA/ffmpeg, reloj/posición musical Tauri y recompilación del
+  plan tras cambios de proyecto. La semántica de RenderPlan quedó corregida en
+  `1126436`; este punto ya no está pendiente.
+
+## Corrección del contrato RenderPlan — 2026-09-27
+
+- `1126436` elimina la API `connect` y el orden topológico que no correspondían
+  con los buffers in-place reales. `RenderPlan` ahora documenta y ejecuta una
+  cadena serial de nodos en orden de inserción; el sumado paralelo queda en
+  `InstrumentMixerNode` con scratch preasignado.
+- OpenSpec `render-plan-chain-contract` está completa (6/6). Workspace test y
+  check, fmt, `openspec validate --strict` y diff check pasaron.
+- Continúa pendiente una propuesta OpenSpec separada para dependencias del
+  Portable Domain y el reloj/recompilación de transporte Tauri.
