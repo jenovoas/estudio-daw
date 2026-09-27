@@ -3,5 +3,5 @@
   "identifier": "default",
   "description": "Permite al shell principal invocar el core y abrir proyectos mediante el diálogo nativo.",
   "windows": ["main"],
-  "permissions": ["core:default", "dialog:allow-open", "dialog:allow-save"]
+  "permissions": ["core:default", "core:webview:allow-set-webview-zoom", "dialog:allow-open", "dialog:allow-save"]
 }

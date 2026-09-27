@@ -2,8 +2,10 @@
 // una compilación web podrá proporcionar otra implementación sin tocar la UI.
 const { invoke } = window.__TAURI__.core;
 const { open, save } = window.__TAURI__.dialog;
+const { getCurrentWebview } = window.__TAURI__.webview;
 
 window.estudioPlatform = {
+  setUiZoom: (scale) => getCurrentWebview().setZoom(scale),
   newProject: () => invoke("new_project"),
   demoMidiProject: () => invoke("demo_midi_project"),
   addTrack: (kind) => invoke("add_track", { kind }),

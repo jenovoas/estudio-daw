@@ -99,6 +99,10 @@ buses encadenados) antes de publicar el plan y usa buffers por pista reservados
 antes del callback. Esto no selecciona puertos físicos de audio ni implementa
 entradas, envíos, retornos o procesadores.
 
+La escala de la interfaz es una preferencia local del WebView, no del proyecto.
+Tauri controla el zoom entre 80 % y 150 %; Ctrl++/Ctrl+- ajusta en pasos de 10 %
+y Ctrl+0 restaura el 100 %. Los campos de texto conservan sus teclas + y -.
+
 Las pistas editables tienen una acción de quitar en Arreglo, Session y Mezclador.
 El comando elimina sus clips, regiones y referencias de medios del proyecto,
 reasigna las pistas que apuntaban a ella y se puede deshacer desde el historial;

@@ -689,6 +689,9 @@ pista puede enrutar su salida a otra pista de audio, un bus o Master; los buses
 suman sus entradas y pueden continuar hacia otro destino. El cambio es reversible
 y las rutas cíclicas se rechazan. El plan compila este recorrido antes del stream
 y procesa buffers por pista sin asignar ni resolver conexiones en el callback.
+El tamaño de la interfaz se ajusta de 80 % a 150 % con Ctrl++/Ctrl+- o los
+controles de zoom de la barra superior; Ctrl+0 lo restablece. La preferencia se
+guarda localmente y no cambia el proyecto.
 Las pistas que no sean Master se pueden quitar desde Arreglo, Session o Mezclador;
 la acción también es reversible y elimina clips/regiones del proyecto sin borrar
 los archivos fuente del disco.

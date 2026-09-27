@@ -20,6 +20,10 @@ const elements = {
   addBusTrack: document.querySelector("#add-bus-track"),
   save: document.querySelector("#save-project"),
   saveAs: document.querySelector("#save-project-as"),
+  zoomIn: document.querySelector("#zoom-in"),
+  zoomOut: document.querySelector("#zoom-out"),
+  zoomReset: document.querySelector("#zoom-reset"),
+  zoomLevel: document.querySelector("#zoom-level"),
   path: document.querySelector("#project-path"),
   name: document.querySelector("#project-name"),
   browserName: document.querySelector("#browser-project-name"),
@@ -84,6 +88,11 @@ let editCursorProjectId = null;
 const waveformCache = new Map();
 let previewContext = null;
 let currentPreview = null;
+const UI_ZOOM_STORAGE_KEY = "estudio-daw.ui-zoom.v1";
+const UI_ZOOM_MIN = 0.8;
+const UI_ZOOM_MAX = 1.5;
+const UI_ZOOM_STEP = 0.1;
+let uiZoom = 1;
 
 function selectedAudioProfile() {
   return audioSettings?.[elements.audioProfile.value];
@@ -129,6 +138,62 @@ async function loadAudioSettings() {
 function setNotice(title, text) {
   elements.noticeTitle.textContent = title;
   elements.noticeText.textContent = text;
+}
+
+function updateUiZoomControls() {
+  const percent = Math.round(uiZoom * 100);
+  elements.zoomLevel.textContent = `${percent}%`;
+  elements.zoomIn.disabled = uiZoom >= UI_ZOOM_MAX;
+  elements.zoomOut.disabled = uiZoom <= UI_ZOOM_MIN;
+  elements.zoomReset.title = `Restablecer interfaz (Ctrl+0); actual ${percent}%`;
+}
+
+async function setUiZoom(scale, persist = true) {
+  const clamped = Math.min(UI_ZOOM_MAX, Math.max(UI_ZOOM_MIN, scale));
+  const next = Math.round(clamped * 100) / 100;
+  try {
+    await platform.setUiZoom(next);
+  } catch (error) {
+    setNotice("No se pudo cambiar el tamaño", String(error));
+    return;
+  }
+  uiZoom = next;
+  if (persist) {
+    try {
+      localStorage.setItem(UI_ZOOM_STORAGE_KEY, String(next));
+    } catch {
+      // El zoom sigue disponible en la sesión aunque el WebView no guarde preferencias.
+    }
+  }
+  updateUiZoomControls();
+}
+
+function initializeUiZoom() {
+  let stored = 1;
+  try {
+    stored = Number(localStorage.getItem(UI_ZOOM_STORAGE_KEY));
+  } catch {
+    stored = 1;
+  }
+  const initial = Number.isFinite(stored) && stored > 0 ? stored : 1;
+  uiZoom = 1;
+  updateUiZoomControls();
+  if (initial !== 1) void setUiZoom(initial, false);
+}
+
+function handleUiZoomShortcut(event) {
+  if (!event.ctrlKey || event.altKey || event.metaKey) return;
+  if (event.target instanceof Element && event.target.closest("input, textarea, select, [contenteditable='true']")) return;
+  if (["+", "="].includes(event.key) || ["NumpadAdd"].includes(event.code)) {
+    event.preventDefault();
+    void setUiZoom(uiZoom + UI_ZOOM_STEP);
+  } else if (["-", "_"].includes(event.key) || event.code === "NumpadSubtract") {
+    event.preventDefault();
+    void setUiZoom(uiZoom - UI_ZOOM_STEP);
+  } else if (event.key === "0" || event.code === "Numpad0") {
+    event.preventDefault();
+    void setUiZoom(1);
+  }
 }
 
 async function whileBusy(buttons, operation) {
@@ -1277,10 +1342,16 @@ elements.saveAudioSettings.addEventListener("click", async () => {
   }
 });
 
+elements.zoomIn.addEventListener("click", () => void setUiZoom(uiZoom + UI_ZOOM_STEP));
+elements.zoomOut.addEventListener("click", () => void setUiZoom(uiZoom - UI_ZOOM_STEP));
+elements.zoomReset.addEventListener("click", () => void setUiZoom(1));
+document.addEventListener("keydown", handleUiZoomShortcut);
+
 // Este shell inicial sólo resume datos compactos; jamás solicita PCM o buffers
 // GPU al core a través del bridge.
 setProjectEnabled(false);
 elements.undo.disabled = true;
 elements.redo.disabled = true;
 renderTimelineRuler(4);
+initializeUiZoom();
 loadAudioSettings();
