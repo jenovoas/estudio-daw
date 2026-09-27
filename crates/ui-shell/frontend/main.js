@@ -234,10 +234,9 @@ function createTrackMixerControls(track, compact = false) {
 }
 
 function createTrackMeter(track) {
-  if (track.role === "master") return null;
   const meter = document.createElement("div");
   meter.className = "track-meter";
-  meter.dataset.trackId = track.id;
+  meter.dataset.trackId = track.role === "master" ? "__master__" : track.id;
   meter.setAttribute("role", "meter");
   meter.setAttribute("aria-valuemin", "0");
   meter.setAttribute("aria-valuemax", "100");
@@ -264,6 +263,7 @@ function syncTrackSelectionUi() {
 }
 
 function createTrackSelectionControl(track) {
+  if (track.virtualMaster) return null;
   const label = document.createElement("label");
   label.className = "track-select";
   label.title = `Seleccionar pista ${track.name}`;
@@ -380,11 +380,26 @@ function renderMixerSurface(tracks) {
     empty.className = "surface-empty";
     empty.textContent = "El proyecto todavía no tiene canales.";
     elements.mixerView.append(empty);
-    return;
   }
   const channels = document.createElement("div");
   channels.className = "mixer-channel-list";
-  for (const track of tracks) {
+  const mixerTracks = tracks.some((track) => track.role === "master")
+    ? tracks
+    : [...tracks, {
+      id: "__master__",
+      name: "Master",
+      kind: "audio",
+      role: "master",
+      color: "#d5a36f",
+      outputChannels: 2,
+      active: true,
+      mute: false,
+      solo: false,
+      gainDb: 0,
+      pan: 0,
+      virtualMaster: true,
+    }];
+  for (const track of mixerTracks) {
     const channel = document.createElement("article");
     channel.className = "mixer-channel";
     channel.style.setProperty("--track-color", track.color);
@@ -394,14 +409,19 @@ function renderMixerSurface(tracks) {
     role.className = "mixer-role";
     role.textContent = track.role === "master" ? "MASTER" : track.kind.toUpperCase();
     const routing = document.createElement("small");
-    routing.textContent = track.role === "master"
-      ? trackOutputDescription(track, tracks)
-      : `${trackChannelDescription(track)} · ${trackOutputDescription(track, tracks)}`;
+    routing.textContent = track.virtualMaster
+      ? "Medición de la salida final del plan"
+      : track.role === "master"
+        ? trackOutputDescription(track, tracks)
+        : `${trackChannelDescription(track)} · ${trackOutputDescription(track, tracks)}`;
     const mix = document.createElement("span");
     mix.className = "mixer-values";
-    mix.textContent = `${Number(track.gainDb).toFixed(1)} dB · Pan ${Number(track.pan).toFixed(2)}${track.mute ? " · Silencio" : ""}${track.solo ? " · Solo" : ""}${track.active ? "" : " · Inactiva"}`;
+    mix.textContent = track.virtualMaster
+      ? "Salida estéreo combinada"
+      : `${Number(track.gainDb).toFixed(1)} dB · Pan ${Number(track.pan).toFixed(2)}${track.mute ? " · Silencio" : ""}${track.solo ? " · Solo" : ""}${track.active ? "" : " · Inactiva"}`;
     if (track.groupName) role.textContent += ` · ${track.groupName}`;
-    channel.append(createTrackSelectionControl(track), title, role, routing, mix);
+    const selection = createTrackSelectionControl(track);
+    channel.append(...(selection ? [selection] : []), title, role, routing, mix);
     const meter = createTrackMeter(track);
     if (meter) channel.append(meter);
     const controls = createTrackMixerControls(track);

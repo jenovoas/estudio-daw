@@ -172,6 +172,19 @@ struct TrackMeter {
     rms: AtomicU32,
 }
 
+const MASTER_METER_ID: &str = "__master__";
+
+struct MasterOutputMeterNode {
+    meter: Arc<TrackMeter>,
+}
+
+impl AudioNode for MasterOutputMeterNode {
+    fn process(&mut self, interleaved: &mut [f32]) -> Result<(), AudioNodeError> {
+        self.meter.update(interleaved);
+        Ok(())
+    }
+}
+
 impl TrackMeter {
     fn update(&self, samples: &[f32]) {
         if samples.is_empty() {
@@ -586,7 +599,7 @@ impl AudioRuntimeHost {
             .track_meters
             .lock()
             .map_err(|_| "los medidores de pista quedaron bloqueados".to_owned())?;
-        Ok(meters
+        let mut values: HashMap<String, (f32, f32)> = meters
             .iter()
             .map(|(track_id, meter)| {
                 (
@@ -597,7 +610,17 @@ impl AudioRuntimeHost {
                     ),
                 )
             })
-            .collect())
+            .collect();
+        if let Some(master) = meters.get(MASTER_METER_ID) {
+            values.insert(
+                MASTER_METER_ID.to_owned(),
+                (
+                    f32::from_bits(master.peak.load(Ordering::Acquire)),
+                    f32::from_bits(master.rms.load(Ordering::Acquire)),
+                ),
+            );
+        }
+        Ok(values)
     }
 
     fn reset_track_meters(&self) -> Result<(), String> {
@@ -1536,6 +1559,9 @@ fn build_project_playback_with_end(
         tempo_bpm: bpm,
         position_ticks,
         end_position_ticks,
+    });
+    builder.add_node(MasterOutputMeterNode {
+        meter: track_meter_for(&track_meters, MASTER_METER_ID)?,
     });
     let mut plan = builder.build();
     for worker in workers {
