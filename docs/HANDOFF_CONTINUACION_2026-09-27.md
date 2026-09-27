@@ -174,3 +174,11 @@
 - Publicado en `037aa15` y extendido a las tres superficies en `9cd8e42`. Session, Arrangement y Mezclador presentan ACT/M/S y sliders de ganancia/panorama para pistas no master. Las interacciones emiten `SetTrackMixer` reversible; el backend refresca el plan en Play y deja las ediciones listas para aplicar al reanudar si está pausado.
 - El plan hace efectivos active/mute/solo/gain/pan para MIDI y regiones de audio. El master no ofrece controles, y no hay medidores ni agrupación; no marcar 4.1 completa.
 - Verificación local: fmt/fmt check, `cargo check -p estudio-daw-ui-shell`, ambos `node --check`, diff check y OpenSpec normal (ocho avisos lingüísticos conocidos). No se ejecutaron suites ni QA visual/acústica. No marcar 4.1 completa.
+
+
+## Avance — movimiento de clips MIDI en Arrangement
+
+- Commit de implementación: `c0340821b2f3643b23c6783eebf243d542067434` (`feat: move MIDI clips in arrangement`), pendiente de publicación al guardar este handoff.
+- Los clips MIDI se arrastran en Arrangement; el gesto sigue la rejilla seleccionada y convierte pulsos a ticks con el PPQ propio del clip. `ProjectCommand::MoveMidiClip` conserva toma/eventos, entra al historial y Tauri refresca el plan conectado.
+- Verificación: `cargo test -p estudio-daw-command-bus -- --test-threads=1` (15 pasaron), `cargo test --workspace -- --test-threads=1` pasó, `cargo check --workspace`, `cargo fmt --all -- --check`, ambos `node --check`, `git diff --check` y `openspec validate workstation-arrangement-surface-v2 --strict` pasaron. No hubo QA visual manual.
+- OpenSpec continúa en 9/35; 3.3 y 5.3 siguen parciales. Pendiente división/duplicación MIDI, marcadores y QA visual/funcional. Siguiente corte según el handoff aprobado: seguir 2.2, completar el flujo del navegador/inspección de medios de audio y revisar adaptadores ya existentes antes de añadir rutas paralelas.
