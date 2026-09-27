@@ -164,10 +164,12 @@ Para explorar estructuralmente el código, usa la habilidad instalada `codebase-
 
 ## Continuación activa — 2.2 (2026-09-27)
 
-El commit publicado `f1fdf43` cerró 2.1. La implementación parcial local de
+El commit publicado `b375009` incluye el primer corte de 2.2 (sobre `f1fdf43`)
+y dejó 2.1 cerrada. La implementación parcial
 2.2 importa archivos mediante Tauri con copia/vínculo, metadatos `ffprobe`,
 ubicación inicial por compás, fuente+región en una transacción y waveform min/max
-real (`ffmpeg`, hasta 10 minutos). La tarea permanece abierta: faltan preescucha,
+real (`ffmpeg`, hasta 10 minutos) y preescucha de hasta 30 segundos en regiones
+importadas. La tarea permanece abierta: faltan preescucha desde selector,
 selección/mapeo de canales, edición visual de región/cursor y QA visual en
 ejecución. Ver `docs/audio-import.md`, `docs/HANDOFF_CONTINUACION_2026-09-27.md`
 y el avance no marcado como completo en `tasks.md`.

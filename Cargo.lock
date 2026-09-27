@@ -1103,6 +1103,7 @@ dependencies = [
 name = "estudio-daw-media-adapter"
 version = "0.1.0"
 dependencies = [
+ "base64 0.22.1",
  "estudio-daw-project-model",
  "serde",
  "serde_json",
@@ -1173,6 +1174,7 @@ dependencies = [
 name = "estudio-daw-ui-shell"
 version = "0.1.0"
 dependencies = [
+ "base64 0.22.1",
  "estudio-daw-application",
  "estudio-daw-audio-engine",
  "estudio-daw-audio-platform",

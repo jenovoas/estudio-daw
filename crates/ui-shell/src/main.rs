@@ -517,6 +517,32 @@ fn audio_waveform(
 }
 
 #[tauri::command]
+fn audio_preview(source_id: String, state: State<'_, DesktopState>) -> Result<String, String> {
+    let path = {
+        let application = state
+            .application
+            .lock()
+            .map_err(|_| "el estado de la aplicación quedó bloqueado".to_owned())?;
+        let application = application
+            .as_ref()
+            .ok_or_else(|| "primero crea o abre un proyecto".to_owned())?;
+        let project = application.snapshot().project.project;
+        project
+            .audio_sources
+            .iter()
+            .find(|source| source.id == source_id)
+            .map(|source| source.media.original_path.clone())
+            .ok_or_else(|| "la fuente de audio ya no está en el proyecto".to_owned())?
+    };
+    let ogg =
+        estudio_daw_media_adapter::audio_preview_ogg(path).map_err(|error| error.to_string())?;
+    Ok(base64::Engine::encode(
+        &base64::engine::general_purpose::STANDARD,
+        ogg,
+    ))
+}
+
+#[tauri::command]
 fn demo_midi_project(state: State<'_, DesktopState>) -> Result<UiSnapshot, String> {
     let mut project = new_project_model();
     project.project_id = format!("demo-midi-{}", unix_timestamp_millis());
@@ -832,6 +858,7 @@ fn main() {
             add_track,
             import_audio,
             audio_waveform,
+            audio_preview,
             demo_midi_project,
             open_project,
             project_snapshot,

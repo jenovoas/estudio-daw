@@ -693,8 +693,8 @@ con metadatos básicos, posición inicial por compás y forma de onda real reduc
 Es un prototipo de capacidades parciales: su composición
 visual actual no satisface todavía el flujo creativo de Ableton Live 12; no
 incluye lanzamiento de clips en Session, edición de clips/notas, preescucha de
-archivos, reproducción de regiones de audio, selección de canales para archivos
-con más canales que la pista, selección de salidas físicas, grabación live
+archivos desde el selector, reproducción de regiones de audio, selección de
+canales para archivos con más canales que la pista, selección de salidas físicas, grabación live
 ni monitorización de entrada. No se declara terminada la interfaz. La propuesta y las tareas abiertas de
 [workstation-arrangement-surface-v2](openspec/changes/workstation-arrangement-surface-v2/)
 registran Ableton Live 12 como referencia de UX prioritaria y Ardour sólo como

@@ -18,6 +18,7 @@ window.estudioPlatform = {
     return invoke("import_audio", { path, trackId, copyIntoProject, startTick });
   },
   audioWaveform: (sourceId) => invoke("audio_waveform", { sourceId }),
+  audioPreview: (sourceId) => invoke("audio_preview", { sourceId }),
   async openProject() {
     const path = await open({
       multiple: false,

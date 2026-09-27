@@ -56,7 +56,10 @@ const elements = {
 
 let hasProject = false;
 let audioSettings = null;
+let projectTransportState = "stopped";
 const waveformCache = new Map();
+let previewContext = null;
+let currentPreview = null;
 
 function selectedAudioProfile() {
   return audioSettings?.[elements.audioProfile.value];
@@ -232,6 +235,7 @@ function renderMixerSurface(tracks) {
 
 function renderSnapshot(snapshot) {
   setProjectEnabled(true);
+  projectTransportState = snapshot.transportState;
   elements.save.disabled = !snapshot.projectPath;
   elements.save.title = snapshot.projectPath ? "Guardar proyecto" : "Guarda como para elegir una ubicación";
   elements.path.textContent = snapshot.projectPath ?? "Proyecto sin ruta";
@@ -347,9 +351,16 @@ function renderSnapshot(snapshot) {
       const label = document.createElement("span");
       label.className = "clip-label";
       label.textContent = clip.name;
+      const preview = document.createElement("button");
+      preview.type = "button";
+      preview.className = "audio-preview-button";
+      preview.setAttribute("aria-label", `Preescuchar ${clip.name}`);
+      preview.title = "Preescucha aislada · hasta 30 segundos";
+      preview.textContent = "▶";
+      preview.addEventListener("click", () => previewAudio(clip.sourceId, preview));
       const wave = document.createElement("div");
       wave.className = "audio-waveform";
-      block.append(label, wave);
+      block.append(label, preview, wave);
       lane.append(block);
       if (clip.sourceId) loadWaveform(clip.sourceId, clip.sourceDigest, wave);
     }
@@ -360,6 +371,42 @@ function renderSnapshot(snapshot) {
       lane.append(empty);
     }
     elements.lanes.append(lane);
+  }
+}
+
+function stopPreview() {
+  currentPreview?.stop();
+  currentPreview = null;
+}
+
+async function previewAudio(sourceId, button) {
+  if (!sourceId) return;
+  if (projectTransportState === "playing") {
+    setNotice("Preescucha no disponible", "Detén o pausa el transporte antes de escuchar un fragmento aislado.");
+    return;
+  }
+  if (!previewContext) previewContext = new AudioContext();
+  button.disabled = true;
+  try {
+    stopPreview();
+    const encoded = await platform.audioPreview(sourceId);
+    const binary = atob(encoded);
+    const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
+    const audioBuffer = await previewContext.decodeAudioData(bytes.buffer);
+    await previewContext.resume();
+    const source = previewContext.createBufferSource();
+    source.buffer = audioBuffer;
+    source.connect(previewContext.destination);
+    currentPreview = source;
+    source.addEventListener("ended", () => {
+      if (currentPreview === source) currentPreview = null;
+    }, { once: true });
+    source.start();
+    setNotice("Preescucha", "Fragmento aislado de hasta 30 segundos; no mueve el transporte del proyecto.");
+  } catch (error) {
+    setNotice("No se pudo preescuchar el audio", String(error));
+  } finally {
+    button.disabled = false;
   }
 }
 
@@ -485,6 +532,7 @@ elements.browserOpen.addEventListener("click", () => elements.open.click());
 elements.save.addEventListener("click", () => runCommand("Proyecto guardado", () => platform.saveProject()));
 elements.saveAs.addEventListener("click", () => runCommand("Copia del proyecto guardada", () => platform.saveProjectAs()));
 elements.play.addEventListener("click", async () => {
+  stopPreview();
   await whileBusy([elements.play], async () => { try {
     const snapshot = await platform.setTransport("play");
     renderSnapshot(snapshot);

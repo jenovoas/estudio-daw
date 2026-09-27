@@ -157,6 +157,27 @@ pub fn audio_waveform(
     Ok(reduce_samples_to_min_max(&samples, bins))
 }
 
+/// Codifica hasta treinta segundos de audio para escucha previa fuera del transporte.
+pub fn audio_preview_ogg(path: impl AsRef<Path>) -> Result<Vec<u8>, ProxyJobError> {
+    let output = Command::new("ffmpeg")
+        .args(["-v", "error", "-i"])
+        .arg(path.as_ref())
+        .args([
+            "-t", "30", "-vn", "-ac", "2", "-ar", "48000", "-c:a", "libopus", "-b:a", "96k", "-f",
+            "ogg", "pipe:1",
+        ])
+        .output()?;
+    if !output.status.success() {
+        return Err(ProxyJobError::TranscoderFailed(
+            String::from_utf8_lossy(&output.stderr).trim().to_string(),
+        ));
+    }
+    if output.stdout.is_empty() {
+        return Err(ProxyJobError::EmptyOutput);
+    }
+    Ok(output.stdout)
+}
+
 fn reduce_samples_to_min_max(samples: &[f32], bins: usize) -> Vec<(f32, f32)> {
     let count = bins.clamp(1, 4096).min(samples.len());
     (0..count)

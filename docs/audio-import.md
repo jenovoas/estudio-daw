@@ -17,13 +17,16 @@ forma de onda limita la duración procesada a diez minutos y produce como máxim
 
 - Se importan archivos con hasta tantos canales como tenga la salida de la
   pista. No existe un selector de mapeo ni downmix para archivos multicanal.
+- La preescucha está disponible sólo después de importar la región: el botón
+  convierte y reproduce hasta 30 segundos de Opus mediante WebAudio, sin mover
+  el transporte. Aún no se escucha desde el diálogo antes de confirmar la
+  importación.
 - La ubicación elegible es el compás inicial; todavía no hay cursor de edición
   ni colocación por tiempo absoluto.
 - La waveform representa el primer canal convertido a mono para visualización;
   no altera la fuente ni decide cómo sonará la pista.
-- No hay preescucha, edición visual de recorte/desplazamiento ni reproducción de
-  regiones en el transporte. La forma de onda no implica que el audio se esté
-  reproduciendo.
+- No hay edición visual de recorte/desplazamiento ni reproducción de regiones en
+  el transporte. La forma de onda no implica que el audio se esté reproduciendo.
 - Los procesos externos `ffmpeg` y `ffprobe` deben estar instalados. Un fallo se
   presenta como error de importación/forma de onda, sin registrar una región
   incompleta.
