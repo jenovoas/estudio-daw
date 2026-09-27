@@ -130,6 +130,11 @@ recorte del inicio avanza también el desplazamiento de fuente y los cambios
 usan el historial del proyecto. Los clips MIDI aún son de sólo lectura en
 Arrangement.
 
+El navegador también enumera las regiones de audio importadas del proyecto y
+permite filtrarlas por nombre, fuente, pista y disposición de canales. Cada
+elemento se puede preescuchar de forma aislada o seleccionar para enfocar su
+región en Arrangement; todavía no representa una biblioteca general de medios.
+
 En modo navegador el dominio portable podrá compartir modelos y comandos, pero el
 backend de audio/compute será otro adaptador (por ejemplo Web Audio/AudioWorklet y
 WebGPU cuando estén disponibles). No se presupone intercambio zero-copy con el

@@ -27,6 +27,9 @@ const elements = {
   path: document.querySelector("#project-path"),
   name: document.querySelector("#project-name"),
   browserName: document.querySelector("#browser-project-name"),
+  browserMediaSearch: document.querySelector("#browser-media-search"),
+  browserMediaChannels: document.querySelector("#browser-media-channels"),
+  browserMediaList: document.querySelector("#browser-media-list"),
   tempo: document.querySelector("#tempo"),
   transportTempo: document.querySelector("#transport-tempo"),
   transport: document.querySelector("#transport-state"),
@@ -80,6 +83,7 @@ const elements = {
 };
 
 let hasProject = false;
+let lastSnapshot = null;
 let audioSettings = null;
 let audioInputDevices = [];
 let audioRecording = false;
@@ -798,6 +802,7 @@ function updateTrackOutput(track, outputTrackId) {
 }
 
 function renderSnapshot(snapshot) {
+  lastSnapshot = snapshot;
   setProjectEnabled(true);
   if (snapshot.projectId !== editCursorProjectId) {
     selectedTrackIds = new Set();
@@ -892,6 +897,7 @@ function renderSnapshot(snapshot) {
     renderClipInspector(snapshot);
     renderEditCursor();
     renderTransportPosition(transportPositionTick);
+    renderProjectMedia(snapshot);
     return;
   }
 
@@ -968,6 +974,7 @@ function renderSnapshot(snapshot) {
     for (const clip of audioClips) {
       const block = document.createElement("div");
       block.className = "audio-clip";
+      block.dataset.clipId = clip.id;
       if (selectedClipId === clip.id) block.classList.add("is-inspected");
       block.tabIndex = 0;
       block.setAttribute("aria-label", `Seleccionar región de audio ${clip.name}`);
@@ -1037,6 +1044,7 @@ function renderSnapshot(snapshot) {
   renderEditCursor();
   renderTransportPosition(transportPositionTick);
   renderClipInspector(snapshot);
+  renderProjectMedia(snapshot);
   syncTrackSelectionUi();
 }
 
@@ -1072,6 +1080,68 @@ function renderClipInspector(snapshot) {
     source.className = "clip-inspector-source";
     source.textContent = `Fuente: ${audioClip.sourceName}`;
     elements.clipInspector.append(source);
+  }
+}
+
+function renderProjectMedia(snapshot) {
+  elements.browserMediaList.replaceChildren();
+  const clips = snapshot.audioClips ?? [];
+  const query = elements.browserMediaSearch.value.trim().toLocaleLowerCase();
+  const channelFilter = elements.browserMediaChannels.value;
+  const matching = clips.filter((clip) => {
+    const trackName = snapshot.tracks.find((track) => track.id === clip.trackId)?.name ?? "";
+    const searchable = `${clip.name} ${clip.sourceName ?? ""} ${trackName} ${clip.sampleRateHz} ${clip.channels}`.toLocaleLowerCase();
+    const channelMatch = channelFilter === "all"
+      || (channelFilter === "multi" ? clip.channels > 2 : clip.channels === Number(channelFilter));
+    return channelMatch && (!query || searchable.includes(query));
+  });
+  elements.browserMediaSearch.disabled = clips.length === 0;
+  elements.browserMediaChannels.disabled = clips.length === 0;
+  if (!matching.length) {
+    const empty = document.createElement("span");
+    empty.className = "browser-media-empty";
+    empty.textContent = clips.length ? "No hay audio que coincida con la búsqueda." : "Los medios importados aparecerán aquí.";
+    elements.browserMediaList.append(empty);
+    return;
+  }
+  for (const clip of matching) {
+    const trackName = snapshot.tracks.find((track) => track.id === clip.trackId)?.name ?? "Pista desconocida";
+    const item = document.createElement("div");
+    item.className = "browser-media-item";
+    const selectButton = document.createElement("button");
+    selectButton.type = "button";
+    selectButton.className = "browser-media-select";
+    selectButton.setAttribute("aria-label", `Mostrar ${clip.name} en Arrangement`);
+    const name = document.createElement("strong");
+    name.textContent = clip.name;
+    const details = document.createElement("small");
+    details.textContent = `${clip.sourceName ?? "Fuente"} · ${trackName} · ${clip.sampleRateHz} Hz · ${clip.channels} ch`;
+    const preview = document.createElement("button");
+    preview.type = "button";
+    preview.className = "audio-preview-button";
+    preview.textContent = "▶";
+    preview.title = clip.sourceId ? "Preescucha aislada · hasta 30 segundos" : "La región no tiene una fuente preescuchable";
+    preview.setAttribute("aria-label", `Preescuchar ${clip.name}`);
+    preview.disabled = !clip.sourceId || projectTransportState === "playing";
+    preview.addEventListener("click", (event) => {
+      event.stopPropagation();
+      previewAudio(clip.sourceId, preview);
+    });
+    const select = () => {
+      selectedClipId = clip.id;
+      selectSurface("arrangement");
+      renderClipInspector(snapshot);
+      const target = [...elements.lanes.querySelectorAll("[data-clip-id]")]
+        .find((block) => block.dataset.clipId === clip.id);
+      if (!target) return;
+      for (const active of elements.lanes.querySelectorAll(".is-inspected")) active.classList.remove("is-inspected");
+      target.classList.add("is-inspected");
+      target.scrollIntoView({ block: "nearest", inline: "nearest" });
+    };
+    selectButton.addEventListener("click", select);
+    selectButton.append(name, details);
+    item.append(selectButton, preview);
+    elements.browserMediaList.append(item);
   }
 }
 
@@ -1527,6 +1597,12 @@ elements.importBar.addEventListener("change", () => {
   const beatsPerBar = Number(elements.ruler.dataset.beatsPerBar) || 4;
   editCursorTick = Math.round((bar - 1) * beatsPerBar * 480);
   renderEditCursor();
+});
+elements.browserMediaSearch.addEventListener("input", () => {
+  if (lastSnapshot) renderProjectMedia(lastSnapshot);
+});
+elements.browserMediaChannels.addEventListener("change", () => {
+  if (lastSnapshot) renderProjectMedia(lastSnapshot);
 });
 elements.showArrangement.addEventListener("click", () => selectSurface("arrangement"));
 elements.showSession.addEventListener("click", () => selectSurface("session"));

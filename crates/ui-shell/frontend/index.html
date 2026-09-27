@@ -52,6 +52,9 @@
         <button id="browser-demo" class="browser-action"><span class="action-glyph action-orange">♫</span><span><strong>Demo MIDI</strong><small>Escuchar una sesión de prueba</small></span><span class="action-arrow">›</span></button>
         <button id="browser-open" class="browser-action"><span class="action-glyph">▱</span><span><strong>Abrir proyecto</strong><small>Cargar una sesión existente</small></span><span class="action-arrow">›</span></button>
         <div class="browser-section-label browser-section-spaced">MEDIOS DE USUARIO</div>
+        <label class="media-import-field">Buscar audio importado<input id="browser-media-search" type="search" placeholder="Nombre, fuente o pista" disabled /></label>
+        <label class="media-import-field">Canales<select id="browser-media-channels" disabled><option value="all">Todos</option><option value="1">Mono</option><option value="2">Estéreo</option><option value="multi">Más de 2</option></select></label>
+        <div id="browser-media-list" class="browser-media-list" aria-live="polite"><span class="browser-media-empty">Abre un proyecto con medios importados.</span></div>
         <label class="media-import-field">Pista de destino<select id="audio-import-track" disabled><option value="">Crea una pista de audio</option></select></label>
         <label class="media-import-field">Ubicación inicial (compás; clic en regla para ajustar)<input id="audio-import-bar" type="number" min="1" step="1" value="1" disabled /></label>
         <div id="edit-cursor-position" class="edit-cursor-position">Cursor: compás 1 · pulso 1</div>

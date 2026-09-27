@@ -71,6 +71,13 @@ button:disabled { opacity: .4; cursor: not-allowed !important; }
 .browser-facts strong { color: #e2e4e4; font-size: 10px; font-weight: 650; font-variant-numeric: tabular-nums; }
 .browser-facts small { color: #858b8e; font-size: 8px; font-weight: 500; }
 .browser-section-spaced { padding-top: 22px; }
+.browser-media-list { display: flex; flex-direction: column; gap: 4px; max-height: 164px; overflow: auto; margin: 4px 0 10px; }
+.browser-media-empty { padding: 6px 2px; color: #848b8e; font-size: 8px; line-height: 1.4; }
+.browser-media-item { display: flex; align-items: center; gap: 5px; min-width: 0; padding: 4px; border: 1px solid #34393c; border-radius: 3px; background: #272b2d; }
+.browser-media-select { display: flex; flex: 1; min-width: 0; flex-direction: column; align-items: flex-start; gap: 3px; padding: 2px; border: 0; background: transparent; color: #d9dcdd; text-align: left; cursor: pointer; }
+.browser-media-select > strong { max-width: 100%; overflow: hidden; font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
+.browser-media-select > small { max-width: 100%; overflow: hidden; color: #91999c; font-size: 7px; text-overflow: ellipsis; white-space: nowrap; }
+.browser-media-select:focus-visible, .browser-media-item .audio-preview-button:focus-visible { outline: 1px solid #e7924a; outline-offset: 1px; }
 .browser-action { width: 100%; min-height: 46px; display: flex; align-items: center; gap: 8px; padding: 5px 6px; border: 0; border-radius: 4px; background: transparent; text-align: left; cursor: pointer; }
 .browser-action:hover { background: #35393c; }
 .browser-action:disabled { opacity: .42; cursor: not-allowed; }
