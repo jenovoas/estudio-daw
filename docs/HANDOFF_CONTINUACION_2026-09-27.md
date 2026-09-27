@@ -6,17 +6,18 @@
 - Verificación del corte: `cargo fmt --all`, `cargo check -p estudio-daw-ui-shell`, `cargo fmt --all -- --check`, `node --check` de `main.js` y `platform-tauri.js`, `git diff --check` y `openspec validate workstation-arrangement-surface-v2` pasan; ocho avisos lingüísticos conocidos. No se ejecutaron pruebas ni QA auditiva/visual.
 - `workstation-arrangement-surface-v2` sigue en 9/35; 2.3 y 4.3 continúan abiertas. Pendientes: loop, rebuild al editar, otros controladores MIDI, alinear el scheduler al reloj del plan y QA. La búsqueda se ofrece sólo mientras está en Play; pausado se debe reanudar primero.
 - No se modificó el dispositivo ni el callback para preparar planes. El control publica el plan desde Tauri y espera la recuperación del anterior fuera de RT; el scheduler usa todavía reloj de pared para los tiempos de eventos. Continuar con esa limitación documentada.
+- El modelo ahora guarda `TransportLoopRange` opcional (960 PPQ) y la UI define A/B desde el cursor mediante `SetTransportLoopRange`, reversible. Esto sólo configura el rango; no activa aún el loop. Continuar preparando un salto coordinado para audio/MIDI.
 
 ## Reanudación — reproducción incremental de regiones (OpenSpec 2.3)
 
 - HEAD publicado tras los cortes 2.3/4.3: `c534142` (`feat: muestra posición real del transporte`). La búsqueda inicial desde el cursor de Arreglo está en curso; consultar `git status/log` al reanudar.
 - `AudioPcmDecoder` usa `ffmpeg` para transmitir PCM f32 estéreo. Un worker por región llena un ring PCM SPSC de un segundo, limitado a 64 regiones y precargado antes de abrir PipeWire. `AudioClipMixerNode` mezcla en el plan ya compilado con MIDI y aplica posición inicial, desplazamiento/duración, canales, ganancia y fades. El callback sólo consume el ring y mezcla en scratch preasignado.
-- Pause congela el plan; Stop libera los workers/cancela `ffmpeg`. Cambiar regiones mientras corre guarda el proyecto pero no reconstruye el plan activo; detener e iniciar carga los cambios. Al iniciar desde detenido se puede reproducir desde el cursor de Arreglo; todavía no existe búsqueda en caliente ni bucle.
+- Pause congela el plan; Stop libera los workers/cancela `ffmpeg`. Cambiar regiones mientras corre guarda el proyecto pero no reconstruye el plan activo; detener e iniciar carga los cambios. Al iniciar desde detenido se puede reproducir desde el cursor de Arreglo y buscar durante Play desde la regla sin cerrar PipeWire. La repetición coordinada de audio/MIDI aún no está conectada.
 - `workstation-arrangement-surface-v2` permanece en 9/35; 2.2 sigue abierta por QA visual y 2.3 sigue abierta por las capacidades de transporte ausentes y QA acústica. No marcar ninguna completa por esta implementación parcial.
-- Avance publicado de 4.3: `TransportPositionNode` publica la posición musical calculada por `TransportClock` a partir de los frames procesados por PipeWire; la UI dibuja y muestra el cabezal. Play desde detenido usa el cursor. Sigue pendiente búsqueda durante reproducción y loop; la implementación no usa reloj de pared para mover el cabezal.
-- Al iniciar desde el cursor, el scheduler restaura NoteOn aún activos por clip antes de abrir el flujo. Los controladores previos (incluido sustain) no se reconstruyen todavía.
+- En el corte `c534142`, la búsqueda durante Play seguía pendiente; quedó implementada luego en `c5e7ec4`. La posición del cabezal viene de `TransportClock` con frames procesados por PipeWire. Continúa pendiente el loop coordinado.
+- Al iniciar/buscar desde el cursor, el scheduler restaura notas activas y sustain CC64 por clip. Otros controladores previos no se reconstruyen todavía.
 - Verificación del corte local: `cargo check -p estudio-daw-ui-shell`, `cargo fmt --all -- --check`, `node --check` para `main.js` y `platform-tauri.js`, `git diff --check` y validación OpenSpec pasan; no se ejecutaron pruebas ni QA física.
-- Próximo paso aprobado: terminar la búsqueda inicial desde el cursor y continuar con loop/seek en ejecución y actualización del plan según 2.3/4.3; después abrir 2.4/2.5 según OpenSpec. Mantener el callback libre de asignación, bloqueo e I/O.
+- Próximo paso: conectar el rango A/B persistido al salto coordinado de audio/MIDI, preparar el plan alternativo fuera del callback y comprobar fin de rango sin que el audio pase del punto B. Después continuar con rebuild al editar y las demás dependencias de 2.3/4.3.
 
 ## Contexto histórico — edición de regiones de audio 2.2
 

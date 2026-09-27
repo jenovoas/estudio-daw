@@ -26,6 +26,10 @@ const elements = {
   transportTempo: document.querySelector("#transport-tempo"),
   transport: document.querySelector("#transport-state"),
   transportPosition: document.querySelector("#transport-position"),
+  loopRangeReadout: document.querySelector("#loop-range-readout"),
+  loopPointA: document.querySelector("#loop-point-a"),
+  loopPointB: document.querySelector("#loop-point-b"),
+  loopRangeClear: document.querySelector("#loop-range-clear"),
   tracks: document.querySelector("#track-list"),
   lanes: document.querySelector("#arrangement-lanes"),
   ruler: document.querySelector("#timeline-ruler"),
@@ -65,6 +69,8 @@ let audioSettings = null;
 let projectTransportState = "stopped";
 let transportPositionTick = 0;
 let transportPositionPollPending = false;
+let loopRange = null;
+let pendingLoopStartTick = null;
 let pendingAudioPath = null;
 let editCursorTick = 0;
 let editCursorProjectId = null;
@@ -139,6 +145,9 @@ function setProjectEnabled(enabled) {
   for (const button of [elements.save, elements.saveAs, elements.play, elements.pause, elements.stop, elements.addMidiTrack, elements.addAudioTrack]) {
     button.disabled = !enabled;
     if (!enabled) button.title = `${button.getAttribute("aria-label") ?? "Acción"}: abre o crea un proyecto primero`;
+  }
+  for (const button of [elements.loopPointA, elements.loopPointB, elements.loopRangeClear]) {
+    button.disabled = !enabled;
   }
   for (const control of [elements.importAudio, elements.importTrack, elements.importBar, elements.importMode, elements.importChannels]) {
     control.disabled = !enabled;
@@ -254,6 +263,11 @@ function renderSnapshot(snapshot) {
     editCursorProjectId = snapshot.projectId;
   }
   projectTransportState = snapshot.transportState;
+  loopRange = snapshot.loopRange ?? null;
+  if (!loopRange) pendingLoopStartTick = null;
+  elements.loopRangeReadout.textContent = loopRange
+    ? `A ${formatBarBeat(loopRange.startTick)} · B ${formatBarBeat(loopRange.endTick)}`
+    : pendingLoopStartTick === null ? "Sin rango" : `A ${formatBarBeat(pendingLoopStartTick)} · fija B`;
   if (projectTransportState === "stopped") renderTransportPosition(0);
   elements.save.disabled = !snapshot.projectPath;
   elements.save.title = snapshot.projectPath ? "Guardar proyecto" : "Guarda como para elegir una ubicación";
@@ -737,6 +751,14 @@ function renderTransportPosition(ticks) {
   elements.transportPosition.textContent = `${bar}.${beat}.${subdivision}`;
 }
 
+function formatBarBeat(ticks) {
+  const beatsPerBar = Number(elements.ruler.dataset.beatsPerBar) || 4;
+  const ticksPerBar = beatsPerBar * 960;
+  const bar = Math.floor(ticks / ticksPerBar) + 1;
+  const beat = (ticks % ticksPerBar) / 960 + 1;
+  return `${bar}.${beat.toLocaleString("es-CL", { maximumFractionDigits: 2 })}`;
+}
+
 function renderEditCursor() {
   const beatsPerBar = Number(elements.ruler.dataset.beatsPerBar) || 4;
   const timelineTicks = beatsPerBar * 16 * 480;
@@ -803,6 +825,37 @@ elements.ruler.addEventListener("click", async (event) => {
     setNotice("No se pudo reubicar el transporte", String(error));
   }
 });
+elements.loopPointA.addEventListener("click", () => {
+  pendingLoopStartTick = editCursorTick * 2;
+  if (loopRange && pendingLoopStartTick < loopRange.endTick) {
+    saveLoopRange(pendingLoopStartTick, loopRange.endTick);
+  } else {
+    setNotice("Inicio A guardado", "Coloca el cursor después de A y fija el punto B para definir el rango.");
+  }
+});
+elements.loopPointB.addEventListener("click", () => {
+  const endTick = editCursorTick * 2;
+  const startTick = pendingLoopStartTick ?? loopRange?.startTick;
+  if (startTick === undefined || startTick === null || endTick <= startTick) {
+    setNotice("Rango no válido", "Fija A antes de B y sitúa el punto B después de A.");
+    return;
+  }
+  saveLoopRange(startTick, endTick);
+});
+elements.loopRangeClear.addEventListener("click", () => saveLoopRange(null, null));
+
+async function saveLoopRange(startTick, endTick) {
+  try {
+    const snapshot = await platform.setLoopRange(startTick, endTick);
+    renderSnapshot(snapshot);
+    pendingLoopStartTick = null;
+    setNotice("Rango de repetición guardado", loopRange
+      ? `A: ${formatBarBeat(loopRange.startTick)} · B: ${formatBarBeat(loopRange.endTick)}. El loop de audio/MIDI aún no está conectado.`
+      : "Se quitó el rango guardado del proyecto.");
+  } catch (error) {
+    setNotice("No se pudo guardar el rango", String(error));
+  }
+}
 elements.importBar.addEventListener("change", () => {
   const bar = Math.max(1, Number(elements.importBar.value) || 1);
   const beatsPerBar = Number(elements.ruler.dataset.beatsPerBar) || 4;

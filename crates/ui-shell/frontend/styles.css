@@ -89,6 +89,8 @@ button:disabled { opacity: .4; cursor: not-allowed !important; }
 .transport-bar { min-width: 0; display: flex; align-items: center; gap: 13px; padding: 0 13px; background: linear-gradient(#33373a, #2d3033); border-bottom: 1px solid #17191b; box-shadow: 0 1px #41464a inset; }
 .transport-controls { height: 32px; display: flex; align-items: center; gap: 3px; }
 .transport-button { width: 32px; height: 29px; display: grid; place-items: center; border: 1px solid #51575b; border-radius: 4px; background: #41464a; color: #d1d4d5; font-size: 12px; cursor: pointer; }
+.loop-range-readout { min-width: 82px; color: #a9b4ac; font-size: 8px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.loop-range-controls { display: inline-flex; align-items: center; gap: 2px; }
 .transport-button:hover:not(:disabled) { background: #52585c; }
 .transport-play { color: #28190d; border-color: #ffae68; background: var(--accent); box-shadow: 0 1px #ffd3aa inset; }
 .transport-play:hover:not(:disabled) { background: #ffb36f; }

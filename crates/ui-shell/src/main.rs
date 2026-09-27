@@ -13,7 +13,7 @@ use estudio_daw_application::{
 use estudio_daw_midi_engine::{MidiSource, MidiTake, RecordedMidiEvent, RecordedMidiMessage};
 use estudio_daw_project_model::{
     ImportProvenance, InstrumentConfig, MidiClip, Project, TimeSignature, Track,
-    TrackChannelConfig, TrackKind, TrackMixerState, TrackRole, Transport,
+    TrackChannelConfig, TrackKind, TrackMixerState, TrackRole, Transport, TransportLoopRange,
 };
 use serde::Serialize;
 use std::{path::PathBuf, sync::Mutex};
@@ -102,6 +102,7 @@ struct UiSnapshot {
     project_path: Option<String>,
     tempo_bpm: f64,
     transport_state: &'static str,
+    loop_range: Option<TransportLoopRange>,
     track_count: usize,
     midi_clip_count: usize,
     audio_clip_count: usize,
@@ -294,6 +295,7 @@ fn summarize(application: &ProjectApplication, audio_engine_connected: bool) -> 
             TransportState::Playing => "playing",
             TransportState::Paused => "paused",
         },
+        loop_range: project.transport.loop_range,
         track_count: project.tracks.len(),
         midi_clip_count: project.midi_clips.len(),
         audio_clip_count: project.audio_clips.len(),
@@ -713,6 +715,7 @@ fn new_project_model() -> Project {
                 numerator: 4,
                 denominator: 4,
             },
+            loop_range: None,
         },
         tracks: vec![Track {
             id: "midi-1".into(),
@@ -792,6 +795,38 @@ fn transport_position(state: State<'_, DesktopState>) -> Result<u64, String> {
         .lock()
         .map_err(|_| "el estado del motor de audio quedó bloqueado".to_owned())?
         .position_ticks())
+}
+
+#[tauri::command]
+fn set_loop_range(
+    start_tick: Option<u64>,
+    end_tick: Option<u64>,
+    state: State<'_, DesktopState>,
+) -> Result<UiSnapshot, String> {
+    let range = match (start_tick, end_tick) {
+        (Some(start_tick), Some(end_tick)) => Some(TransportLoopRange {
+            start_tick,
+            end_tick,
+        }),
+        (None, None) => None,
+        _ => return Err("define los puntos A y B, o limpia ambos".to_owned()),
+    };
+    let mut application = state
+        .application
+        .lock()
+        .map_err(|_| "el estado de la aplicación quedó bloqueado".to_owned())?;
+    let application = application
+        .as_mut()
+        .ok_or_else(|| "primero crea o abre un proyecto".to_owned())?;
+    application
+        .execute_project(ProjectCommand::SetTransportLoopRange { range })
+        .map_err(|error| error.to_string())?;
+    let connected = state
+        .audio
+        .lock()
+        .map_err(|_| "el estado del motor de audio quedó bloqueado".to_owned())?
+        .is_connected();
+    Ok(summarize(application, connected))
 }
 
 #[tauri::command]
@@ -976,6 +1011,7 @@ fn main() {
             open_project,
             project_snapshot,
             transport_position,
+            set_loop_range,
             save_project,
             save_project_as,
             set_transport,

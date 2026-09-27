@@ -114,6 +114,15 @@ El navegador DEBE ofrecer búsqueda y navegación de medios reales del proyecto/
 
 El transporte DEBE exponer reproducir/pausar/detener, posición musical, tempo/compás y las operaciones implementadas de bucle, metrónomo, navegación y grabación. Posición y reproducción DEBEN provenir del reloj de transporte de sesión y de eventos del motor. Los ajustes de audio DEBEN distinguir preferencias guardadas de ajustes aplicados al flujo activo, incluido si hace falta reiniciar. La interfaz DEBE informar errores de dispositivo en vez de indicar éxito cuando falle un comando de dominio o el inicio del motor.
 
+El rango de repetición del transporte, cuando se define, DEBE persistir en ticks de transporte, validar que el final sea posterior al inicio y admitir deshacer/rehacer. Guardar el rango no implica que la reproducción en bucle esté activa; el control de loop sólo se presenta como funcional cuando el motor coordina el salto de audio y MIDI.
+
+#### Scenario: definir un rango de repetición
+
+- **CUANDO** la persona fija los puntos A y B desde el cursor del Arreglo
+- **ENTONCES** el rango se guarda en el proyecto a 960 ticks por negra y puede deshacerse
+- **Y** el sistema rechaza un rango cuyo final no sigue al inicio
+- **Y** la interfaz no anuncia repetición activa hasta que el motor ejecute ambos medios en bucle
+
 #### Scenario: pausar y reanudar
 
 - **CUANDO** la persona pausa durante la reproducción y luego la reanuda

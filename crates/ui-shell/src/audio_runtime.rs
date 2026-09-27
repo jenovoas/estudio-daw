@@ -1034,6 +1034,7 @@ mod tests {
                     numerator: 4,
                     denominator: 4,
                 },
+                loop_range: None,
             },
             tracks: vec![midi_track("track-1"), midi_track("track-2")],
             audio_sources: Vec::new(),

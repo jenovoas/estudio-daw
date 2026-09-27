@@ -140,6 +140,13 @@ pub struct Project {
 impl Project {
     /// Verifica identidad y relaciones persistidas entre pistas, medios y clips.
     pub fn validate_persisted_contracts(&self) -> Result<(), TrackValidationError> {
+        if self
+            .transport
+            .loop_range
+            .is_some_and(|range| range.start_tick >= range.end_tick)
+        {
+            return Err(TrackValidationError::InvalidTransportLoopRange);
+        }
         let mut ids = std::collections::HashSet::new();
         let mut master_count = 0;
         for track in &self.tracks {
@@ -759,6 +766,15 @@ pub struct AudioClip {
 pub struct Transport {
     pub tempo_bpm: f64,
     pub time_signature: TimeSignature,
+    /// Rango musical de repetición, expresado a 960 ticks por negra.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub loop_range: Option<TransportLoopRange>,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub struct TransportLoopRange {
+    pub start_tick: u64,
+    pub end_tick: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -862,6 +878,8 @@ pub enum TrackValidationError {
     InvalidAudioPlaylist,
     #[error("scene or clip-slot identity/reference is invalid")]
     InvalidClipSlot,
+    #[error("el rango de bucle debe terminar después de comenzar")]
+    InvalidTransportLoopRange,
 }
 
 impl Track {
@@ -1263,6 +1281,7 @@ pub fn import_project_xml(xml: &str) -> Result<ImportResult, ProjectError> {
         transport: Transport {
             tempo_bpm: tempo,
             time_signature: signature,
+            loop_range: None,
         },
         tracks,
         audio_sources: Vec::new(),
@@ -2250,6 +2269,7 @@ mod tests {
                     numerator: 4,
                     denominator: 4,
                 },
+                loop_range: None,
             },
             tracks: vec![],
             audio_sources: vec![],

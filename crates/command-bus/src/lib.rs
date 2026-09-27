@@ -10,7 +10,7 @@ use estudio_daw_project_model::{
     attach_midi_take, quantize_midi_clip, set_audio_clip_fades, set_audio_clip_gain,
     trim_audio_clip, AudioClip, ClipReference, ClipSlot, MediaSource, Project, ProjectEvent,
     ProjectHistory, ProjectSnapshot, ProxyAsset, Scene, Track, TrackKind, TrackMixerState,
-    TrackRole,
+    TrackRole, TransportLoopRange,
 };
 use estudio_daw_session::{Session, SessionCommand, TransportSnapshot, TransportState};
 use serde::{Deserialize, Serialize};
@@ -81,6 +81,9 @@ pub enum ProjectCommand {
     SetTrackMixer {
         track_id: String,
         mixer: TrackMixerState,
+    },
+    SetTransportLoopRange {
+        range: Option<TransportLoopRange>,
     },
     AddAudioClip {
         track_id: String,
@@ -652,6 +655,18 @@ impl CommandRuntime {
                     Ok(())
                 })
                 .map_err(|error| CommandError::Project(error.to_string()))?,
+            ProjectCommand::SetTransportLoopRange { range } => self
+                .project_history
+                .transact("set transport loop range", |project| {
+                    if range.is_some_and(|range| range.start_tick >= range.end_tick) {
+                        return Err(String::from(
+                            "el rango de bucle debe terminar después de comenzar",
+                        ));
+                    }
+                    project.transport.loop_range = range;
+                    Ok(())
+                })
+                .map_err(|error| CommandError::Project(error.to_string()))?,
             ProjectCommand::AddAudioClip {
                 track_id,
                 name,
@@ -1040,6 +1055,7 @@ mod tests {
                     numerator: 4,
                     denominator: 4,
                 },
+                loop_range: None,
             },
             tracks: vec![
                 Track {

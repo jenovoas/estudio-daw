@@ -707,7 +707,8 @@ acotados y las mezcla con instrumentos MIDI; el callback no decodifica ni hace
 I/O. La posición y el cabezal de reproducción de Arreglo siguen los frames
 procesados y se congelan en pausa. Un clic en la regla durante Play reubica la
 reproducción compilando y publicando el plan al siguiente bloque sin cerrar
-PipeWire. Todavía faltan bucles, restauración del resto de controladores MIDI al
+PipeWire. El rango A/B se puede guardar desde el cursor como parte reversible
+del proyecto; todavía no activa la repetición. Faltan bucles, restauración del resto de controladores MIDI al
 navegar y actualización del plan al editar, selección de salidas físicas,
 grabación live y monitorización de entrada. No
 se declara terminada la interfaz. La propuesta y las tareas abiertas de

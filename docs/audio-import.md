@@ -40,8 +40,9 @@ forma de onda limita la duración procesada a diez minutos y produce como máxim
   región con `ffmpeg` en un worker y un ring PCM acotado, y el plan mezcla esas
   muestras con las pistas de instrumentos MIDI. Al iniciar desde detenido,
   Play parte del cursor de Arreglo y ajusta el desplazamiento de fuente; durante
-  la reproducción no se puede buscar. Todavía no hay bucles ni reconstrucción del plan durante la
-  reproducción. Los cambios de región se guardan de inmediato y se oyen al
+  Play se puede buscar desde la regla sin cerrar PipeWire. El rango A/B de
+  repetición se puede definir y guardar en el proyecto, pero todavía no activa
+  la repetición. Los cambios de región se guardan de inmediato y se oyen al
   detener e iniciar de nuevo; no reinician el dispositivo como parte de la
   edición. La waveform sólo visualiza datos y no simula la señal reproducida.
 - Los procesos externos `ffmpeg` y `ffprobe` deben estar instalados. Un fallo se

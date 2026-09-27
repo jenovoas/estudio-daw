@@ -70,6 +70,12 @@
           <span class="transport-separator"></span>
           <div class="transport-state"><span class="state-led"></span><span id="transport-state">DETENIDO</span></div>
           <span id="transport-position" class="transport-position" aria-live="off">1.1.1</span>
+          <span id="loop-range-readout" class="loop-range-readout">Sin rango</span>
+          <span class="loop-range-controls" aria-label="Rango de repetición">
+            <button id="loop-point-a" class="history-button" title="Fijar inicio del rango en el cursor">A</button>
+            <button id="loop-point-b" class="history-button" title="Fijar fin del rango en el cursor">B</button>
+            <button id="loop-range-clear" class="history-button" title="Limpiar rango">×</button>
+          </span>
           <span class="transport-spacer"></span>
           <button id="undo" class="history-button" title="Deshacer último cambio" aria-label="Deshacer" disabled>↶</button>
           <button id="redo" class="history-button" title="Rehacer último cambio" aria-label="Rehacer" disabled>↷</button>

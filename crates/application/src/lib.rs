@@ -510,6 +510,7 @@ mod tests {
                     numerator: 4,
                     denominator: 4,
                 },
+                loop_range: None,
             },
             tracks: vec![Track {
                 id: "track-audio".into(),

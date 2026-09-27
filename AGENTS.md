@@ -175,6 +175,10 @@ Para explorar estructuralmente el código, usa la habilidad instalada `codebase-
   diff check y validación OpenSpec pasaron; sin pruebas ni QA manual.
 - Consultar el handoff y `git log` para los SHA publicados. Los artefactos
   generados de `.codebase-memory/` se restauran antes de versionar.
+- El proyecto ahora persiste opcionalmente un `TransportLoopRange` a 960 PPQ.
+  A/B se define desde el cursor y se guarda con un comando reversible; aún no
+  acciona repetición. El siguiente corte debe coordinar el salto de fuentes de
+  audio y agenda MIDI con un plan preparado fuera del callback.
 
 ## Continuación activa — 2.2 (2026-09-27)
 
