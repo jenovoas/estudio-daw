@@ -1081,6 +1081,63 @@ function renderClipInspector(snapshot) {
     source.textContent = `Fuente: ${audioClip.sourceName}`;
     elements.clipInspector.append(source);
   }
+  if (audioClip) {
+    const positionInput = makeInspectorNumber("Inicio (pulsos)", audioClip.startBeats, 0, null, 0.25, async (beats) => {
+      await runCommand("Posición de región actualizada", () => platform.editAudioRegion({
+        action: "move",
+        clipId: audioClip.id,
+        startTick: Math.round(beats * 480),
+      }));
+    });
+    const gainInput = makeInspectorNumber("Ganancia (dB)", audioClip.gainDb, -120, 24, 0.1, async (gainDb) => {
+      await runCommand("Ganancia de región actualizada", () => platform.editAudioRegion({
+        action: "gain",
+        clipId: audioClip.id,
+        gainDb,
+      }));
+    });
+    const durationMs = audioClip.durationSamples / Math.max(1, audioClip.sampleRateHz) * 1000;
+    const fadeInMs = audioClip.fadeInSamples / Math.max(1, audioClip.sampleRateHz) * 1000;
+    const fadeOutMs = audioClip.fadeOutSamples / Math.max(1, audioClip.sampleRateHz) * 1000;
+    const saveFades = async (edge, milliseconds) => {
+      const boundedMs = Math.max(0, Math.min(milliseconds, durationMs - (edge === "in" ? fadeOutMs : fadeInMs)));
+      await runCommand("Desvanecimiento de región actualizado", () => platform.editAudioRegion({
+        action: "fades",
+        clipId: audioClip.id,
+        fadeInSamples: Math.round((edge === "in" ? boundedMs : fadeInMs) * audioClip.sampleRateHz / 1000),
+        fadeOutSamples: Math.round((edge === "out" ? boundedMs : fadeOutMs) * audioClip.sampleRateHz / 1000),
+      }));
+    };
+    elements.clipInspector.append(
+      positionInput,
+      gainInput,
+      makeInspectorNumber("Entrada (ms)", fadeInMs, 0, Math.max(0, durationMs - fadeOutMs), 1, (value) => saveFades("in", value)),
+      makeInspectorNumber("Salida (ms)", fadeOutMs, 0, Math.max(0, durationMs - fadeInMs), 1, (value) => saveFades("out", value)),
+    );
+  }
+}
+
+function makeInspectorNumber(caption, value, min, max, step, onChange) {
+  const field = document.createElement("label");
+  field.className = "clip-inspector-field";
+  const name = document.createElement("span");
+  name.textContent = caption;
+  const input = document.createElement("input");
+  input.type = "number";
+  input.value = Number(value).toFixed(step < 1 ? 2 : 0);
+  input.min = String(min);
+  if (max !== null) input.max = String(max);
+  input.step = String(step);
+  input.addEventListener("change", () => {
+    const parsed = Number(input.value);
+    if (!Number.isFinite(parsed) || parsed < min || (max !== null && parsed > max)) {
+      input.value = Number(value).toFixed(step < 1 ? 2 : 0);
+      return;
+    }
+    onChange(parsed);
+  });
+  field.append(name, input);
+  return field;
 }
 
 function renderProjectMedia(snapshot) {

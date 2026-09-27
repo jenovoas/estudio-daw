@@ -258,6 +258,9 @@ button:disabled { opacity: .4; cursor: not-allowed !important; }
 .clip-inspector > strong { color: #f0f2f2; font-size: 10px; }
 .clip-inspector-type { padding: 2px 5px; border-radius: 2px; background: #34393c; color: #d9a271; font-size: 7px; font-weight: 750; letter-spacing: .6px; }
 .clip-inspector-source { max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.clip-inspector-field { display: inline-flex; align-items: center; gap: 5px; color: #9da4a7; font-size: 8px; }
+.clip-inspector-field input { width: 74px; height: 22px; border: 1px solid #454b4e; border-radius: 3px; padding: 2px 5px; background: #222628; color: #e1e4e5; font-size: 9px; font-variant-numeric: tabular-nums; }
+.clip-inspector-field input:focus-visible { outline: 1px solid #e7924a; outline-offset: 1px; }
 .audio-settings { border-top: 1px solid #3c4144; }
 .audio-summary { min-height: 35px; display: flex; align-items: center; gap: 8px; padding: 0 11px; list-style: none; color: #c9ccce; cursor: pointer; }
 .audio-summary::-webkit-details-marker { display: none; }

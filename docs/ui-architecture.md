@@ -123,11 +123,11 @@ se pueden reordenar con controles arriba/abajo. El lanzamiento permanece
 deshabilitado hasta conectar el planificador. El botón
 de ajustes abre Preferencias de audio. Al seleccionar un clip MIDI o una región
 de audio en Arreglo, el panel inferior presenta un inspector con pista,
-ubicación, duración y, para audio, su fuente; la edición contextual MIDI/audio
-todavía no está conectada. Las regiones de audio se pueden mover y recortar por
-sus bordes con la rejilla seleccionada (1/16, 1/8, negra, compás o libre); el
-recorte del inicio avanza también el desplazamiento de fuente y los cambios
-usan el historial del proyecto. Los clips MIDI aún son de sólo lectura en
+ubicación y duración. Para audio también permite cambiar numéricamente posición,
+ganancia y desvanecimientos; las regiones se pueden mover y recortar por sus
+bordes con la rejilla seleccionada (1/16, 1/8, negra, compás o libre). El recorte
+del inicio avanza también el desplazamiento de fuente y las modificaciones usan
+el historial del proyecto. Los clips MIDI aún son de sólo lectura en
 Arrangement.
 
 El navegador también enumera las regiones de audio importadas del proyecto y

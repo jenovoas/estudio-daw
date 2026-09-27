@@ -99,6 +99,9 @@ struct AudioClipSummary {
     channels: u16,
     source_name: Option<String>,
     source_digest: Option<String>,
+    gain_db: f32,
+    fade_in_samples: u64,
+    fade_out_samples: u64,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -325,6 +328,9 @@ fn summarize(application: &ProjectApplication, audio_engine_connected: bool) -> 
                     .and_then(|source| source.media.original_path.file_name())
                     .map(|name| name.to_string_lossy().into_owned()),
                 source_digest: source.map(|source| source.media.original_hash.clone()),
+                gain_db: clip.gain_db,
+                fade_in_samples: clip.fade_in_samples,
+                fade_out_samples: clip.fade_out_samples,
             }
         })
         .collect();
@@ -391,6 +397,9 @@ fn edit_audio_region(
     start_tick: Option<u64>,
     source_start_samples: Option<u64>,
     duration_samples: Option<u64>,
+    gain_db: Option<f32>,
+    fade_in_samples: Option<u64>,
+    fade_out_samples: Option<u64>,
     state: State<'_, DesktopState>,
 ) -> Result<UiSnapshot, String> {
     let mut application = state
@@ -412,6 +421,17 @@ fn edit_audio_region(
             duration_samples: duration_samples
                 .ok_or_else(|| "falta la duración de la región".to_owned())?,
             start_tick,
+        },
+        "gain" => ProjectCommand::SetAudioClipGain {
+            clip_id,
+            gain_db: gain_db.ok_or_else(|| "falta la ganancia de la región".to_owned())?,
+        },
+        "fades" => ProjectCommand::SetAudioClipFades {
+            clip_id,
+            fade_in_samples: fade_in_samples
+                .ok_or_else(|| "falta el desvanecimiento inicial".to_owned())?,
+            fade_out_samples: fade_out_samples
+                .ok_or_else(|| "falta el desvanecimiento final".to_owned())?,
         },
         "remove" => ProjectCommand::RemoveAudioClip { clip_id },
         _ => return Err(format!("acción de región desconocida: {action}")),
