@@ -10,7 +10,9 @@ use estudio_daw_audio_engine::{
 };
 use estudio_daw_audio_platform::{run_pipewire_output_until, PipeWireStreamConfig};
 use estudio_daw_midi_engine::RecordedMidiMessage;
-use estudio_daw_project_model::{AudioClip, InstrumentConfig, Project, TrackKind};
+use estudio_daw_project_model::{
+    AudioClip, InstrumentConfig, Project, TrackKind, TransportLoopRange,
+};
 use estudio_daw_runtime_diagnostics::{audio_devices, DeviceInfo};
 use estudio_daw_synth::{
     midi_event_queue, InstrumentMixerNode, SineSynthNode, SoundFontEventSender,
@@ -170,6 +172,7 @@ struct TransportPositionNode {
     sample_rate: u32,
     tempo_bpm: f64,
     position_ticks: Arc<AtomicU64>,
+    end_position_ticks: Option<u64>,
 }
 
 impl AudioNode for TransportPositionNode {
@@ -182,11 +185,37 @@ impl AudioNode for TransportPositionNode {
             self.sample_rate,
             self.tempo_bpm,
         );
+        let position = self
+            .start_position_ticks
+            .saturating_add(self.clock.position_ticks());
         self.position_ticks.store(
-            self.start_position_ticks
-                .saturating_add(self.clock.position_ticks()),
+            self.end_position_ticks
+                .map_or(position, |end| position.min(end)),
             Ordering::Release,
         );
+        Ok(())
+    }
+}
+
+/// Silencia el resto del bloque al llegar a B, aunque el coordinador de bucle
+/// publique el plan siguiente unos milisegundos después.
+struct LoopBoundaryGateNode {
+    frame_cursor: u64,
+    end_after_frames: u64,
+}
+
+impl AudioNode for LoopBoundaryGateNode {
+    fn process(&mut self, samples: &mut [f32]) -> Result<(), AudioNodeError> {
+        if samples.len() % 2 != 0 {
+            return Err(AudioNodeError::InvalidBlockLength);
+        }
+        let frames = (samples.len() / 2) as u64;
+        let allowed = self
+            .end_after_frames
+            .saturating_sub(self.frame_cursor)
+            .min(frames) as usize;
+        samples[allowed * 2..].fill(0.0);
+        self.frame_cursor = self.frame_cursor.saturating_add(frames);
         Ok(())
     }
 }
@@ -285,6 +314,8 @@ struct PlaybackSession {
     connected: Arc<AtomicBool>,
     schedule: mpsc::Sender<PlaybackSchedule>,
     thread: JoinHandle<Result<(), String>>,
+    loop_thread: Option<JoinHandle<()>>,
+    loop_error: Arc<std::sync::Mutex<Option<String>>>,
 }
 
 struct PlaybackSchedule {
@@ -294,7 +325,7 @@ struct PlaybackSchedule {
 
 pub struct AudioRuntimeHost {
     playback: Option<PlaybackSession>,
-    plan_control: Option<RenderPlanControl>,
+    plan_control: Option<Arc<std::sync::Mutex<RenderPlanControl>>>,
     position_ticks: Arc<AtomicU64>,
 }
 
@@ -319,6 +350,20 @@ impl AudioRuntimeHost {
         self.position_ticks.load(Ordering::Acquire)
     }
 
+    pub fn position_ticks_checked(&self) -> Result<u64, String> {
+        if let Some(playback) = &self.playback {
+            if let Some(error) = playback
+                .loop_error
+                .lock()
+                .map_err(|_| "el estado del bucle quedó bloqueado".to_owned())?
+                .clone()
+            {
+                return Err(format!("falló la repetición A/B: {error}"));
+            }
+        }
+        Ok(self.position_ticks())
+    }
+
     pub fn play(
         &mut self,
         project: &Project,
@@ -332,6 +377,14 @@ impl AudioRuntimeHost {
             }
         }
         self.stop()?;
+        let loop_range = project.transport.loop_range;
+        let start_position_ticks = loop_range.map_or(start_position_ticks, |range| {
+            if start_position_ticks < range.start_tick || start_position_ticks >= range.end_tick {
+                range.start_tick
+            } else {
+                start_position_ticks
+            }
+        });
         self.position_ticks
             .store(start_position_ticks, Ordering::Release);
         let config = PipeWireStreamConfig {
@@ -342,7 +395,7 @@ impl AudioRuntimeHost {
             .period_frames
             .saturating_mul(config.channels as usize);
         let paused = Arc::new(AtomicBool::new(false));
-        let (plan, senders, schedule) = build_project_playback(
+        let (plan, senders, schedule) = build_project_playback_with_end(
             project,
             config.sample_rate,
             max_samples,
@@ -350,8 +403,26 @@ impl AudioRuntimeHost {
             Arc::clone(&paused),
             Arc::clone(&self.position_ticks),
             start_position_ticks,
+            loop_range.map(|range| range.end_tick),
         )?;
         let (control, processor) = render_plan_exchange(plan);
+        let control = Arc::new(std::sync::Mutex::new(control));
+        // La primera vuelta alternativa queda decodificada antes de abrir el
+        // stream; las siguientes se preparan mientras su vuelta está sonando.
+        let prepared_loop = if let Some(range) = loop_range {
+            Some(build_project_playback_with_end(
+                project,
+                config.sample_rate,
+                max_samples,
+                profile.playback_safety_frames as usize,
+                Arc::clone(&paused),
+                Arc::clone(&self.position_ticks),
+                range.start_tick,
+                Some(range.end_tick),
+            )?)
+        } else {
+            None
+        };
         let (schedule_tx, schedule_rx) = mpsc::channel();
 
         let stop = Arc::new(AtomicBool::new(false));
@@ -412,12 +483,54 @@ impl AudioRuntimeHost {
                 connected.store(true, Ordering::Release);
                 self.playback = Some(PlaybackSession {
                     stop,
-                    paused,
+                    paused: Arc::clone(&paused),
                     connected,
                     schedule: schedule_tx,
                     thread,
+                    loop_thread: None,
+                    loop_error: Arc::new(std::sync::Mutex::new(None)),
                 });
-                self.plan_control = Some(control);
+                self.plan_control = Some(Arc::clone(&control));
+                if let (Some(range), Some(prepared)) = (loop_range, prepared_loop) {
+                    let loop_stop = Arc::clone(&self.playback.as_ref().unwrap().stop);
+                    let loop_paused = Arc::clone(&paused);
+                    let loop_position = Arc::clone(&self.position_ticks);
+                    let loop_control = Arc::clone(&control);
+                    let loop_schedule = self.playback.as_ref().unwrap().schedule.clone();
+                    let loop_project = project.clone();
+                    let loop_profile = profile;
+                    let loop_error = Arc::clone(&self.playback.as_ref().unwrap().loop_error);
+                    let handle = thread::Builder::new()
+                        .name("estudio-daw-loop-coordinator".into())
+                        .spawn(move || {
+                            if let Err(error) = coordinate_loop(
+                                loop_project,
+                                loop_profile,
+                                config.sample_rate,
+                                max_samples,
+                                range,
+                                prepared,
+                                loop_control,
+                                loop_schedule,
+                                loop_stop,
+                                loop_paused,
+                                loop_position,
+                            ) {
+                                if let Ok(mut state) = loop_error.lock() {
+                                    *state = Some(error);
+                                }
+                            }
+                        })
+                        .map_err(|error| error.to_string());
+                    let handle = match handle {
+                        Ok(handle) => handle,
+                        Err(error) => {
+                            self.stop()?;
+                            return Err(error);
+                        }
+                    };
+                    self.playback.as_mut().unwrap().loop_thread = Some(handle);
+                }
                 Ok(())
             }
             Ok(Err(error)) => {
@@ -458,9 +571,22 @@ impl AudioRuntimeHost {
             .plan_control
             .as_ref()
             .ok_or_else(|| "no está disponible el control del plan de audio".to_owned())?;
+        // Serializa la publicación con el coordinador A/B; la preparación sigue
+        // fuera del callback y PipeWire nunca adquiere este bloqueo.
+        let control = control
+            .lock()
+            .map_err(|_| "el control del plan quedó bloqueado".to_owned())?;
         let sample_rate = PipeWireStreamConfig::default().sample_rate;
         let max_samples = (profile.device_period_frames as usize).saturating_mul(2);
-        let (plan, senders, events) = build_project_playback(
+        let range = project.transport.loop_range;
+        let position_ticks = range.map_or(position_ticks, |range| {
+            if position_ticks < range.start_tick || position_ticks >= range.end_tick {
+                range.start_tick
+            } else {
+                position_ticks
+            }
+        });
+        let (plan, senders, events) = build_project_playback_with_end(
             project,
             sample_rate,
             max_samples,
@@ -468,6 +594,7 @@ impl AudioRuntimeHost {
             Arc::clone(&playback.paused),
             Arc::clone(&self.position_ticks),
             position_ticks,
+            range.map(|range| range.end_tick),
         )?;
         if control.publish(plan).is_err() {
             return Err("el motor aún está aplicando un cambio anterior de plan".to_owned());
@@ -497,6 +624,9 @@ impl AudioRuntimeHost {
         };
         playback.stop.store(true, Ordering::Release);
         playback.connected.store(false, Ordering::Release);
+        if let Some(loop_thread) = playback.loop_thread {
+            let _ = loop_thread.join();
+        }
         playback
             .thread
             .join()
@@ -527,6 +657,7 @@ impl Drop for AudioRuntimeHost {
     }
 }
 
+#[cfg(test)]
 fn build_project_playback(
     project: &Project,
     sample_rate: u32,
@@ -535,6 +666,35 @@ fn build_project_playback(
     paused: Arc<AtomicBool>,
     position_ticks: Arc<AtomicU64>,
     start_position_ticks: u64,
+) -> Result<
+    (
+        estudio_daw_audio_engine::RenderPlan,
+        Vec<EventSender>,
+        Vec<ScheduledEvent>,
+    ),
+    String,
+> {
+    build_project_playback_with_end(
+        project,
+        sample_rate,
+        max_samples,
+        queue_target_frames,
+        paused,
+        position_ticks,
+        start_position_ticks,
+        None,
+    )
+}
+
+fn build_project_playback_with_end(
+    project: &Project,
+    sample_rate: u32,
+    max_samples: usize,
+    queue_target_frames: usize,
+    paused: Arc<AtomicBool>,
+    position_ticks: Arc<AtomicU64>,
+    start_position_ticks: u64,
+    end_position_ticks: Option<u64>,
 ) -> Result<
     (
         estudio_daw_audio_engine::RenderPlan,
@@ -837,6 +997,19 @@ fn build_project_playback(
         pump.wait_until_primed(target_samples, Duration::from_secs(5))?;
     }
 
+    let loop_end_frames = end_position_ticks.map(|end_tick| {
+        let duration_micros = ticks_to_micros(
+            end_tick.saturating_sub(start_position_ticks),
+            estudio_daw_application::TICKS_PER_QUARTER,
+            bpm,
+        );
+        ((u128::from(duration_micros) * u128::from(sample_rate)) / 1_000_000)
+            .min(u128::from(u64::MAX)) as u64
+    });
+    if let Some(end_frames) = loop_end_frames {
+        let loop_duration = Duration::from_secs_f64(end_frames as f64 / f64::from(sample_rate));
+        schedule.retain(|event| event.at < loop_duration);
+    }
     schedule.sort_by_key(|event| (event.at, event.sequence));
     let mut builder = RenderPlanBuilder::new();
     builder.add_node(TransportPositionNode {
@@ -845,10 +1018,17 @@ fn build_project_playback(
         sample_rate,
         tempo_bpm: bpm,
         position_ticks,
+        end_position_ticks,
     });
     builder.add_node(InstrumentMixerNode::new(sources, max_samples));
     if !audio_streams.is_empty() {
         builder.add_node(AudioClipMixerNode::new(audio_streams, max_samples));
+    }
+    if let Some(end_after_frames) = loop_end_frames {
+        builder.add_node(LoopBoundaryGateNode {
+            frame_cursor: 0,
+            end_after_frames,
+        });
     }
     let mut plan = builder.build();
     for worker in workers {
@@ -858,6 +1038,86 @@ fn build_project_playback(
         plan.retain_resource(pump);
     }
     Ok((plan, senders, schedule))
+}
+
+#[allow(clippy::too_many_arguments)]
+fn coordinate_loop(
+    project: Project,
+    profile: AudioProfileSettings,
+    sample_rate: u32,
+    max_samples: usize,
+    range: TransportLoopRange,
+    mut prepared: (
+        estudio_daw_audio_engine::RenderPlan,
+        Vec<EventSender>,
+        Vec<ScheduledEvent>,
+    ),
+    control: Arc<std::sync::Mutex<RenderPlanControl>>,
+    schedule: mpsc::Sender<PlaybackSchedule>,
+    stop: Arc<AtomicBool>,
+    paused: Arc<AtomicBool>,
+    position_ticks: Arc<AtomicU64>,
+) -> Result<(), String> {
+    while !stop.load(Ordering::Acquire) {
+        if paused.load(Ordering::Acquire) || position_ticks.load(Ordering::Acquire) < range.end_tick
+        {
+            thread::sleep(Duration::from_millis(1));
+            continue;
+        }
+        let (plan, senders, events) = prepared;
+        let published = control
+            .lock()
+            .map_err(|_| "el control del plan quedó bloqueado".to_owned())?
+            .publish(plan)
+            .is_ok();
+        if !published {
+            thread::sleep(Duration::from_millis(1));
+            // A competing seek can occupy the exchange; rebuild after it settles.
+            prepared = build_project_playback_with_end(
+                &project,
+                sample_rate,
+                max_samples,
+                profile.playback_safety_frames as usize,
+                Arc::clone(&paused),
+                Arc::clone(&position_ticks),
+                range.start_tick,
+                Some(range.end_tick),
+            )
+            .map_err(|error| format!("no se pudo reconstruir la vuelta A/B: {error}"))?;
+            continue;
+        }
+        let deadline = Instant::now() + Duration::from_millis(500);
+        let mut reclaimed = false;
+        while !stop.load(Ordering::Acquire) && Instant::now() < deadline {
+            if control
+                .lock()
+                .map_err(|_| "el control del plan quedó bloqueado".to_owned())?
+                .reap_retired()
+            {
+                reclaimed = true;
+                break;
+            }
+            thread::sleep(Duration::from_millis(1));
+        }
+        if !reclaimed {
+            return Err("PipeWire no confirmó el cambio de vuelta".to_owned());
+        }
+        if schedule.send(PlaybackSchedule { events, senders }).is_err() {
+            return Err("el scheduler MIDI terminó antes del cambio de vuelta".to_owned());
+        }
+        prepared = build_project_playback_with_end(
+            &project,
+            sample_rate,
+            max_samples,
+            profile.playback_safety_frames as usize,
+            Arc::clone(&paused),
+            Arc::clone(&position_ticks),
+            range.start_tick,
+            Some(range.end_tick),
+        )
+        .map_err(|error| format!("no se pudo preparar la siguiente vuelta A/B: {error}"))?;
+    }
+    Ok(())
 }
 
 fn synth_event(message: &RecordedMidiMessage) -> Option<SynthMidiEvent> {

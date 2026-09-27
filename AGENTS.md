@@ -162,6 +162,25 @@ de formatos como OpenSpec; no se usan como excusa para añadir prosa en inglés.
 Para explorar estructuralmente el código, usa la habilidad instalada `codebase-memory`.
 <!-- codebase-memory-mcp:end -->
 
+## Estado vigente — loop A/B de transporte — 2026-09-27
+
+- El loop A/B persistido ya se conecta al playback Tauri: al iniciar Play con
+  rango vigente, el plan limita audio en B y un coordinador prepara/publica el
+  salto a A junto con su agenda MIDI, sin cerrar PipeWire. La primera vuelta
+  adicional se prepara antes de abrir el stream; las siguientes se preparan
+  fuera del callback. Errores del coordinador aparecen al consultar posición.
+- Cambiar el rango con el transporte ya iniciado no modifica el coordinador de
+  esa sesión; detener e iniciar aplica el rango nuevo. No afirmar QA acústica ni
+  sincronía sample-accurate: el scheduler MIDI conserva su reloj de pared.
+- Verificación de este corte: `cargo check -p estudio-daw-ui-shell`,
+  `cargo fmt --all -- --check`, `git diff --check` y validación OpenSpec normal
+  (válida con ocho avisos lingüísticos conocidos). No se ejecutaron pruebas.
+  OpenSpec sigue en 9/35; 2.3 y 4.3 permanecen parciales hasta completar QA,
+  rebuild al editar y los controladores/funciones aún pendientes.
+- SHA inicial: `33836f5`; consultar `git log` para SHA final/publicación. Vault:
+  registrar el avance append-only en `BITACORA_AGENTES.md` y actualizar
+  `ESTADO_ACTUAL.md`.
+
 ## Avance posterior — búsqueda de transporte — 2026-09-27
 
 - Un clic en la regla durante Play recompila el plan y lo publica al siguiente

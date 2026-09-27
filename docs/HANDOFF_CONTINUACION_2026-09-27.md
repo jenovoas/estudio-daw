@@ -74,3 +74,12 @@
 - `AddTrack` crea pista de audio estéreo, la conecta por ID al Master y crea ese canal en la misma transacción cuando falta. Session y Mezclador presentan el mismo resumen de la instantánea que Arreglo; Session muestra encabezados/casillas vacías y el Mezclador es de sólo lectura.
 - Pasaron `cargo fmt --all`, `cargo test --workspace -- --test-threads=1`, `cargo check --workspace`, `cargo fmt --all -- --check`, `git diff --check` y `openspec validate workstation-arrangement-surface-v2`. La validación conserva ocho avisos lingüísticos sobre `MUST/SHALL`; no son fallos estructurales.
 - Progreso: 9/35. Seguir con 2.3, que está parcialmente implementada. No está disponible el ruteo a hardware, edición de Session ni controles activos de mezcla.
+
+## Actualización — loop A/B conectado a audio/MIDI
+
+- Punto inicial: commit publicado `33836f5` (`feat: persiste rango de repetición A/B`). La implementación conecta ahora el rango al runtime Tauri: B limita la salida de audio y el plan alternativo reinicia audio/MIDI desde A mediante publicación en límite de bloque, manteniendo PipeWire abierto.
+- La primera vuelta adicional se prepara antes de abrir el stream; el coordinador prepara vueltas posteriores fuera del callback. Pause detiene el avance y la aplicación del salto hasta reanudar. Los errores al preparar/aplicar se reflejan al consultar posición.
+- Un rango editado durante una sesión iniciada se aplica al siguiente inicio de Play. El scheduler MIDI aún se basa en reloj de pared, así que no afirmar sincronía sample-accurate ni QA acústica.
+- Verificación: `cargo check -p estudio-daw-ui-shell`, `cargo fmt --all -- --check`, `git diff --check`; `openspec validate workstation-arrangement-surface-v2` válida con ocho avisos lingüísticos conocidos. No se ejecutó ninguna suite de pruebas.
+- OpenSpec sigue 9/35; las tareas 2.3 y 4.3 continúan abiertas por actualización del plan al editar, controladores MIDI restantes, sincronía del scheduler y QA funcional/acústica. Consultar el último commit de `main` para el SHA final.
+- Siguiente: continuar 2.3 con actualización del plan activo cuando cambian regiones/proyecto; mantener en paralelo los pendientes de 4.3. Vault append-only actualizado en esta intervención.

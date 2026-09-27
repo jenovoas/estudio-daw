@@ -794,7 +794,7 @@ fn transport_position(state: State<'_, DesktopState>) -> Result<u64, String> {
         .audio
         .lock()
         .map_err(|_| "el estado del motor de audio quedó bloqueado".to_owned())?
-        .position_ticks())
+        .position_ticks_checked()?)
 }
 
 #[tauri::command]

@@ -40,9 +40,13 @@ forma de onda limita la duración procesada a diez minutos y produce como máxim
   región con `ffmpeg` en un worker y un ring PCM acotado, y el plan mezcla esas
   muestras con las pistas de instrumentos MIDI. Al iniciar desde detenido,
   Play parte del cursor de Arreglo y ajusta el desplazamiento de fuente; durante
-  Play se puede buscar desde la regla sin cerrar PipeWire. El rango A/B de
-  repetición se puede definir y guardar en el proyecto, pero todavía no activa
-  la repetición. Los cambios de región se guardan de inmediato y se oyen al
+  Play se puede buscar desde la regla sin cerrar PipeWire. Al iniciar Play con
+  un rango A/B guardado, el runtime repite audio y MIDI sin cerrar PipeWire; el
+  plan silencia desde B hasta aplicar el salto a A. La primera vuelta adicional
+  se prepara antes de abrir el stream y las siguientes fuera del callback. Si
+  falla la preparación o el intercambio, la consulta de posición devuelve un
+  error. Los cambios del rango durante la reproducción aplican al siguiente
+  inicio. Los cambios de región se guardan de inmediato y se oyen al
   detener e iniciar de nuevo; no reinician el dispositivo como parte de la
   edición. La waveform sólo visualiza datos y no simula la señal reproducida.
 - Los procesos externos `ffmpeg` y `ffprobe` deben estar instalados. Un fallo se
@@ -51,5 +55,6 @@ forma de onda limita la duración procesada a diez minutos y produce como máxim
 
 La tarea OpenSpec 2.2 permanece abierta hasta completar QA visual del flujo de
 importación y edición en la aplicación. La tarea 2.3 también sigue abierta por
-carecer de bucles, búsqueda/seguimiento del cursor y actualización del plan
-durante reproducción, además de QA acústica.
+permanecer abierta por QA funcional/acústica y actualización del plan de región
+al editar durante reproducción; el bucle A/B ya está conectado al runtime, pero
+la suite no se ejecutó en esta intervención.

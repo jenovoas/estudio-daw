@@ -707,8 +707,13 @@ acotados y las mezcla con instrumentos MIDI; el callback no decodifica ni hace
 I/O. La posición y el cabezal de reproducción de Arreglo siguen los frames
 procesados y se congelan en pausa. Un clic en la regla durante Play reubica la
 reproducción compilando y publicando el plan al siguiente bloque sin cerrar
-PipeWire. El rango A/B se puede guardar desde el cursor como parte reversible
-del proyecto; todavía no activa la repetición. Faltan bucles, restauración del resto de controladores MIDI al
+PipeWire. El rango A/B se guarda como parte reversible del proyecto y, al iniciar
+Play, repite audio y MIDI manteniendo PipeWire abierto. El runtime prepara la
+primera vuelta adicional antes de abrir el stream y las siguientes fuera del
+callback; el plan silencia desde B hasta que se aplica el salto a A. Si no puede
+preparar o aplicar una vuelta, la consulta de posición informa el error. Cambiar
+el rango después de iniciar el transporte no altera la vuelta activa; detén y
+vuelve a iniciar para aplicar el nuevo rango. Faltan restauración del resto de controladores MIDI al
 navegar y actualización del plan al editar, selección de salidas físicas,
 grabación live y monitorización de entrada. No
 se declara terminada la interfaz. La propuesta y las tareas abiertas de

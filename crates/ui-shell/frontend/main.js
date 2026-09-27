@@ -69,6 +69,7 @@ let audioSettings = null;
 let projectTransportState = "stopped";
 let transportPositionTick = 0;
 let transportPositionPollPending = false;
+let transportLoopErrorReported = false;
 let loopRange = null;
 let pendingLoopStartTick = null;
 let pendingAudioPath = null;
@@ -894,6 +895,7 @@ elements.saveAs.addEventListener("click", () => runCommand("Copia del proyecto g
 elements.play.addEventListener("click", async () => {
   stopPreview();
   await whileBusy([elements.play], async () => { try {
+    transportLoopErrorReported = false;
     const startAtCursor = projectTransportState === "stopped";
     const snapshot = await platform.setTransport("play", startAtCursor ? editCursorTick * 2 : null);
     renderSnapshot(snapshot);
@@ -918,8 +920,11 @@ setInterval(async () => {
   transportPositionPollPending = true;
   try {
     renderTransportPosition(await platform.transportPosition());
-  } catch {
-    // El indicador conserva la última posición confirmada si falla una lectura.
+  } catch (error) {
+    if (!transportLoopErrorReported) {
+      transportLoopErrorReported = true;
+      setNotice("Falló la repetición A/B", String(error));
+    }
   } finally {
     transportPositionPollPending = false;
   }
