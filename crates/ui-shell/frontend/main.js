@@ -188,7 +188,7 @@ function trackChannelDescription(track) {
 
 function trackSignalFlow(track) {
   if (track.virtualMaster || track.role === "master") {
-    return "Suma MIDI/audio/metrónomo → medidor Master → salida del plan";
+    return "Suma MIDI/audio/metrónomo → ganancia/silencio Master → medidor Master → salida del plan";
   }
   if (track.kind === "audio") {
     return "Regiones de audio → ganancia/desvanecimientos de región → ganancia/pan de pista → medidor → suma del plan";
@@ -197,7 +197,8 @@ function trackSignalFlow(track) {
 }
 
 function createTrackMixerControls(track, compact = false) {
-  if (track.role === "master") return null;
+  if (track.virtualMaster) return null;
+  const isMaster = track.role === "master";
   const controls = document.createElement("div");
   controls.className = compact ? "mixer-controls mixer-controls-compact" : "mixer-controls";
   const toggle = (label, property, value) => {
@@ -214,7 +215,7 @@ function createTrackMixerControls(track, compact = false) {
   };
   toggle("ACT", "active", track.active);
   toggle("M", "mute", track.mute);
-  toggle("S", "solo", track.solo);
+  if (!isMaster) toggle("S", "solo", track.solo);
 
   const slider = (label, property, value, min, max, step, suffix = "") => {
     const field = document.createElement("label");
@@ -233,7 +234,7 @@ function createTrackMixerControls(track, compact = false) {
     controls.append(field);
   };
   slider("Ganancia", "gainDb", track.gainDb, -60, 12, 0.5, " dB");
-  slider("Pan", "pan", track.pan, -1, 1, 0.05);
+  if (!isMaster) slider("Pan", "pan", track.pan, -1, 1, 0.05);
   return controls;
 }
 
@@ -419,7 +420,9 @@ function renderMixerSurface(tracks) {
     mix.className = "mixer-values";
     mix.textContent = track.virtualMaster
       ? "Salida estéreo combinada"
-      : `${Number(track.gainDb).toFixed(1)} dB · Pan ${Number(track.pan).toFixed(2)}${track.mute ? " · Silencio" : ""}${track.solo ? " · Solo" : ""}${track.active ? "" : " · Inactiva"}`;
+      : track.role === "master"
+        ? `${Number(track.gainDb).toFixed(1)} dB${track.mute ? " · Silencio" : ""}${track.active ? "" : " · Inactiva"}`
+        : `${Number(track.gainDb).toFixed(1)} dB · Pan ${Number(track.pan).toFixed(2)}${track.mute ? " · Silencio" : ""}${track.solo ? " · Solo" : ""}${track.active ? "" : " · Inactiva"}`;
     if (track.groupName) role.textContent += ` · ${track.groupName}`;
     const selection = createTrackSelectionControl(track);
     channel.append(...(selection ? [selection] : []), title, role, routing, mix);

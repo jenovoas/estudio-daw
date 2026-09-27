@@ -87,6 +87,13 @@ especificado en [`ui-bridge-contract-v1.md`](ui-bridge-contract-v1.md). Los IDs
 de derivados son opacos; la UI no resuelve rutas del filesystem y el payload de
 tiles binarios se solicita por separado del JSON.
 
+El estado de mezcla pertenece a cada pista y se modifica mediante comandos de
+proyecto reversibles. La pertenencia a un grupo sólo organiza pistas: no vincula
+ni propaga activa, silencio, solo, ganancia o panorama. Cuando el proyecto tiene
+un canal Master persistido, activa/silencio/ganancia del Master procesan la suma
+final antes de su medidor; los proyectos legados sin ese canal muestran una
+salida Master informativa sin controles editables.
+
 En modo navegador el dominio portable podrá compartir modelos y comandos, pero el
 backend de audio/compute será otro adaptador (por ejemplo Web Audio/AudioWorklet y
 WebGPU cuando estén disponibles). No se presupone intercambio zero-copy con el

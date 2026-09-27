@@ -178,6 +178,21 @@ struct MasterOutputMeterNode {
     meter: Arc<TrackMeter>,
 }
 
+struct MasterOutputProcessingNode {
+    gain: f32,
+    enabled: bool,
+}
+
+impl AudioNode for MasterOutputProcessingNode {
+    fn process(&mut self, interleaved: &mut [f32]) -> Result<(), AudioNodeError> {
+        let gain = if self.enabled { self.gain } else { 0.0 };
+        for sample in interleaved {
+            *sample *= gain;
+        }
+        Ok(())
+    }
+}
+
 impl AudioNode for MasterOutputMeterNode {
     fn process(&mut self, interleaved: &mut [f32]) -> Result<(), AudioNodeError> {
         self.meter.update(interleaved);
@@ -1559,6 +1574,15 @@ fn build_project_playback_with_end(
         tempo_bpm: bpm,
         position_ticks,
         end_position_ticks,
+    });
+    let master_mixer = project
+        .tracks
+        .iter()
+        .find(|track| track.role == estudio_daw_project_model::TrackRole::Master)
+        .map(|track| &track.mixer);
+    builder.add_node(MasterOutputProcessingNode {
+        gain: master_mixer.map_or(1.0, |mixer| 10.0_f32.powf(mixer.gain_db / 20.0)),
+        enabled: master_mixer.map_or(true, |mixer| mixer.active && !mixer.mute),
     });
     builder.add_node(MasterOutputMeterNode {
         meter: track_meter_for(&track_meters, MASTER_METER_ID)?,
