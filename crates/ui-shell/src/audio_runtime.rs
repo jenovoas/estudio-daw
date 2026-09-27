@@ -235,6 +235,11 @@ fn build_project_playback(
             .filter(|clip| clip.track_id == track.id)
         {
             for event in &clip.take.events {
+                // Include events exactly at the clip boundary (notably a
+                // NoteOff at the final tick), but never schedule beyond it.
+                if event.tick > clip.duration_ticks {
+                    continue;
+                }
                 let Some(midi) = synth_event(&event.message) else {
                     continue;
                 };
@@ -466,6 +471,30 @@ mod tests {
         assert_eq!(schedule[2].at, Duration::from_millis(500));
         assert_eq!(schedule[3].at, Duration::from_secs(1));
         assert_ne!(schedule[1].sender, schedule[2].sender);
+    }
+
+    #[test]
+    fn excludes_events_after_clip_duration_and_keeps_boundary_note_off() {
+        let mut project = project_with_two_clips();
+        for clip in &mut project.midi_clips {
+            clip.duration_ticks = 960;
+            clip.take.events.push(RecordedMidiEvent {
+                tick: 961,
+                micros_since_start: 500_521,
+                source: MidiSource { client: 1, port: 0 },
+                message: RecordedMidiMessage::NoteOn {
+                    channel: 0,
+                    note: 72,
+                    velocity: 100,
+                },
+            });
+        }
+        let (_, _, schedule) = build_project_playback(&project, 48_000, 512, 1024).unwrap();
+        assert_eq!(schedule.len(), 4);
+        assert!(schedule.iter().any(|event| {
+            event.at == Duration::from_millis(500)
+                && matches!(event.midi, SynthMidiEvent::NoteOff { note: 60, .. })
+        }));
     }
 
     #[test]

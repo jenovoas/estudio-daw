@@ -301,6 +301,10 @@ fn replace_application(
 }
 
 fn demo_midi_take() -> MidiTake {
+    const PPQ: u32 = 480;
+    const TEMPO_BPM: u32 = 120;
+    let tick_to_micros =
+        |tick: u64| tick.saturating_mul(60_000_000) / (u64::from(PPQ) * u64::from(TEMPO_BPM));
     let notes = [
         (0, 60),
         (480, 62),
@@ -314,7 +318,7 @@ fn demo_midi_take() -> MidiTake {
     for (tick, note) in notes {
         events.push(RecordedMidiEvent {
             tick,
-            micros_since_start: tick as u64 * 1_000_000 / 960,
+            micros_since_start: tick_to_micros(tick),
             source: MidiSource { client: 0, port: 0 },
             message: RecordedMidiMessage::NoteOn {
                 channel: 0,
@@ -324,7 +328,7 @@ fn demo_midi_take() -> MidiTake {
         });
         events.push(RecordedMidiEvent {
             tick: tick + 360,
-            micros_since_start: (tick as u64 + 360) * 1_000_000 / 960,
+            micros_since_start: tick_to_micros(tick + 360),
             source: MidiSource { client: 0, port: 0 },
             message: RecordedMidiMessage::NoteOff {
                 channel: 0,
@@ -335,8 +339,8 @@ fn demo_midi_take() -> MidiTake {
     }
     events.sort_by_key(|event| event.tick);
     MidiTake {
-        ppq: 480,
-        tempo_bpm: 120,
+        ppq: PPQ,
+        tempo_bpm: TEMPO_BPM,
         duration_micros: 3_500_000,
         events,
     }
@@ -472,19 +476,40 @@ fn set_transport(command: String, state: State<'_, DesktopState>) -> Result<UiSn
         .audio
         .lock()
         .map_err(|_| "el estado del motor de audio quedó bloqueado".to_owned())?;
+    let settings = if matches!(session_command, SessionCommand::Play) {
+        Some(load_audio_runtime_settings().map_err(|error| error.to_string())?)
+    } else {
+        None
+    };
+    application
+        .execute(DomainCommand::Session(session_command), CommandAuthor::User)
+        .map_err(|e| e.to_string())?;
     match session_command {
         SessionCommand::Play => {
             let project = application.snapshot().project.project;
-            let settings = load_audio_runtime_settings().map_err(|error| error.to_string())?;
-            audio.play(&project, settings.active())?;
+            let active_profile = settings
+                .as_ref()
+                .map(|settings| settings.active())
+                .ok_or_else(|| "faltan preferencias para iniciar audio".to_owned())?;
+            if let Err(error) = audio.play(&project, active_profile) {
+                // Keep the domain transport stopped if device/backend startup
+                // fails after the command was accepted.
+                let rollback = application.execute(
+                    DomainCommand::Session(SessionCommand::Stop),
+                    CommandAuthor::User,
+                );
+                return match rollback {
+                    Ok(_) => Err(error),
+                    Err(rollback_error) => Err(format!(
+                        "{error}; además no se pudo revertir el transporte: {rollback_error}"
+                    )),
+                };
+            }
         }
         SessionCommand::Pause => audio.pause(true),
         SessionCommand::Stop => audio.stop()?,
         _ => unreachable!("el adaptador sólo acepta play/pause/stop"),
     }
-    application
-        .execute(DomainCommand::Session(session_command), CommandAuthor::User)
-        .map_err(|e| e.to_string())?;
     Ok(summarize(application, audio.is_connected()))
 }
 
@@ -598,6 +623,9 @@ mod tests {
         assert_eq!(snapshot.midi_clips[0].notes[0].duration_beats, 0.75);
         assert!((snapshot.midi_clips[0].duration_beats - 6.75).abs() < f64::EPSILON);
         assert_eq!(snapshot.tracks[0].note_count, 7);
+        let take = demo_midi_take();
+        assert_eq!(take.events[2].tick, 480);
+        assert_eq!(take.events[2].micros_since_start, 500_000);
     }
 
     #[test]

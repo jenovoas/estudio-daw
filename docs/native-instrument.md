@@ -10,10 +10,12 @@ añadir material. Demo MIDI adjunta siete notas de prueba mediante SineSynth,
 sin depender de SoundFont externo. Guardar se activa cuando la sesión ya tiene
 una ruta; «Guardar como» está disponible para una sesión nueva.
 
-La ventana muestra cabeceras de pista y los clips MIDI en un arreglo de 16
-compases. Usa una paleta oscura neutral y acento cálido, inspirada en el feeling
-de Ableton Live 12 Suite, sin incorporar recursos gráficos ni activos de
-Ableton. El shell todavía no incluye edición de arreglo/notas, grabación live,
+La ventana muestra cabeceras de pista, una regla musical, los clips MIDI y una
+vista compacta de sus notas en un arreglo de 16 compases. La jerarquía visual
+usa chrome oscuro y compacto, una grilla de alto contraste y clips de color,
+inspirada en el flujo visual de Ableton Live 12 Suite sin incorporar recursos
+gráficos ni activos de Ableton. Play/Pause/Stop controla la reproducción MIDI
+PipeWire. El shell todavía no incluye edición de arreglo/notas, grabación live,
 monitorización MIDI ni reproducción de clips de audio.
 
 `estudio-daw-synth` ofrece dos fuentes: el sinte sinusoidal polifónico (fallback

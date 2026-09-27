@@ -680,9 +680,10 @@ scripting, profesor IA e implementación WASM.
 
 La primera interfaz de escritorio usa Tauri como adaptador sobre
 `estudio-daw-application`; el frontend está separado del bridge Tauri. Esta
-ventana permite abrir/guardar proyectos JSON, inspeccionar pistas y clips, y
-probar los comandos de transporte e historial. El estado Play/Pause/Stop todavía
-no está conectado al stream ni al `RenderPlan` de audio.
+ventana permite abrir/guardar proyectos JSON, inspeccionar pistas y clips,
+reproducir tomas MIDI de las pistas de instrumento y probar los comandos de
+transporte e historial. Play/Pause/Stop controla el stream PipeWire y el
+`RenderPlan`; la edición de arreglo sigue siendo experimental.
 
 ```bash
 cargo run -p estudio-daw-ui-shell

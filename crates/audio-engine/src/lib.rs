@@ -373,8 +373,12 @@ impl RenderPlanProcessor {
         let slot = &self.inner.slots[self.active_slot];
         // SAFETY: this processor is the sole owner of the active slot until it
         // marks that slot RETIRED at a later block boundary.
-        let plan = unsafe { (&mut *slot.plan.get()).as_mut() }
-            .expect("an active render-plan slot must contain a plan");
+        // A missing slot is an invariant violation, but the audio callback
+        // must fail closed with silence instead of unwinding across FFI.
+        let Some(plan) = (unsafe { (&mut *slot.plan.get()).as_mut() }) else {
+            interleaved.fill(0.0);
+            return Ok(());
+        };
         plan.process(interleaved)
     }
 }
@@ -615,5 +619,18 @@ mod tests {
         let mut next = RenderPlanBuilder::new();
         next.add_node(GainNode::new(4.0));
         assert!(control.publish(next.build().unwrap()).is_ok());
+    }
+
+    #[test]
+    fn empty_active_slot_fails_closed_with_silence_without_panicking() {
+        let mut builder = RenderPlanBuilder::new();
+        builder.add_node(GainNode::new(2.0));
+        let (_control, mut processor) = render_plan_exchange(builder.build().unwrap());
+        // Simulate slot corruption/invariant failure without crossing an FFI
+        // boundary; the callback contract is to return silence, never unwind.
+        unsafe { *processor.inner.slots[0].plan.get() = None };
+        let mut block = [0.5, -0.5];
+        assert!(processor.process(&mut block).is_ok());
+        assert_eq!(block, [0.0, 0.0]);
     }
 }

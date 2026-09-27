@@ -65,6 +65,11 @@ El productor compila y publica un plan completo; el processor lo adopta sólo
 al comenzar `process()` para un nuevo bloque. La topología activa no cambia a
 mitad de bloque.
 
+Durante Pause, el adaptador PipeWire escribe silencio sin llamar a
+`RenderPlanProcessor::process`; así no avanza el estado de voces ni se consume
+PCM del ring. El scheduler MIDI congela su reloj y descuenta el intervalo de
+pausa al reanudar.
+
 El intercambio usa dos slots con estados atómicos. El callback nunca destruye
 el plan anterior: lo marca como retirado y el hilo de control lo libera mediante
 `reap_retired()`. Hasta que se recoja ese slot, una nueva publicación se

@@ -218,6 +218,7 @@ impl SineSynthNode {
                 note,
                 velocity,
             } => {
+                let note = note.min(127);
                 let index = self
                     .voices
                     .iter()
@@ -483,6 +484,24 @@ mod tests {
             previous = current;
         }
         assert!((43..=45).contains(&positive_crossings));
+    }
+
+    #[test]
+    fn out_of_range_midi_pitch_is_clamped_before_frequency_lookup() {
+        let (mut sender, receiver) = midi_event_queue();
+        let mut synth = SineSynthNode::new(48_000, 2, receiver).unwrap();
+        assert!(sender.try_send(SynthMidiEvent::NoteOn {
+            channel: 0,
+            note: 255,
+            velocity: 100,
+        }));
+        let mut block = [0.0; 512];
+        synth.process(&mut block).unwrap();
+        assert!(block.iter().all(|sample| sample.is_finite()));
+        assert!(synth
+            .voices
+            .iter()
+            .any(|voice| voice.active && voice.note == 127));
     }
 
     #[test]

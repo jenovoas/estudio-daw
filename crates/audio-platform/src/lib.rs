@@ -407,10 +407,13 @@ pub fn run_pipewire_output_until(
                     bytes.len(),
                 );
                 let (_, samples, _) = unsafe { bytes[..valid_bytes].align_to_mut::<f32>() };
-                let process_ok = processor.process(samples).is_ok();
-                if paused_in_callback.load(Ordering::Acquire) || !process_ok {
-                    samples.fill(0.0);
-                }
+                // A paused transport must not advance synth envelopes or pop
+                // instrument PCM. Only write silence until resume.
+                process_output_block(
+                    &mut processor,
+                    samples,
+                    paused_in_callback.load(Ordering::Acquire),
+                );
                 samples.len()
             };
             let chunk = data.chunk_mut();
@@ -449,6 +452,12 @@ pub fn run_pipewire_output_until(
     drop(_listener);
     drop(stream);
     Ok(())
+}
+
+fn process_output_block(processor: &mut RenderPlanProcessor, samples: &mut [f32], paused: bool) {
+    if paused || processor.process(samples).is_err() {
+        samples.fill(0.0);
+    }
 }
 
 /// Reproduce un `RenderPlan` por una duración finita, sin abrir una entrada
@@ -1124,6 +1133,35 @@ fn output_buffer_bytes(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use estudio_daw_audio_engine::{AudioNode, AudioNodeError, RenderPlanBuilder};
+    use std::sync::atomic::AtomicUsize;
+
+    struct ProcessCounter(Arc<AtomicUsize>);
+
+    impl AudioNode for ProcessCounter {
+        fn process(&mut self, samples: &mut [f32]) -> Result<(), AudioNodeError> {
+            self.0.fetch_add(1, Ordering::Relaxed);
+            samples.fill(1.0);
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn pause_outputs_silence_without_advancing_render_plan() {
+        let calls = Arc::new(AtomicUsize::new(0));
+        let mut builder = RenderPlanBuilder::new();
+        builder.add_node(ProcessCounter(Arc::clone(&calls)));
+        let (_control, mut processor) = render_plan_exchange(builder.build().unwrap());
+
+        let mut block = [0.25; 8];
+        process_output_block(&mut processor, &mut block, true);
+        assert_eq!(block, [0.0; 8]);
+        assert_eq!(calls.load(Ordering::Relaxed), 0);
+
+        process_output_block(&mut processor, &mut block, false);
+        assert_eq!(block, [1.0; 8]);
+        assert_eq!(calls.load(Ordering::Relaxed), 1);
+    }
 
     #[test]
     fn validates_pipewire_stream_configuration() {

@@ -104,6 +104,73 @@ footer { height: 28px; border-top: 1px solid #111; background: var(--chrome); di
 .connection-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--mint); box-shadow: 0 0 6px #a6d9bd55; }
 .footer-right { margin-left: auto; font-size: 8px; letter-spacing: .8px; color: #888; }
 button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+/* Live-inspired working surface: compact chrome, deep arrangement grid and
+   saturated clips keep the session, rather than cards, as the visual focus. */
+:root {
+  --chrome: #17191b;
+  --surface: #292c2f;
+  --surface-raised: #35393d;
+  --surface-inset: #1d2022;
+  --line: #454a4e;
+  --muted: #a0a5a8;
+  --accent: #ff9b45;
+  --mint: #83d6af;
+  background: #202326;
+}
+body { background: #202326; color: #e8e9e9; }
+.topbar { height: 46px; background: #17191b; border-bottom-color: #090a0b; }
+.brand { font-size: 12px; letter-spacing: .2px; }
+.brand-mark { border-radius: 50%; box-shadow: 0 0 12px #ff9b4533; }
+.project-actions { gap: 6px; }
+.project-path { max-width: 220px; }
+.button { border-radius: 4px; padding: 7px 10px; background: #373b3e; border-color: #50565a; font-size: 10px; }
+.button-primary { background: #ff9b45; border-color: #ff9b45; box-shadow: 0 1px #ffd0a1 inset; }
+.workspace {
+  height: calc(100vh - 74px); min-height: 500px; padding: 8px 10px 7px;
+  grid-template-rows: 54px 48px minmax(260px, 1fr) auto auto; gap: 6px;
+}
+.panel { border: 1px solid #17191b; border-radius: 5px; box-shadow: 0 1px #41464a inset, 0 2px 5px #0002; }
+.transport { background: linear-gradient(#33373a, #2a2d30); gap: 17px; padding: 6px 12px; }
+.transport-controls { gap: 4px; }
+.transport-button { width: 37px; height: 34px; border-radius: 5px; background: #41464a; border-color: #555b5f; font-size: 14px; }
+.transport-play { background: #ff9b45; border-color: #ff9b45; box-shadow: 0 1px #ffd0a1 inset; }
+.transport-readout { min-height: 30px; border-left-color: #555b5f; }
+.transport-readout strong { font-size: 16px; }
+.session-heading { padding: 2px 5px; }
+.session-heading h1 { font-size: 17px; font-weight: 650; }
+.session-stats { gap: 0; overflow: hidden; border: 1px solid #3f4448; border-radius: 5px; background: #292c2f; }
+.stat { min-width: 82px; justify-content: center; gap: 7px; padding: 7px 10px; border-left: 1px solid #3f4448; }
+.stat:first-child { border-left: 0; }
+.arrangement { min-height: 260px; background: #242729; }
+.arrangement-heading { height: 39px; padding: 0 13px; background: linear-gradient(#35393c, #2d3033); border-bottom-color: #17191b; }
+.arrangement-heading h2 { font-size: 12px; letter-spacing: .1px; }
+.arrangement-grid { grid-template-columns: 230px minmax(900px, 1fr); }
+.ruler-label, .timeline-ruler { height: 30px; background: #212426; border-bottom-color: #151718; }
+.ruler-label { padding-top: 9px; background: #292c2f; }
+.bar-tick { padding: 7px 0 0 7px; border-left-color: #73797d; color: #c9cccd; }
+.arrangement-track-list, .arrangement-lanes { grid-auto-rows: 72px; }
+.track-row { padding: 0 12px; gap: 6px; background: linear-gradient(90deg, #35393c, #303437); border-right-color: #191b1d; }
+.track-name { font-size: 11px; }
+.track-icon { width: 22px; height: 22px; border-radius: 4px; background: #71482e; color: #ffc18e; }
+.track-meta { color: #aeb3b5; font-size: 8px; }
+.timeline-lane {
+  background-color: #242729;
+  background-image: linear-gradient(to right, #555b5f 1px, transparent 1px), linear-gradient(to right, #34393c 1px, transparent 1px);
+  background-size: 6.25% 100%, 1.5625% 100%;
+  border-bottom-color: #17191b;
+}
+.timeline-lane:nth-child(even) { background-color: #222527; }
+.midi-clip {
+  top: 7px; height: 58px; padding: 6px 8px; border: 1px solid #ffc17e;
+  border-radius: 5px; background: linear-gradient(155deg, #c77a3d, #96512f 70%);
+  color: #fff3e6; box-shadow: 0 1px #ffe0b0 inset, 0 2px 5px #090a0b77;
+}
+.clip-note { height: 4px; border-radius: 2px; background: #fff0d8; box-shadow: 0 0 3px #fff8; }
+.audio-settings { background: #292c2f; }
+.audio-summary { min-height: 37px; padding: 0 12px; }
+.notice { min-height: 37px; background: #292c2f; }
+footer { height: 28px; background: #17191b; border-top-color: #090a0b; }
 @media (max-width: 1000px) {
   .project-path { max-width: 140px; }
   .audio-profile-row { grid-template-columns: 115px 1fr; }
