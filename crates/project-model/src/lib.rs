@@ -37,6 +37,8 @@ pub enum ProjectJsonError {
     InvalidVersionType,
     #[error("versión de proyecto no soportada: {0}")]
     UnsupportedVersion(String),
+    #[error("pista de proyecto inválida: {0}")]
+    InvalidTrack(String),
 }
 
 /// Política que decide qué representación se usa durante reproducción o
@@ -606,6 +608,25 @@ pub struct Project {
     pub import_provenance: ImportProvenance,
 }
 
+impl Project {
+    /// Verifica identidad y límites globales de roles persistidos.
+    pub fn validate_track_contracts(&self) -> Result<(), TrackValidationError> {
+        let mut ids = std::collections::HashSet::new();
+        let mut master_count = 0;
+        for track in &self.tracks {
+            track.validate()?;
+            if !ids.insert(track.id.as_str()) {
+                return Err(TrackValidationError::DuplicateId(track.id.clone()));
+            }
+            master_count += usize::from(track.role == TrackRole::Master);
+        }
+        if master_count > 1 {
+            return Err(TrackValidationError::MultipleMasterTracks);
+        }
+        Ok(())
+    }
+}
+
 /// Deserializa y migra un proyecto antes de exponerlo al resto de la aplicación.
 /// Los esquemas anteriores se migran en memoria. Las versiones futuras se
 /// rechazan antes de deserializar para evitar guardar y perder datos que esta
@@ -707,47 +728,51 @@ pub fn load_project_json(bytes: &[u8]) -> Result<Project, ProjectJsonError> {
     // project.v4 separa la función de la pista de su medio y especifica la
     // topología de canales. En migración sólo se infiere lo que ya expresa el
     // modelo anterior; buses/returns/master requieren creación explícita.
-    if object.get("schema_version").and_then(|v| v.as_str()) != Some("estudio-daw.project.v4") {
-        if let Some(tracks) = object.get_mut("tracks").and_then(|v| v.as_array_mut()) {
-            for track in tracks {
-                let Some(track) = track.as_object_mut() else {
-                    continue;
-                };
-                let is_audio = track.get("kind").and_then(|v| v.as_str()) == Some("audio");
-                let has_instrument = track.get("instrument").is_some_and(|v| !v.is_null());
-                let input_channels = if is_audio {
-                    track
-                        .get("audio_channels")
-                        .cloned()
-                        .unwrap_or(serde_json::Value::Null)
-                } else {
-                    serde_json::Value::Null
-                };
-                let role = if is_audio {
-                    "audio"
-                } else if has_instrument {
-                    "instrument"
-                } else {
-                    "midi"
-                };
+    if let Some(tracks) = object.get_mut("tracks").and_then(|v| v.as_array_mut()) {
+        for track in tracks {
+            let Some(track) = track.as_object_mut() else {
+                continue;
+            };
+            let is_audio = track.get("kind").and_then(|v| v.as_str()) == Some("audio");
+            let has_instrument = track.get("instrument").is_some_and(|v| !v.is_null());
+            let input_channels = if is_audio {
                 track
-                    .entry("role")
-                    .or_insert_with(|| serde_json::Value::String(role.into()));
-                track.entry("channel_config").or_insert_with(|| {
-                    serde_json::json!({
-                        "input_channels": input_channels,
-                        "output_channels": 2
-                    })
-                });
-            }
+                    .get("audio_channels")
+                    .cloned()
+                    .unwrap_or(serde_json::Value::Null)
+            } else {
+                serde_json::Value::Null
+            };
+            let role = if is_audio {
+                "audio"
+            } else if has_instrument {
+                "instrument"
+            } else {
+                "midi"
+            };
+            track
+                .entry("role")
+                .or_insert_with(|| serde_json::Value::String(role.into()));
+            track.entry("channel_config").or_insert_with(|| {
+                serde_json::json!({
+                    "input_channels": input_channels,
+                    "output_channels": 2
+                })
+            });
         }
+    }
+    if object.get("schema_version").and_then(|v| v.as_str()) != Some("estudio-daw.project.v4") {
         object.insert(
             "schema_version".into(),
             serde_json::Value::String("estudio-daw.project.v4".into()),
         );
     }
 
-    Ok(serde_json::from_value(value)?)
+    let project: Project = serde_json::from_value(value)?;
+    project
+        .validate_track_contracts()
+        .map_err(|error| ProjectJsonError::InvalidTrack(error.to_string()))?;
+    Ok(project)
 }
 
 /// Mutación completa y reversible del modelo de proyecto.
@@ -989,6 +1014,108 @@ impl Default for TrackChannelConfig {
         Self {
             input_channels: None,
             output_channels: 2,
+        }
+    }
+}
+
+#[derive(Debug, Error, PartialEq, Eq)]
+pub enum TrackValidationError {
+    #[error("track id and name must not be empty")]
+    EmptyIdentity,
+    #[error("track id is duplicated: {0}")]
+    DuplicateId(String),
+    #[error("role is incompatible with the track media kind")]
+    RoleKindMismatch,
+    #[error("instrument role and instrument assignment must agree")]
+    InstrumentRoleMismatch,
+    #[error("MIDI tracks cannot own audio media, channel counts, or audio input channels")]
+    AudioStateOnMidi,
+    #[error("audio tracks cannot contain MIDI notes or an instrument")]
+    MidiStateOnAudio,
+    #[error("bus, return, and master tracks cannot own source media")]
+    SourceOnInternalTrack,
+    #[error("input and output channel counts must be greater than zero")]
+    InvalidChannels,
+    #[error("gain must be between -60 and +12 dB and pan between -1 and +1")]
+    InvalidMixer,
+    #[error("a project can contain at most one master track")]
+    MultipleMasterTracks,
+}
+
+impl Track {
+    /// Creates an empty role-consistent track with conservative portable defaults.
+    pub fn new(
+        id: impl Into<String>,
+        name: impl Into<String>,
+        kind: TrackKind,
+        role: TrackRole,
+    ) -> Result<Self, TrackValidationError> {
+        let instrument = (role == TrackRole::Instrument).then_some(InstrumentConfig::Sine);
+        let audio_channels = (role == TrackRole::Audio).then_some(2);
+        let track = Self {
+            id: id.into(),
+            name: name.into(),
+            kind,
+            role,
+            channel_config: TrackChannelConfig {
+                input_channels: audio_channels,
+                output_channels: 2,
+            },
+            color: default_track_color(),
+            mixer: TrackMixerState::default(),
+            notes: Vec::new(),
+            audio_channels,
+            media_source: None,
+            instrument,
+        };
+        track.validate()?;
+        Ok(track)
+    }
+
+    pub fn validate(&self) -> Result<(), TrackValidationError> {
+        if self.id.trim().is_empty() || self.name.trim().is_empty() {
+            return Err(TrackValidationError::EmptyIdentity);
+        }
+        let role_matches_kind = matches!(
+            (&self.kind, self.role),
+            (TrackKind::Midi, TrackRole::Midi | TrackRole::Instrument)
+                | (
+                    TrackKind::Audio,
+                    TrackRole::Audio | TrackRole::Bus | TrackRole::Return | TrackRole::Master
+                )
+        );
+        if !role_matches_kind {
+            return Err(TrackValidationError::RoleKindMismatch);
+        }
+        if (self.role == TrackRole::Instrument) != self.instrument.is_some() {
+            return Err(TrackValidationError::InstrumentRoleMismatch);
+        }
+        if self.channel_config.output_channels == 0 || self.channel_config.input_channels == Some(0)
+        {
+            return Err(TrackValidationError::InvalidChannels);
+        }
+        if !self.mixer.gain_db.is_finite()
+            || !(-60.0..=12.0).contains(&self.mixer.gain_db)
+            || !self.mixer.pan.is_finite()
+            || !(-1.0..=1.0).contains(&self.mixer.pan)
+        {
+            return Err(TrackValidationError::InvalidMixer);
+        }
+        match &self.kind {
+            TrackKind::Midi
+                if self.media_source.is_some()
+                    || self.audio_channels.is_some()
+                    || self.channel_config.input_channels.is_some() =>
+            {
+                Err(TrackValidationError::AudioStateOnMidi)
+            }
+            TrackKind::Audio if self.instrument.is_some() || !self.notes.is_empty() => {
+                Err(TrackValidationError::MidiStateOnAudio)
+            }
+            TrackKind::Audio if self.role != TrackRole::Audio && self.media_source.is_some() => {
+                Err(TrackValidationError::SourceOnInternalTrack)
+            }
+            _ => Ok(()),
         }
     }
 }
@@ -1693,14 +1820,17 @@ mod tests {
             "schema_version":"estudio-daw.project.v1",
             "project_id":"v1-song",
             "transport":{"tempo_bpm":92.0,"time_signature":{"numerator":4,"denominator":4}},
-            "tracks":[{"id":"track-midi","name":"Keys","kind":"midi","notes":[]}],
+            "tracks":[{"id":"track-midi","name":"Keys","kind":"midi","notes":[{"midi_key":60,"velocity":0.8,"time_beats":0.5,"duration_beats":1.0}]}],
             "import_provenance":{"format":"estudio-daw","format_version":"1","source_file":"","warnings":[]}
         }"#;
 
         let project = load_project_json(v1).unwrap();
 
         assert_eq!(project.schema_version, "estudio-daw.project.v4");
+        assert_eq!(project.tracks[0].id, "track-midi");
         assert_eq!(project.tracks[0].instrument, Some(InstrumentConfig::Sine));
+        assert_eq!(project.tracks[0].notes[0].midi_key, 60);
+        assert_eq!(project.tracks[0].notes[0].time_beats, 0.5);
         assert_eq!(project.tracks[0].mixer, TrackMixerState::default());
         assert_eq!(project.tracks[0].role, TrackRole::Instrument);
     }
@@ -1736,6 +1866,105 @@ mod tests {
         assert_eq!(project.tracks[1].channel_config.input_channels, Some(2));
         assert!(project.midi_clips.is_empty());
         assert!(project.audio_clips.is_empty());
+    }
+
+    #[test]
+    fn migrates_v3_to_current_format_and_fills_role_specific_defaults() {
+        let v3 = br##"{
+            "schema_version":"estudio-daw.project.v3",
+            "project_id":"v3-audio",
+            "transport":{"tempo_bpm":100.0,"time_signature":{"numerator":4,"denominator":4}},
+            "tracks":[{"id":"audio-1","name":"Audio","kind":"audio","notes":[],"audio_channels":2,"color":"#ca7850","mixer":{"active":false,"mute":true,"solo":false,"gain_db":-3.0,"pan":0.25}}],
+            "midi_clips":[],
+            "audio_clips":[],
+            "import_provenance":{"format":"estudio-daw","format_version":"3","source_file":"","warnings":[]}
+        }"##;
+
+        let project = load_project_json(v3).unwrap();
+        let track = &project.tracks[0];
+        assert_eq!(project.schema_version, "estudio-daw.project.v4");
+        assert_eq!(track.role, TrackRole::Audio);
+        assert_eq!(track.channel_config.input_channels, Some(2));
+        assert_eq!(track.channel_config.output_channels, 2);
+        assert_eq!(track.color, "#ca7850");
+        assert!(track.mixer.mute);
+        assert_eq!(track.mixer.pan, 0.25);
+    }
+
+    #[test]
+    fn all_track_roles_have_valid_serializable_construction_contracts() {
+        let role_kinds = [
+            (TrackKind::Midi, TrackRole::Midi),
+            (TrackKind::Midi, TrackRole::Instrument),
+            (TrackKind::Audio, TrackRole::Audio),
+            (TrackKind::Audio, TrackRole::Bus),
+            (TrackKind::Audio, TrackRole::Return),
+            (TrackKind::Audio, TrackRole::Master),
+        ];
+        for (index, (kind, role)) in role_kinds.into_iter().enumerate() {
+            let track = Track::new(format!("track-{index}"), "Track", kind, role).unwrap();
+            track.validate().unwrap();
+            assert_eq!(track.channel_config.output_channels, 2);
+            if role == TrackRole::Instrument {
+                assert_eq!(track.instrument, Some(InstrumentConfig::Sine));
+            }
+            if role == TrackRole::Audio {
+                assert_eq!(track.channel_config.input_channels, Some(2));
+                assert_eq!(track.audio_channels, Some(2));
+            }
+            if matches!(role, TrackRole::Bus | TrackRole::Return | TrackRole::Master) {
+                assert_eq!(track.channel_config.input_channels, None);
+                assert!(track.media_source.is_none());
+            }
+            let encoded = serde_json::to_vec(&track).unwrap();
+            let decoded: Track = serde_json::from_slice(&encoded).unwrap();
+            assert_eq!(decoded, track);
+        }
+        assert_eq!(
+            Track::new("bad", "Bad", TrackKind::Midi, TrackRole::Audio),
+            Err(TrackValidationError::RoleKindMismatch)
+        );
+    }
+
+    #[test]
+    fn project_track_validation_rejects_duplicate_ids_and_multiple_masters() {
+        let mut project = load_project_json(br#"{
+            "schema_version":"estudio-daw.project.v4",
+            "project_id":"invalid-tracks",
+            "transport":{"tempo_bpm":120.0,"time_signature":{"numerator":4,"denominator":4}},
+            "tracks":[],
+            "import_provenance":{"format":"estudio-daw","format_version":"4","source_file":"","warnings":[]}
+        }"#).unwrap();
+        let master_a =
+            Track::new("master-a", "Master A", TrackKind::Audio, TrackRole::Master).unwrap();
+        let mut master_b =
+            Track::new("master-b", "Master B", TrackKind::Audio, TrackRole::Master).unwrap();
+        project.tracks.extend([master_a.clone(), master_b.clone()]);
+        assert_eq!(
+            project.validate_track_contracts(),
+            Err(TrackValidationError::MultipleMasterTracks)
+        );
+        master_b.id = master_a.id.clone();
+        project.tracks = vec![master_a, master_b];
+        assert_eq!(
+            project.validate_track_contracts(),
+            Err(TrackValidationError::DuplicateId("master-a".into()))
+        );
+    }
+
+    #[test]
+    fn current_schema_repairs_missing_role_and_channel_defaults_from_track_kind() {
+        let partial = br#"{
+            "schema_version":"estudio-daw.project.v4",
+            "project_id":"partial-current-format",
+            "transport":{"tempo_bpm":120.0,"time_signature":{"numerator":4,"denominator":4}},
+            "tracks":[{"id":"audio","name":"Audio","kind":"audio","notes":[],"audio_channels":1}],
+            "import_provenance":{"format":"estudio-daw","format_version":"4","source_file":"","warnings":[]}
+        }"#;
+        let project = load_project_json(partial).unwrap();
+        assert_eq!(project.tracks[0].role, TrackRole::Audio);
+        assert_eq!(project.tracks[0].channel_config.input_channels, Some(1));
+        assert_eq!(project.tracks[0].channel_config.output_channels, 2);
     }
 
     #[test]

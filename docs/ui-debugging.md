@@ -33,8 +33,8 @@ cargo test -p estudio-daw-application -- --test-threads=1
 cargo test -p estudio-daw-ui-shell -- --test-threads=1
 ```
 
-Las pruebas de `project-model` cubren migración y persistencia. `command-bus`
-cubre validación, historial y eventos de dominio. `application` cubre ciclo de
+Las pruebas de `project-model` cubren migración v1/v2/v3, defaults, roles,
+identidad/orden y persistencia. `command-bus` cubre validación, historial y eventos de dominio. `application` cubre ciclo de
 apertura/guardado y undo. `ui-shell` cubre snapshots, resúmenes y scheduler MIDI.
 Para verificar todo el repositorio:
 

@@ -293,60 +293,17 @@ impl CommandRuntime {
             ProjectCommand::AddTrack { track, index } => self
                 .project_history
                 .transact("add track", |project| -> Result<(), String> {
-                    if track.id.trim().is_empty() || track.name.trim().is_empty() {
-                        return Err(String::from("track id and name must not be empty"));
-                    }
+                    track.validate().map_err(|error| error.to_string())?;
                     if project.tracks.iter().any(|item| item.id == track.id) {
                         return Err(format!("track id already exists: {}", track.id));
                     }
-                    let role_matches_kind = matches!(
-                        (&track.kind, track.role),
-                        (
-                            estudio_daw_project_model::TrackKind::Midi,
-                            TrackRole::Midi | TrackRole::Instrument
-                        ) | (
-                            estudio_daw_project_model::TrackKind::Audio,
-                            TrackRole::Audio
-                                | TrackRole::Bus
-                                | TrackRole::Return
-                                | TrackRole::Master
-                        )
-                    );
-                    if !role_matches_kind {
-                        return Err(String::from(
-                            "track role is incompatible with its media kind",
-                        ));
-                    }
-                    if track.channel_config.output_channels == 0
-                        || track.channel_config.input_channels == Some(0)
+                    if track.role == TrackRole::Master
+                        && project
+                            .tracks
+                            .iter()
+                            .any(|item| item.role == TrackRole::Master)
                     {
-                        return Err(String::from(
-                            "track channel counts must be greater than zero",
-                        ));
-                    }
-                    match &track.kind {
-                        estudio_daw_project_model::TrackKind::Audio
-                            if track.instrument.is_some() || !track.notes.is_empty() =>
-                        {
-                            return Err(
-                                "audio tracks cannot contain MIDI notes or an instrument".into()
-                            );
-                        }
-                        estudio_daw_project_model::TrackKind::Midi
-                            if track.media_source.is_some() || track.audio_channels.is_some() =>
-                        {
-                            return Err(
-                                "MIDI tracks cannot own audio media or audio channels".into()
-                            );
-                        }
-                        _ => {}
-                    }
-                    if !track.mixer.gain_db.is_finite()
-                        || !(-60.0..=12.0).contains(&track.mixer.gain_db)
-                        || !track.mixer.pan.is_finite()
-                        || !(-1.0..=1.0).contains(&track.mixer.pan)
-                    {
-                        return Err("track mixer state is outside supported gain/pan bounds".into());
+                        return Err(String::from("project already has a master track"));
                     }
                     let insert_at = index
                         .unwrap_or(project.tracks.len())
