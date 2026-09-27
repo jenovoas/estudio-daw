@@ -148,6 +148,7 @@ struct AudioClipStream {
     ring: Arc<SampleRingBuffer>,
     start_frame: u64,
     duration_frames: u64,
+    clip_offset_frames: u64,
     fade_in_frames: u64,
     fade_out_frames: u64,
     gain: f32,
@@ -164,6 +165,7 @@ struct AudioClipMixerNode {
 /// callbacks; la lectura desde Tauri usa un atómico y nunca toca el callback.
 struct TransportPositionNode {
     clock: TransportClock,
+    start_position_ticks: u64,
     sample_rate: u32,
     tempo_bpm: f64,
     position_ticks: Arc<AtomicU64>,
@@ -179,8 +181,11 @@ impl AudioNode for TransportPositionNode {
             self.sample_rate,
             self.tempo_bpm,
         );
-        self.position_ticks
-            .store(self.clock.position_ticks(), Ordering::Release);
+        self.position_ticks.store(
+            self.start_position_ticks
+                .saturating_add(self.clock.position_ticks()),
+            Ordering::Release,
+        );
         Ok(())
     }
 }
@@ -203,17 +208,22 @@ impl AudioNode for AudioClipMixerNode {
         let frames = interleaved.len() / 2;
         let block_start = self.frame_cursor;
         for stream in &self.streams {
-            let block_offset = stream.start_frame.saturating_sub(block_start) as usize;
-            if block_offset >= frames {
+            let block_offset_frames = stream.start_frame.saturating_sub(block_start);
+            if block_offset_frames >= frames as u64 {
                 continue;
             }
-            let clip_frame_offset = block_start.saturating_sub(stream.start_frame);
+            let block_offset = block_offset_frames as usize;
+            let clip_frame_offset = stream
+                .clip_offset_frames
+                .saturating_add(block_start.saturating_sub(stream.start_frame));
             if clip_frame_offset >= stream.duration_frames {
                 continue;
             }
+            let remaining_clip_frames =
+                usize::try_from(stream.duration_frames - clip_frame_offset).unwrap_or(usize::MAX);
             let active_frames = frames
                 .saturating_sub(block_offset)
-                .min((stream.duration_frames - clip_frame_offset) as usize);
+                .min(remaining_clip_frames);
             let active_samples = active_frames * 2;
             self.scratch[..active_samples].fill(0.0);
             stream.ring.pop(&mut self.scratch[..active_samples]);
@@ -300,7 +310,12 @@ impl AudioRuntimeHost {
         self.position_ticks.load(Ordering::Acquire)
     }
 
-    pub fn play(&mut self, project: &Project, profile: AudioProfileSettings) -> Result<(), String> {
+    pub fn play(
+        &mut self,
+        project: &Project,
+        profile: AudioProfileSettings,
+        start_position_ticks: u64,
+    ) -> Result<(), String> {
         if let Some(playback) = &self.playback {
             if playback.connected.load(Ordering::Acquire) {
                 playback.paused.store(false, Ordering::Release);
@@ -308,7 +323,8 @@ impl AudioRuntimeHost {
             }
         }
         self.stop()?;
-        self.position_ticks.store(0, Ordering::Release);
+        self.position_ticks
+            .store(start_position_ticks, Ordering::Release);
         let config = PipeWireStreamConfig {
             period_frames: profile.device_period_frames as usize,
             ..PipeWireStreamConfig::default()
@@ -324,6 +340,7 @@ impl AudioRuntimeHost {
             profile.playback_safety_frames as usize,
             Arc::clone(&paused),
             Arc::clone(&self.position_ticks),
+            start_position_ticks,
         )?;
         let (control, processor) = render_plan_exchange(plan);
         drop(control);
@@ -445,6 +462,7 @@ fn build_project_playback(
     queue_target_frames: usize,
     paused: Arc<AtomicBool>,
     position_ticks: Arc<AtomicU64>,
+    start_position_ticks: u64,
 ) -> Result<
     (
         estudio_daw_audio_engine::RenderPlan,
@@ -459,6 +477,14 @@ fn build_project_playback(
     } else {
         120.0
     };
+    let start_position_micros = ticks_to_micros(
+        start_position_ticks,
+        estudio_daw_application::TICKS_PER_QUARTER,
+        bpm,
+    );
+    let start_position_frame = ((u128::from(start_position_micros) * u128::from(sample_rate))
+        / 1_000_000)
+        .min(u128::from(u64::MAX)) as u64;
     let mut sources: Vec<Box<dyn estudio_daw_audio_engine::AudioNode>> = Vec::new();
     let mut workers = Vec::new();
     let mut senders = Vec::new();
@@ -486,9 +512,12 @@ fn build_project_playback(
                     continue;
                 };
                 let absolute_tick = clip.start_tick.saturating_add(event.tick);
-                let micros = ticks_to_micros(absolute_tick, clip.take.ppq, bpm);
+                let absolute_micros = ticks_to_micros(absolute_tick, clip.take.ppq, bpm);
+                if absolute_micros < start_position_micros {
+                    continue;
+                }
                 schedule.push(ScheduledEvent {
-                    at: Duration::from_micros(micros),
+                    at: Duration::from_micros(absolute_micros - start_position_micros),
                     sequence,
                     sender: sender_index,
                     midi,
@@ -561,13 +590,38 @@ fn build_project_playback(
                 )
             })?;
         let source_rate = source.sample_rate_hz.unwrap_or(clip.sample_rate);
+        let to_output_frames = |source_samples: u64| -> u64 {
+            ((u128::from(source_samples) * u128::from(sample_rate))
+                / u128::from(source_rate.max(1)))
+            .min(u128::from(u64::MAX)) as u64
+        };
+        let clip_start_micros = ticks_to_micros(clip.start_tick, 480, bpm);
+        let clip_start_frame = ((u128::from(clip_start_micros) * u128::from(sample_rate))
+            / 1_000_000)
+            .min(u128::from(u64::MAX)) as u64;
+        let clip_offset_frames = start_position_frame.saturating_sub(clip_start_frame);
+        let duration_frames = to_output_frames(clip.duration_samples).max(1);
+        if clip_offset_frames >= duration_frames {
+            continue;
+        }
+        let consumed_source_samples = ((u128::from(clip_offset_frames)
+            * u128::from(source_rate.max(1)))
+            / u128::from(sample_rate.max(1)))
+        .min(u128::from(u64::MAX)) as u64;
+        let remaining_source_samples = clip
+            .duration_samples
+            .saturating_sub(consumed_source_samples);
+        if remaining_source_samples == 0 {
+            continue;
+        }
         let decoder = estudio_daw_media_adapter::AudioPcmDecoder::spawn(
             &source.media.original_path,
             source_rate,
             source.channels.unwrap_or(clip.channels),
             &clip.source_channel_selection,
-            clip.source_start_samples,
-            clip.duration_samples,
+            clip.source_start_samples
+                .saturating_add(consumed_source_samples),
+            remaining_source_samples,
             sample_rate,
         )
         .map_err(|error| format!("no se pudo preparar '{}': {error}", clip.name))?;
@@ -575,18 +629,11 @@ fn build_project_playback(
             (sample_rate as usize).saturating_mul(2).max(2),
         ));
         let pump = AudioDecodePump::start(decoder, Arc::clone(&ring))?;
-        let to_output_frames = |source_samples: u64| -> u64 {
-            ((u128::from(source_samples) * u128::from(sample_rate))
-                / u128::from(source_rate.max(1)))
-            .min(u128::from(u64::MAX)) as u64
-        };
-        let start_micros = ticks_to_micros(clip.start_tick, 480, bpm);
-        let start_frame = ((u128::from(start_micros) * u128::from(sample_rate)) / 1_000_000)
-            .min(u128::from(u64::MAX)) as u64;
         audio_streams.push(AudioClipStream {
             ring,
-            start_frame,
-            duration_frames: to_output_frames(clip.duration_samples).max(1),
+            start_frame: clip_start_frame.saturating_sub(start_position_frame),
+            duration_frames,
+            clip_offset_frames,
             fade_in_frames: to_output_frames(clip.fade_in_samples),
             fade_out_frames: to_output_frames(clip.fade_out_samples),
             gain: 10.0_f32.powf(clip.gain_db / 20.0),
@@ -602,6 +649,7 @@ fn build_project_playback(
     let mut builder = RenderPlanBuilder::new();
     builder.add_node(TransportPositionNode {
         clock: TransportClock::default(),
+        start_position_ticks,
         sample_rate,
         tempo_bpm: bpm,
         position_ticks,
@@ -801,6 +849,7 @@ mod tests {
             1024,
             Arc::new(AtomicBool::new(false)),
             Arc::new(AtomicU64::new(0)),
+            0,
         )
         .unwrap();
 
@@ -837,6 +886,7 @@ mod tests {
             1024,
             Arc::new(AtomicBool::new(false)),
             Arc::new(AtomicU64::new(0)),
+            0,
         )
         .unwrap();
         assert_eq!(schedule.len(), 4);

@@ -832,13 +832,16 @@ elements.saveAs.addEventListener("click", () => runCommand("Copia del proyecto g
 elements.play.addEventListener("click", async () => {
   stopPreview();
   await whileBusy([elements.play], async () => { try {
-    const snapshot = await platform.setTransport("play");
+    const startAtCursor = projectTransportState === "stopped";
+    const snapshot = await platform.setTransport("play", startAtCursor ? editCursorTick * 2 : null);
     renderSnapshot(snapshot);
-    setNotice(snapshot.midiClipCount === 0
-      ? "Sesión vacía"
-      : "Transporte en Play", snapshot.midiClipCount === 0
-      ? "No hay clips MIDI en esta sesión; abre un proyecto con clips para escuchar instrumentos."
-      : "Reproduciendo clips MIDI con los instrumentos asignados a sus pistas.");
+    renderTransportPosition(await platform.transportPosition());
+    const hasContent = snapshot.midiClipCount > 0 || snapshot.audioClipCount > 0;
+    setNotice(hasContent ? "Transporte en Play" : "Sesión vacía", hasContent
+      ? startAtCursor
+        ? `Reproducción desde el cursor de Arreglo (${elements.transportPosition.textContent}).`
+        : `Transporte reanudado en ${elements.transportPosition.textContent}.`
+      : "No hay regiones MIDI ni de audio en este proyecto.");
   } catch (error) {
     setNotice("No se pudo iniciar la reproducción", String(error));
   } });

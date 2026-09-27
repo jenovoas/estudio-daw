@@ -833,7 +833,11 @@ fn save_project_as(path: String, state: State<'_, DesktopState>) -> Result<UiSna
 }
 
 #[tauri::command]
-fn set_transport(command: String, state: State<'_, DesktopState>) -> Result<UiSnapshot, String> {
+fn set_transport(
+    command: String,
+    position_ticks: Option<u64>,
+    state: State<'_, DesktopState>,
+) -> Result<UiSnapshot, String> {
     let mut application = state
         .application
         .lock()
@@ -866,7 +870,9 @@ fn set_transport(command: String, state: State<'_, DesktopState>) -> Result<UiSn
                 .as_ref()
                 .map(|settings| settings.active())
                 .ok_or_else(|| "faltan preferencias para iniciar audio".to_owned())?;
-            if let Err(error) = audio.play(&project, active_profile) {
+            if let Err(error) =
+                audio.play(&project, active_profile, position_ticks.unwrap_or_default())
+            {
                 // Keep the domain transport stopped if device/backend startup
                 // fails after the command was accepted.
                 let rollback = application.execute(

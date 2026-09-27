@@ -46,7 +46,7 @@ window.estudioPlatform = {
     if (!path) return null;
     return invoke("save_project_as", { path });
   },
-  setTransport: (command) => invoke("set_transport", { command }),
+  setTransport: (command, positionTicks = null) => invoke("set_transport", { command, positionTicks }),
   transportPosition: () => invoke("transport_position"),
   historyAction: (action) => invoke("history_action", { action }),
   audioRuntimeSettings: () => invoke("audio_runtime_settings"),

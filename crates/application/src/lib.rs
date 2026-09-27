@@ -10,7 +10,9 @@ pub use estudio_daw_command_bus::{
 };
 use estudio_daw_command_bus::{CommandDiagnostic, CommandRuntime, DomainCommandBus};
 use estudio_daw_project_model::{load_project_json, Project, ProjectJsonError};
-pub use estudio_daw_session::{SessionCommand, TransportClock, TransportSnapshot, TransportState};
+pub use estudio_daw_session::{
+    SessionCommand, TransportClock, TransportSnapshot, TransportState, TICKS_PER_QUARTER,
+};
 use serde::{Deserialize, Serialize};
 use std::{
     ffi::OsString,

@@ -2,13 +2,13 @@
 
 ## Reanudación — reproducción incremental de regiones (OpenSpec 2.3)
 
-- HEAD publicado antes de este corte: `183e938` (`feat: coloca audio desde el cursor de edicion`). La implementación de reproducción está en curso y aún no está publicada; consultar `git status/log` al reanudar.
+- HEAD publicado tras los cortes 2.3/4.3: `c534142` (`feat: muestra posición real del transporte`). La búsqueda inicial desde el cursor de Arreglo está en curso; consultar `git status/log` al reanudar.
 - `AudioPcmDecoder` usa `ffmpeg` para transmitir PCM f32 estéreo. Un worker por región llena un ring PCM SPSC de un segundo, limitado a 64 regiones y precargado antes de abrir PipeWire. `AudioClipMixerNode` mezcla en el plan ya compilado con MIDI y aplica posición inicial, desplazamiento/duración, canales, ganancia y fades. El callback sólo consume el ring y mezcla en scratch preasignado.
-- Pause congela el plan; Stop libera los workers/cancela `ffmpeg`. Cambiar regiones mientras corre guarda el proyecto pero no reconstruye el plan activo; detener e iniciar carga los cambios. El transporte aún empieza en cero, sin búsqueda/seguimiento del cursor ni bucle.
+- Pause congela el plan; Stop libera los workers/cancela `ffmpeg`. Cambiar regiones mientras corre guarda el proyecto pero no reconstruye el plan activo; detener e iniciar carga los cambios. Al iniciar desde detenido se puede reproducir desde el cursor de Arreglo; todavía no existe búsqueda en caliente ni bucle.
 - `workstation-arrangement-surface-v2` permanece en 9/35; 2.2 sigue abierta por QA visual y 2.3 sigue abierta por las capacidades de transporte ausentes y QA acústica. No marcar ninguna completa por esta implementación parcial.
-- Avance local de 4.3: `TransportPositionNode` publica la posición musical calculada por `TransportClock` a partir de los frames procesados por PipeWire; la UI dibuja y muestra el cabezal. Sigue pendiente búsqueda, posición inicial elegible y loop; la implementación no usa reloj de pared para mover el cabezal.
+- Avance publicado de 4.3: `TransportPositionNode` publica la posición musical calculada por `TransportClock` a partir de los frames procesados por PipeWire; la UI dibuja y muestra el cabezal. Play desde detenido usa el cursor. Sigue pendiente búsqueda durante reproducción y loop; la implementación no usa reloj de pared para mover el cabezal.
 - Verificación del corte local: `cargo check -p estudio-daw-ui-shell`, `cargo fmt --all -- --check`, `node --check` para `main.js` y `platform-tauri.js`, `git diff --check` y validación OpenSpec pasan; no se ejecutaron pruebas ni QA física.
-- Próximo paso aprobado: continuar 2.3 (loop/búsqueda/actualización de plan) y 4.3 (posición inicial elegible/bucle y resto de transporte), después abrir los cortes 2.4/2.5 según OpenSpec. Mantener el callback libre de asignación, bloqueo e I/O.
+- Próximo paso aprobado: terminar la búsqueda inicial desde el cursor y continuar con loop/seek en ejecución y actualización del plan según 2.3/4.3; después abrir 2.4/2.5 según OpenSpec. Mantener el callback libre de asignación, bloqueo e I/O.
 
 ## Contexto histórico — edición de regiones de audio 2.2
 
