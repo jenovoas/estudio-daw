@@ -199,6 +199,9 @@ For structural codebase exploration, use the installed `codebase-memory` skill.
   check, fmt, validación OpenSpec estricta de ambos cambios y diff check pasan.
 - `render-plan-chain-contract` queda completa (6/6): RenderPlan es cadena
   serial in-place y mezcla paralela explícita. Los dos commits locales desde
-  `b3a6fad` están listos para push.
+  `b3a6fad` son `1126436` y `268cb9a`; el commit `54ae78e` sincroniza sus
+  requisitos a `openspec/specs/{audio-render-chain,desktop-workstation-ui,
+  runtime-midi-playback}/`. Consultar `git status/log` para la sincronización
+  publicada más reciente.
 - La bitácora append-only fue actualizada. Restan Portable Domain y reloj/
   posición/rebuild de Tauri, que requieren su propio diseño OpenSpec.
