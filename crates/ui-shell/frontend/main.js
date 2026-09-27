@@ -700,6 +700,10 @@ function renderSnapshot(snapshot) {
   audioRecording = audioRecording && projectTransportState !== "stopped";
   elements.panic.disabled = !snapshot.audioEngineConnected || !["playing", "paused"].includes(projectTransportState);
   loopRange = snapshot.loopRange ?? null;
+  for (const button of [elements.loopPointA, elements.loopPointB, elements.loopRangeClear]) {
+    button.disabled = audioRecording;
+    if (audioRecording) button.title = "Detén la grabación antes de cambiar el rango A/B";
+  }
   if (!loopRange) pendingLoopStartTick = null;
   elements.loopRangeReadout.textContent = loopRange
     ? `A ${formatBarBeat(loopRange.startTick)} · B ${formatBarBeat(loopRange.endTick)}`
@@ -722,10 +726,12 @@ function renderSnapshot(snapshot) {
   elements.revision.textContent = `REV ${snapshot.projectRevision}`;
   elements.projectStatus.textContent = snapshot.projectPath ? "PROYECTO ABIERTO" : "PROYECTO SIN GUARDAR";
   const armedTracks = snapshot.tracks.filter((track) => track.recordArmed && track.inputRoute);
-  elements.record.disabled = !snapshot.projectPath || projectTransportState !== "stopped" || armedTracks.length === 0;
+  elements.record.disabled = !snapshot.projectPath || projectTransportState !== "stopped" || armedTracks.length === 0 || Boolean(loopRange);
   elements.record.title = !snapshot.projectPath
     ? "Guarda el proyecto antes de grabar"
-    : armedTracks.length === 0
+    : loopRange
+      ? "Desactiva el rango A/B antes de grabar; las tomas por secciones aún no están disponibles"
+      : armedTracks.length === 0
       ? "Asigna una entrada y arma una pista de audio"
       : "Grabar en las pistas armadas; detén el transporte para finalizar la toma";
   elements.record.setAttribute("aria-pressed", String(audioRecording));
@@ -1321,7 +1327,7 @@ async function saveLoopRange(startTick, endTick) {
     renderSnapshot(snapshot);
     pendingLoopStartTick = null;
     setNotice("Rango de repetición guardado", loopRange
-      ? `A: ${formatBarBeat(loopRange.startTick)} · B: ${formatBarBeat(loopRange.endTick)}. El loop de audio/MIDI aún no está conectado.`
+      ? `A: ${formatBarBeat(loopRange.startTick)} · B: ${formatBarBeat(loopRange.endTick)}. El rango se aplica al próximo inicio de Play.`
       : "Se quitó el rango guardado del proyecto.");
   } catch (error) {
     setNotice("No se pudo guardar el rango", String(error));
