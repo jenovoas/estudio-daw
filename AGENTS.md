@@ -95,6 +95,37 @@ usuario únicamente por un bloqueo real, una decisión que cambie el alcance o u
 acción destructiva/externa que requiera autorización. Informar resultados,
 riesgos y decisiones concretas; no repetir acuerdos ya asentados.
 
+## Handoff persistente — 2026-09-26
+
+- Proyecto: `/home/jnovoas/proyectos/estudio-daw`, rama `main`; último cambio
+  publicado: `a6dbb23` (`feat: report SoundFont PCM queue latency`). Repositorio
+  limpio al guardar este handoff.
+- Vault auditable: `/home/jnovoas/proyectos/personalvault/docs/estudio-daw/`;
+  último registro publicado en `dff48d6`. Mantener `BITACORA_AGENTES.md`
+  append-only y actualizar `ESTADO_ACTUAL.md` cuando el estado cambie.
+- Trabajo reciente: `SoundFontInstrumentWorker::pcm_queue_metrics()` expone
+  frames actuales/pico/capacidad del ring PCM. `midi-synth-live` y
+  `midi-synth-play` imprimen también duración equivalente de la cola y periodo
+  PipeWire; no llamar a esos valores latencia extremo a extremo.
+- Validación actual: `cargo test --workspace -- --test-threads=1`,
+  `cargo check --workspace`, `cargo fmt --all -- --check`, `git diff --check` y
+  `openspec validate soundfont-instrument-rendering --strict` pasaron. En
+  hardware local: replay SoundFont 37.120 callbacks, pico PCM 2048 frames =
+  42,67 ms a 48 kHz, cero drops/underruns/errores; live idle 3 s 8.960
+  callbacks, cero eventos, drops/underruns/errores.
+- Único pendiente explícito de esa tarea: OpenSpec
+  `soundfont-instrument-rendering`, tarea 4.3 sigue `[ ]` hasta verificar notas
+  intencionales del KeyLab en la ruta SF2 y medir latencia física tecla→AudioBox
+  con loopback. No pedir al usuario pruebas repetidas; sólo solicitar esta
+  intervención física si todavía es necesaria y no puede automatizarse.
+- Próxima sesión: leer `README.md`, este `AGENTS.md`,
+  `openspec/changes/soundfont-instrument-rendering/{proposal.md,design.md,
+  tasks.md}` y `docs/native-instrument.md`; revisar `git status/log`; después
+  continuar exactamente desde 4.3, sin reabrir decisiones ya tomadas ni marcarla
+  completada con medidas sólo del ring. Mantener documentación y bitácora.
+- Preferencia de colaboración del usuario: avanzar en flujo continuo, sin pedir
+  confirmación para cada paso y ejecutar las pruebas que el agente puede hacer.
+
 <!-- codebase-memory-mcp:start -->
 For structural codebase exploration, use the installed `codebase-memory` skill.
 <!-- codebase-memory-mcp:end -->
