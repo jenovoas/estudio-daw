@@ -94,6 +94,7 @@ button:disabled { opacity: .4; cursor: not-allowed !important; }
 .transport-button:hover:not(:disabled) { background: #52585c; }
 .transport-play { color: #28190d; border-color: #ffae68; background: var(--accent); box-shadow: 0 1px #ffd3aa inset; }
 .transport-play:hover:not(:disabled) { background: #ffb36f; }
+.transport-panic { color: #ffc1b9; border-color: #814a45; background: #4a3433; font-weight: 800; }
 .transport-separator { height: 27px; border-left: 1px solid #50565a; }
 .transport-readout { display: flex; align-items: baseline; gap: 5px; }
 .eyebrow { color: #93999d; font-size: 7px; font-weight: 750; letter-spacing: 1px; }

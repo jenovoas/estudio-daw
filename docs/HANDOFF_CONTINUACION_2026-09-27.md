@@ -108,3 +108,9 @@
 - `SynthMidiEvent` ahora transporta Pitch Bend firmado, Key Pressure, Channel Pressure y Program Change además de notas/CC. FluidSynth los aplica en su worker; el sinte sinusoidal los acepta sin efecto. La biblioteca local exporta los cuatro símbolos FFI requeridos.
 - Al buscar/iniciar a mitad de clip se restaura Pitch Bend, presión de canal, programa y presión por tecla para notas aún activas, además de CC 0–127 y notas sostenidas. SysEx permanece sin implementar.
 - Verificación: `cargo check -p estudio-daw-synth -p estudio-daw-ui-shell`, formato y `nm -D /usr/lib/libfluidsynth.so` confirmó los símbolos requeridos. No se ejecutaron pruebas ni QA visual/auditiva. OpenSpec sigue 9/35.
+
+## Continuación — pánico MIDI de transporte
+
+- El botón «!» envía CC64=0 seguido de CC123 por los 16 canales de cada instrumento MIDI activo. El comando se entrega al scheduler fuera del callback; está disponible durante Play o pausa y no detiene ni altera el estado del proyecto.
+- OpenSpec `workstation-arrangement-surface-v2` continúa 9/35 y 4.3 sigue abierta: falta metrónomo, precisión sample-accurate y QA funcional/acústica. La tarea no se marca completa.
+- En esta intervención: formato, `cargo check -p estudio-daw-ui-shell`, `node --check` de scripts frontend, `git diff --check` y validación OpenSpec; no ejecutar suites de pruebas. Consultar `git log` para SHAs publicados y actualizar la bitácora de bóveda.

@@ -346,3 +346,9 @@ de evidencia descritos en el handoff.
 - HEAD publicado inicial de este corte: `57f0e5f` (`feat: previsualiza e importa canales de audio`). 2.2 sigue abierta y el cambio en curso conecta mover, recortar hacia dentro y quitar regiones desde el Arreglo, preservando la fuente y usando comandos reversibles.
 - Verificación de código: `cargo check --workspace`, `cargo fmt --all -- --check`, `node --check crates/ui-shell/frontend/main.js` y `git diff --check`. No se ejecutó la suite ni se hizo QA visual/auditiva en la aplicación.
 - El cursor de inserción local de Arreglo ya se coloca con clic en la regla o en un espacio vacío de pista; la importación usa su posición, y el campo de compás lo coloca al inicio de ese compás. Pendientes de 2.2: QA en ejecución y cotejo auditivo. El cursor aún no se comparte con Session/transporte; la selección de canales no implica ruteo de audio. Ver `docs/HANDOFF_CONTINUACION_2026-09-27.md` y `tasks.md`.
+
+## Continuación — pánico MIDI de transporte — 2026-09-27
+
+- Se añade un botón de pánico que el scheduler procesa fuera del callback: envía CC64=0 y CC123 por los 16 canales de cada emisor de instrumento activo. Tauri sólo lo admite con el motor conectado en Play o pausa; no modifica el proyecto ni detiene el transporte.
+- La tarea 4.3 sigue abierta por metrónomo, aplicación sample-accurate y QA funcional/acústica. OpenSpec permanece 9/35; esto es progreso parcial, no cierre de tarea.
+- Verificación de este corte: formato, compilación de `ui-shell`, sintaxis JavaScript, diff y validación OpenSpec. No ejecutar suites de pruebas.

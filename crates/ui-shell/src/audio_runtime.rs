@@ -316,7 +316,7 @@ struct PlaybackSession {
     stop: Arc<AtomicBool>,
     paused: Arc<AtomicBool>,
     connected: Arc<AtomicBool>,
-    schedule: mpsc::Sender<PlaybackSchedule>,
+    schedule: mpsc::Sender<SchedulerCommand>,
     thread: JoinHandle<Result<(), String>>,
     loop_thread: Option<JoinHandle<()>>,
     loop_error: Arc<std::sync::Mutex<Option<String>>>,
@@ -362,6 +362,11 @@ struct PlaybackSchedule {
     senders: Vec<EventSender>,
 }
 
+enum SchedulerCommand {
+    Replace(PlaybackSchedule),
+    Panic,
+}
+
 pub struct AudioRuntimeHost {
     playback: Option<PlaybackSession>,
     plan_control: Option<Arc<std::sync::Mutex<RenderPlanControl>>>,
@@ -401,6 +406,19 @@ impl AudioRuntimeHost {
             }
         }
         Ok(self.position_ticks())
+    }
+
+    /// Apaga las notas sostenidas en todos los canales de las pistas MIDI activas.
+    pub fn panic(&mut self) -> Result<(), String> {
+        let playback = self
+            .playback
+            .as_ref()
+            .filter(|playback| playback.connected.load(Ordering::Acquire))
+            .ok_or_else(|| "el pánico MIDI requiere el transporte en Play o pausa".to_owned())?;
+        playback
+            .schedule
+            .send(SchedulerCommand::Panic)
+            .map_err(|_| "el scheduler MIDI terminó antes de recibir el pánico".to_owned())
     }
 
     pub fn play(
@@ -697,7 +715,10 @@ impl AudioRuntimeHost {
         self.position_ticks.store(position_ticks, Ordering::Release);
         if playback
             .schedule
-            .send(PlaybackSchedule { events, senders })
+            .send(SchedulerCommand::Replace(PlaybackSchedule {
+                events,
+                senders,
+            }))
             .is_err()
         {
             return Err("el scheduler terminó antes de recibir la búsqueda".to_owned());
@@ -1229,7 +1250,7 @@ fn coordinate_loop(
         Vec<ScheduledEvent>,
     ),
     control: Arc<std::sync::Mutex<RenderPlanControl>>,
-    schedule: mpsc::Sender<PlaybackSchedule>,
+    schedule: mpsc::Sender<SchedulerCommand>,
     stop: Arc<AtomicBool>,
     paused: Arc<AtomicBool>,
     position_ticks: Arc<AtomicU64>,
@@ -1285,7 +1306,13 @@ fn coordinate_loop(
             return Err("PipeWire no confirmó el cambio de vuelta".to_owned());
         }
         position_ticks.store(range.start_tick, Ordering::Release);
-        if schedule.send(PlaybackSchedule { events, senders }).is_err() {
+        if schedule
+            .send(SchedulerCommand::Replace(PlaybackSchedule {
+                events,
+                senders,
+            }))
+            .is_err()
+        {
             return Err("el scheduler MIDI terminó antes del cambio de vuelta".to_owned());
         }
         drop(control);
@@ -1423,7 +1450,7 @@ fn micros_to_session_ticks(micros: u64, bpm: f64) -> u64 {
 
 fn schedule_events(
     mut schedule: PlaybackSchedule,
-    updates: mpsc::Receiver<PlaybackSchedule>,
+    updates: mpsc::Receiver<SchedulerCommand>,
     stop: Arc<AtomicBool>,
     position_ticks: Arc<AtomicU64>,
 ) {
@@ -1438,24 +1465,25 @@ fn schedule_events(
         if stop.load(Ordering::Acquire) {
             return;
         }
-        if let Ok(mut replacement) = updates.try_recv() {
-            sort_schedule(&mut replacement);
-            schedule = replacement;
-            index = 0;
+        if let Ok(command) = updates.try_recv() {
+            match command {
+                SchedulerCommand::Replace(mut replacement) => {
+                    sort_schedule(&mut replacement);
+                    schedule = replacement;
+                    index = 0;
+                }
+                SchedulerCommand::Panic => send_all_notes_off(&mut schedule.senders),
+            }
         }
         let Some(event) = schedule.events.get(index) else {
-            if let Ok(mut replacement) = updates.recv_timeout(Duration::from_millis(2)) {
-                sort_schedule(&mut replacement);
-                schedule = replacement;
-                index = 0;
+            if let Ok(command) = updates.recv_timeout(Duration::from_millis(2)) {
+                apply_scheduler_command(command, &mut schedule, &mut index, &sort_schedule);
             }
             continue;
         };
         if position_ticks.load(Ordering::Acquire) < event.at_tick {
-            if let Ok(mut replacement) = updates.recv_timeout(Duration::from_millis(1)) {
-                sort_schedule(&mut replacement);
-                schedule = replacement;
-                index = 0;
+            if let Ok(command) = updates.recv_timeout(Duration::from_millis(1)) {
+                apply_scheduler_command(command, &mut schedule, &mut index, &sort_schedule);
             }
             continue;
         }
@@ -1463,6 +1491,39 @@ fn schedule_events(
             sender.send(event.midi);
         }
         index += 1;
+    }
+}
+
+fn apply_scheduler_command(
+    command: SchedulerCommand,
+    schedule: &mut PlaybackSchedule,
+    index: &mut usize,
+    sort_schedule: &impl Fn(&mut PlaybackSchedule),
+) {
+    match command {
+        SchedulerCommand::Replace(mut replacement) => {
+            sort_schedule(&mut replacement);
+            *schedule = replacement;
+            *index = 0;
+        }
+        SchedulerCommand::Panic => send_all_notes_off(&mut schedule.senders),
+    }
+}
+
+fn send_all_notes_off(senders: &mut [EventSender]) {
+    for sender in senders {
+        for channel in 0..16 {
+            sender.send(SynthMidiEvent::ControlChange {
+                channel,
+                controller: 64,
+                value: 0,
+            });
+            sender.send(SynthMidiEvent::ControlChange {
+                channel,
+                controller: 123,
+                value: 0,
+            });
+        }
     }
 }
 

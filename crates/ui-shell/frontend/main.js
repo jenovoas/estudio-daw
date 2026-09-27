@@ -51,6 +51,7 @@ const elements = {
   play: document.querySelector("#play"),
   pause: document.querySelector("#pause"),
   stop: document.querySelector("#stop"),
+  panic: document.querySelector("#panic"),
   undo: document.querySelector("#undo"),
   redo: document.querySelector("#redo"),
   audioProfile: document.querySelector("#audio-profile"),
@@ -150,6 +151,7 @@ function setProjectEnabled(enabled) {
   for (const button of [elements.loopPointA, elements.loopPointB, elements.loopRangeClear]) {
     button.disabled = !enabled;
   }
+  elements.panic.disabled = !enabled || !["playing", "paused"].includes(projectTransportState);
   for (const control of [elements.importAudio, elements.importTrack, elements.importBar, elements.importMode, elements.importChannels]) {
     control.disabled = !enabled;
   }
@@ -264,6 +266,7 @@ function renderSnapshot(snapshot) {
     editCursorProjectId = snapshot.projectId;
   }
   projectTransportState = snapshot.transportState;
+  elements.panic.disabled = !snapshot.audioEngineConnected || !["playing", "paused"].includes(projectTransportState);
   loopRange = snapshot.loopRange ?? null;
   if (!loopRange) pendingLoopStartTick = null;
   elements.loopRangeReadout.textContent = loopRange
@@ -919,6 +922,7 @@ elements.play.addEventListener("click", async () => {
 });
 elements.pause.addEventListener("click", () => runCommand("Transporte pausado", () => platform.setTransport("pause")));
 elements.stop.addEventListener("click", () => runCommand("Transporte detenido", () => platform.setTransport("stop")));
+elements.panic.addEventListener("click", () => runCommand("Notas MIDI apagadas", () => platform.setTransport("panic")));
 elements.undo.addEventListener("click", () => runCommand("Undo aplicado", () => platform.historyAction("undo")));
 elements.redo.addEventListener("click", () => runCommand("Redo aplicado", () => platform.historyAction("redo")));
 

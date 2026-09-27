@@ -887,6 +887,14 @@ fn set_transport(
     let application = application
         .as_mut()
         .ok_or_else(|| "primero abre un proyecto".to_owned())?;
+    if command == "panic" {
+        let mut audio = state
+            .audio
+            .lock()
+            .map_err(|_| "el estado del motor de audio quedó bloqueado".to_owned())?;
+        audio.panic()?;
+        return Ok(summarize(application, audio.is_connected()));
+    }
     if command == "seek" {
         let position_ticks =
             position_ticks.ok_or_else(|| "la búsqueda requiere una posición musical".to_owned())?;
