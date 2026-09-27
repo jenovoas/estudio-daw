@@ -182,3 +182,11 @@
 - Los clips MIDI se arrastran en Arrangement; el gesto sigue la rejilla seleccionada y convierte pulsos a ticks con el PPQ propio del clip. `ProjectCommand::MoveMidiClip` conserva toma/eventos, entra al historial y Tauri refresca el plan conectado.
 - Verificación: `cargo test -p estudio-daw-command-bus -- --test-threads=1` (15 pasaron), `cargo test --workspace -- --test-threads=1` pasó, `cargo check --workspace`, `cargo fmt --all -- --check`, ambos `node --check`, `git diff --check` y `openspec validate workstation-arrangement-surface-v2 --strict` pasaron. No hubo QA visual manual.
 - OpenSpec continúa en 9/35; 3.3 y 5.3 siguen parciales. Pendiente división/duplicación MIDI, marcadores y QA visual/funcional. Siguiente corte según el handoff aprobado: seguir 2.2, completar el flujo del navegador/inspección de medios de audio y revisar adaptadores ya existentes antes de añadir rutas paralelas.
+
+
+## Continuación — duplicación de clips MIDI
+
+- Commit `9bd3e134f850245e915326149293fce661ac6bae` (`feat: duplicate MIDI clips in arrangement`) publicado en `main`.
+- El menú contextual duplica un clip MIDI al final del original con ID único, duración y toma iguales. La copia no cambia slots de Session; `DuplicateMidiClip` es una sola transacción reversible y Tauri recompila el plan activo si corresponde.
+- Verificación conjunta de movimiento y duplicación: `cargo test -p estudio-daw-command-bus -- --test-threads=1` (16 pasaron), `cargo test --workspace -- --test-threads=1` (135 pruebas aprobadas), `cargo check --workspace`, fmt/fmt check, ambos `node --check`, `git diff --check` y OpenSpec estricto pasaron. Sin QA visual manual.
+- OpenSpec sigue 9/35; 3.3/5.3 avanzan parcialmente. Faltan división MIDI, piano roll, edición de notas, marcadores y QA visual/funcional. 2.2 mantiene implementado el flujo de audio y pendiente QA manual de importación/gestos/fuente.
