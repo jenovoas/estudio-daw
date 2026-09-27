@@ -118,6 +118,9 @@ Las pistas editables tienen una acción de quitar en Arreglo, Session y Mezclado
 El comando elimina sus clips, regiones y referencias de medios del proyecto,
 reasigna las pistas que apuntaban a ella y se puede deshacer desde el historial;
 no borra los archivos fuente del disco. El canal Master queda protegido en la UI.
+Los controles arriba/abajo reordenan pistas mediante `MoveTrack` en las tres
+superficies y conservan al Master en su mismo lado de la lista; el comando
+refresca el plan si el motor está conectado.
 
 La barra superior ofrece menús de Proyecto, Edición, Crear, Vista y Transporte a
 partir de un registro único de acciones, que también aporta las etiquetas y los

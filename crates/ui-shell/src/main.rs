@@ -596,6 +596,39 @@ fn remove_track(track_id: String, state: State<'_, DesktopState>) -> Result<UiSn
 }
 
 #[tauri::command]
+fn move_track(
+    track_id: String,
+    index: usize,
+    state: State<'_, DesktopState>,
+) -> Result<UiSnapshot, String> {
+    let mut application = state
+        .application
+        .lock()
+        .map_err(|_| "el estado de la aplicación quedó bloqueado".to_owned())?;
+    let application = application
+        .as_mut()
+        .ok_or_else(|| "primero crea o abre un proyecto".to_owned())?;
+    application
+        .execute_project(ProjectCommand::MoveTrack { track_id, index })
+        .map_err(|error| error.to_string())?;
+    let project = application.snapshot().project.project;
+    let mut audio = state
+        .audio
+        .lock()
+        .map_err(|_| "el estado del motor de audio quedó bloqueado".to_owned())?;
+    let connected = audio.is_connected();
+    if connected {
+        let settings = load_audio_runtime_settings().map_err(|error| error.to_string())?;
+        audio
+            .refresh_project(&project, settings.active())
+            .map_err(|error| {
+                format!("el orden cambió, pero no se pudo actualizar el audio: {error}")
+            })?;
+    }
+    Ok(summarize(application, connected))
+}
+
+#[tauri::command]
 fn import_audio(
     path: String,
     track_id: String,
@@ -1628,6 +1661,7 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             new_project,
             add_track,
+            move_track,
             remove_track,
             import_audio,
             edit_audio_region,

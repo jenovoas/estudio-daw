@@ -178,6 +178,10 @@ button:disabled { opacity: .4; cursor: not-allowed !important; }
 .track-name > span:last-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .track-remove-button { width: 19px; height: 19px; flex: 0 0 19px; display: grid; place-items: center; border: 1px solid #654540; border-radius: 3px; padding: 0; background: #332927; color: #dca095; font-size: 14px; line-height: 1; cursor: pointer; }
 .track-remove-button:hover { border-color: #b9685d; background: #55302d; color: #ffe5df; }
+.track-order-controls { display: inline-flex; gap: 2px; margin-left: auto; }
+.track-order-button { width: 19px; height: 19px; padding: 0; border: 1px solid #454b4e; border-radius: 3px; background: #282c2f; color: #d4d8da; font: 11px sans-serif; cursor: pointer; }
+.track-order-button:hover:not(:disabled) { border-color: #bf8955; background: #40352b; color: #ffe1bb; }
+.track-order-button:disabled { opacity: .3; cursor: default; }
 .track-icon { width: 23px; height: 23px; flex: none; display: grid; place-items: center; border-radius: 4px; background: color-mix(in srgb, var(--track-color, #58a6b8) 25%, #202326); color: var(--track-color, #58a6b8); font-size: 11px; }
 .track-icon.audio { background: #2c453a; color: #8ad8b2; }
 .track-meta { padding-left: 31px; color: #979da0; font-size: 7px; letter-spacing: .5px; }

@@ -9,6 +9,7 @@ window.estudioPlatform = {
   newProject: () => invoke("new_project"),
   demoMidiProject: () => invoke("demo_midi_project"),
   addTrack: (kind) => invoke("add_track", { kind }),
+  moveTrack: (trackId, index) => invoke("move_track", { trackId, index }),
   removeTrack: (trackId) => invoke("remove_track", { trackId }),
   async selectAudioFile() {
     const path = await open({

@@ -137,6 +137,8 @@ const UI_ACTIONS = [
   { id: "clip.select", label: "Seleccionar clip o región", menu: "Contexto", contexts: ["clip", "audio"] },
   { id: "audio.preview", label: "Preescuchar región", menu: "Contexto", contexts: ["audio"] },
   { id: "audio.remove", label: "Quitar región", menu: "Contexto", contexts: ["audio"] },
+  { id: "track.moveUp", label: "Mover pista antes", menu: "Contexto", contexts: ["track"] },
+  { id: "track.moveDown", label: "Mover pista después", menu: "Contexto", contexts: ["track"] },
   { id: "track.remove", label: "Quitar pista", menu: "Contexto", contexts: ["track"] },
 ];
 
@@ -152,6 +154,10 @@ function executeUiAction(action, context = null) {
     context?.clip?.querySelector(".audio-preview-button")?.click();
   } else if (action.id === "audio.remove") {
     context?.clip?.querySelector(".audio-region-remove")?.click();
+  } else if (action.id === "track.moveUp") {
+    context?.track?.querySelector('[data-track-order="up"]:not(:disabled)')?.click();
+  } else if (action.id === "track.moveDown") {
+    context?.track?.querySelector('[data-track-order="down"]:not(:disabled)')?.click();
   } else if (action.id === "track.remove") {
     context?.track?.querySelector(".track-remove-button")?.click();
   } else {
@@ -239,6 +245,8 @@ function showContextMenu(event) {
   const actions = UI_ACTIONS.filter((action) => action.menu === "Contexto" && action.contexts.includes(kind)).filter((action) => {
     if (action.id === "audio.preview") return Boolean(clip?.querySelector(".audio-preview-button:not(:disabled)"));
     if (action.id === "audio.remove") return Boolean(clip?.querySelector(".audio-region-remove:not(:disabled)"));
+    if (action.id === "track.moveUp") return Boolean(track?.querySelector('[data-track-order="up"]:not(:disabled)'));
+    if (action.id === "track.moveDown") return Boolean(track?.querySelector('[data-track-order="down"]:not(:disabled)'));
     if (action.id === "track.remove") return Boolean(track?.querySelector(".track-remove-button:not(:disabled)"));
     return true;
   });
@@ -676,6 +684,35 @@ function createTrackRemovalButton(track) {
   return button;
 }
 
+function createTrackOrderControls(track, tracks) {
+  if (track.virtualMaster || track.role === "master") return null;
+  const index = tracks.findIndex((candidate) => candidate.id === track.id);
+  const masterIndex = tracks.findIndex((candidate) => candidate.role === "master");
+  const controls = document.createElement("span");
+  controls.className = "track-order-controls";
+  for (const [offset, symbol, label] of [[-1, "↑", "antes"], [1, "↓", "después"]]) {
+    const button = document.createElement("button");
+    const destination = index + offset;
+    const reordered = tracks.filter((candidate) => candidate.id !== track.id);
+    reordered.splice(Math.max(0, Math.min(destination, reordered.length)), 0, track);
+    const nextMasterIndex = reordered.findIndex((candidate) => candidate.role === "master");
+    const crossesMaster = masterIndex >= 0 && (index < masterIndex) !== (destination < nextMasterIndex);
+    button.type = "button";
+    button.className = "track-order-button";
+    button.dataset.trackOrder = offset < 0 ? "up" : "down";
+    button.textContent = symbol;
+    button.disabled = index < 0 || destination < 0 || destination >= tracks.length || crossesMaster;
+    button.title = `Mover ${track.name} ${label}`;
+    button.setAttribute("aria-label", button.title);
+    button.addEventListener("click", () => runCommand(
+      "Orden de pistas actualizado",
+      () => platform.moveTrack(track.id, destination),
+    ));
+    controls.append(button);
+  }
+  return controls;
+}
+
 async function removeTrackFromProject(track, button) {
   await whileBusy([button], async () => {
     try {
@@ -788,6 +825,8 @@ function renderSessionSurface(snapshot) {
     const controls = createTrackMixerControls(track, true);
     if (controls) header.append(controls);
     const removeButton = createTrackRemovalButton(track);
+    const orderControls = createTrackOrderControls(track, snapshot.tracks);
+    if (orderControls) header.append(orderControls);
     if (removeButton) header.append(removeButton);
     grid.append(header);
   }
@@ -936,12 +975,14 @@ function renderMixerSurface(tracks) {
     if (track.groupName) role.textContent += ` · ${track.groupName}`;
     const selection = createTrackSelectionControl(track);
     const removeButton = createTrackRemovalButton(track);
+    const orderControls = createTrackOrderControls(track, tracks);
     const outputControl = createTrackOutputControl(track, tracks);
     const inputControl = createTrackInputControl(track);
     const channelHeading = document.createElement("div");
     channelHeading.className = "mixer-channel-heading";
     if (selection) channelHeading.append(selection);
     channelHeading.append(title);
+    if (orderControls) channelHeading.append(orderControls);
     if (removeButton) channelHeading.append(removeButton);
     channel.append(channelHeading, role, routing, mix);
     if (inputControl) channel.append(inputControl);
@@ -1095,6 +1136,8 @@ function renderSnapshot(snapshot) {
     headingRow.className = "track-row-heading";
     headingRow.append(name);
     const removeButton = createTrackRemovalButton(track);
+    const orderControls = createTrackOrderControls(track, snapshot.tracks);
+    if (orderControls) headingRow.append(orderControls);
     if (removeButton) headingRow.append(removeButton);
     row.append(headingRow, details);
     const meter = createTrackMeter(track);
