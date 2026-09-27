@@ -460,6 +460,7 @@ pub fn run_pipewire_input_until(
     config: PipeWireStreamConfig,
     capture_node: String,
     ring: Arc<SampleRingBuffer>,
+    recorder: Option<Arc<WavCaptureRecorder>>,
     stop: Arc<AtomicBool>,
     ready: std::sync::mpsc::SyncSender<Result<(), String>>,
 ) -> Result<(), PipeWireError> {
@@ -497,6 +498,9 @@ pub fn run_pipewire_input_until(
             };
             let (_, samples, _) = unsafe { bytes[..valid_bytes].align_to::<f32>() };
             let _ = ring.push(samples);
+            if let Some(recorder) = &recorder {
+                let _ = recorder.push(samples);
+            }
         })
         .register()?;
     let mut params = audio_params(config);

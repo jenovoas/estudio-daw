@@ -9,7 +9,7 @@ use estudio_daw_audio_engine::{
     SampleRingBuffer,
 };
 use estudio_daw_audio_platform::{
-    run_pipewire_input_until, run_pipewire_output_until, PipeWireStreamConfig,
+    run_pipewire_input_until, run_pipewire_output_until, PipeWireStreamConfig, WavCaptureRecorder,
 };
 use estudio_daw_midi_engine::RecordedMidiMessage;
 use estudio_daw_project_model::{
@@ -23,12 +23,13 @@ use estudio_daw_synth::{
 use std::{
     collections::HashMap,
     io::Read,
+    path::PathBuf,
     sync::{
         atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering},
         mpsc, Arc, Mutex,
     },
     thread::{self, JoinHandle},
-    time::{Duration, Instant},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
 const MAX_AUDIO_CLIP_STREAMS: usize = 64;
@@ -768,6 +769,27 @@ struct PlaybackSession {
     input_stop: Arc<AtomicBool>,
     input_threads: Vec<JoinHandle<()>>,
     input_rings: HashMap<String, Arc<SampleRingBuffer>>,
+    input_recordings: Vec<PendingInputRecording>,
+}
+
+struct PendingInputRecording {
+    track_id: String,
+    track_name: String,
+    start_tick: u64,
+    channel_selection: Vec<u16>,
+    path: PathBuf,
+    recorder: Arc<WavCaptureRecorder>,
+}
+
+pub(crate) struct FinishedInputRecording {
+    pub track_id: String,
+    pub track_name: String,
+    pub start_tick: u64,
+    pub channel_selection: Vec<u16>,
+    pub path: PathBuf,
+    pub sample_rate_hz: u32,
+    pub frames: u64,
+    pub dropped_samples: u64,
 }
 
 struct LoopProjectModel {
@@ -838,6 +860,12 @@ impl AudioRuntimeHost {
         self.playback
             .as_ref()
             .is_some_and(|playback| playback.connected.load(Ordering::Acquire))
+    }
+
+    pub fn is_recording(&self) -> bool {
+        self.playback
+            .as_ref()
+            .is_some_and(|playback| !playback.input_recordings.is_empty())
     }
 
     pub fn position_ticks(&self) -> u64 {
@@ -919,6 +947,7 @@ impl AudioRuntimeHost {
         profile: AudioProfileSettings,
         start_position_ticks: u64,
         backend_device_key: &str,
+        recording_directory: Option<PathBuf>,
     ) -> Result<(), String> {
         if let Some(playback) = self
             .playback
@@ -976,6 +1005,56 @@ impl AudioRuntimeHost {
             .collect();
         let input_stop = Arc::new(AtomicBool::new(false));
         let mut input_threads: Vec<JoinHandle<()>> = Vec::new();
+        let mut input_recordings = Vec::new();
+        if let Some(directory) = recording_directory.as_ref() {
+            for track in project
+                .tracks
+                .iter()
+                .filter(|track| track.record_armed && track.input_route.is_some())
+            {
+                let timestamp = SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_nanos();
+                let safe_id: String = track
+                    .id
+                    .chars()
+                    .map(|character| {
+                        if character.is_ascii_alphanumeric() || character == '-' {
+                            character
+                        } else {
+                            '_'
+                        }
+                    })
+                    .collect();
+                let path = directory.join(format!("{}-{timestamp}.wav", safe_id));
+                let recorder = WavCaptureRecorder::new(
+                    path.clone(),
+                    config.sample_rate,
+                    config.channels as u16,
+                    (config.sample_rate as usize).saturating_mul(2),
+                )
+                .map_err(|error| {
+                    format!(
+                        "no se pudo preparar la grabación de '{}': {error}",
+                        track.name
+                    )
+                })?;
+                input_recordings.push(PendingInputRecording {
+                    track_id: track.id.clone(),
+                    track_name: track.name.clone(),
+                    start_tick: start_position_ticks,
+                    channel_selection: track
+                        .input_route
+                        .as_ref()
+                        .expect("filtro de pista armada con ruta")
+                        .channels
+                        .clone(),
+                    path,
+                    recorder: Arc::new(recorder),
+                });
+            }
+        }
         let paused = Arc::new(AtomicBool::new(false));
         let project_model = Arc::new(LoopProjectModel {
             project: std::sync::Mutex::new(project.clone()),
@@ -1048,26 +1127,44 @@ impl AudioRuntimeHost {
                 ));
             }
             let ring = Arc::clone(input_rings.get(&track.id).expect("ring por pista"));
+            let recorder = input_recordings
+                .iter()
+                .find(|recording| recording.track_id == track.id)
+                .map(|recording| Arc::clone(&recording.recorder));
             let stop_input = Arc::clone(&input_stop);
             let (input_ready_tx, input_ready_rx) = mpsc::sync_channel(1);
             let input_config = config;
-            let handle = thread::Builder::new()
+            let handle_result = thread::Builder::new()
                 .name(format!("estudio-daw-input-{}", track.id))
                 .spawn(move || {
                     let _ = run_pipewire_input_until(
                         input_config,
                         target,
                         ring,
+                        recorder,
                         stop_input,
                         input_ready_tx,
                     );
                 })
-                .map_err(|error| error.to_string())?;
+                .map_err(|error| error.to_string());
+            let handle = match handle_result {
+                Ok(handle) => handle,
+                Err(error) => {
+                    input_stop.store(true, Ordering::Release);
+                    for input_thread in input_threads.drain(..) {
+                        let _ = input_thread.join();
+                    }
+                    return Err(error);
+                }
+            };
             match input_ready_rx.recv_timeout(Duration::from_secs(5)) {
                 Ok(Ok(())) => input_threads.push(handle),
                 Ok(Err(error)) => {
                     input_stop.store(true, Ordering::Release);
                     let _ = handle.join();
+                    for input_thread in input_threads.drain(..) {
+                        let _ = input_thread.join();
+                    }
                     return Err(format!(
                         "no se pudo abrir la entrada de '{}': {error}",
                         track.name
@@ -1076,6 +1173,9 @@ impl AudioRuntimeHost {
                 Err(error) => {
                     input_stop.store(true, Ordering::Release);
                     let _ = handle.join();
+                    for input_thread in input_threads.drain(..) {
+                        let _ = input_thread.join();
+                    }
                     return Err(format!(
                         "la entrada de '{}' no respondió: {error}",
                         track.name
@@ -1092,7 +1192,7 @@ impl AudioRuntimeHost {
         let worker_connected = Arc::clone(&connected);
         let worker_position = Arc::clone(&self.position_ticks);
         let (ready_tx, ready_rx) = mpsc::sync_channel(1);
-        let thread = thread::Builder::new()
+        let thread_result = thread::Builder::new()
             .name("estudio-daw-playback".into())
             .spawn(move || {
                 let scheduler_stop = Arc::clone(&worker_stop);
@@ -1132,11 +1232,25 @@ impl AudioRuntimeHost {
                     .map_err(|_| "el scheduler MIDI terminó inesperadamente".to_owned());
                 result.and(scheduler_result)
             })
-            .map_err(|error| error.to_string())?;
+            .map_err(|error| error.to_string());
+        let thread = match thread_result {
+            Ok(thread) => thread,
+            Err(error) => {
+                input_stop.store(true, Ordering::Release);
+                for input_thread in input_threads.drain(..) {
+                    let _ = input_thread.join();
+                }
+                return Err(error);
+            }
+        };
 
         match ready_rx.recv_timeout(Duration::from_secs(5)) {
             Ok(Ok(())) => {
                 if stop.load(Ordering::Acquire) {
+                    input_stop.store(true, Ordering::Release);
+                    for input_thread in input_threads.drain(..) {
+                        let _ = input_thread.join();
+                    }
                     let _ = thread.join();
                     return Err("el stream PipeWire terminó durante el inicio".to_owned());
                 }
@@ -1154,6 +1268,7 @@ impl AudioRuntimeHost {
                     input_stop: Arc::clone(&input_stop),
                     input_threads,
                     input_rings,
+                    input_recordings,
                 });
                 self.plan_control = Some(Arc::clone(&control));
                 if let (Some(range), Some(prepared)) = (loop_range, prepared_loop) {
@@ -1207,11 +1322,19 @@ impl AudioRuntimeHost {
                 Ok(())
             }
             Ok(Err(error)) => {
+                input_stop.store(true, Ordering::Release);
+                for input_thread in input_threads.drain(..) {
+                    let _ = input_thread.join();
+                }
                 let _ = thread.join();
                 Err(error)
             }
             Err(error) => {
                 stop.store(true, Ordering::Release);
+                input_stop.store(true, Ordering::Release);
+                for input_thread in input_threads.drain(..) {
+                    let _ = input_thread.join();
+                }
                 let _ = thread.join();
                 Err(format!("PipeWire no confirmó el stream: {error}"))
             }
@@ -1323,10 +1446,10 @@ impl AudioRuntimeHost {
         Ok(())
     }
 
-    pub fn stop(&mut self) -> Result<(), String> {
+    pub fn stop(&mut self) -> Result<Vec<FinishedInputRecording>, String> {
         let Some(playback) = self.playback.take() else {
             self.position_ticks.store(0, Ordering::Release);
-            return Ok(());
+            return Ok(Vec::new());
         };
         playback.stop.store(true, Ordering::Release);
         playback.input_stop.store(true, Ordering::Release);
@@ -1334,16 +1457,34 @@ impl AudioRuntimeHost {
         if let Some(loop_thread) = playback.loop_thread {
             let _ = loop_thread.join();
         }
-        playback
+        let thread_result = playback
             .thread
             .join()
-            .map_err(|_| "el hilo de reproducción terminó inesperadamente".to_owned())??;
+            .map_err(|_| "el hilo de reproducción terminó inesperadamente".to_owned())
+            .and_then(|result| result);
         for input_thread in playback.input_threads {
             let _ = input_thread.join();
         }
+        let mut finished_recordings = Vec::with_capacity(playback.input_recordings.len());
+        for recording in playback.input_recordings {
+            let recorder = Arc::try_unwrap(recording.recorder)
+                .map_err(|_| "el stream de entrada conserva una grabadora activa".to_owned())?;
+            let report = recorder.finish().map_err(|error| error.to_string())?;
+            finished_recordings.push(FinishedInputRecording {
+                track_id: recording.track_id,
+                track_name: recording.track_name,
+                start_tick: recording.start_tick,
+                channel_selection: recording.channel_selection,
+                path: recording.path,
+                sample_rate_hz: PipeWireStreamConfig::default().sample_rate,
+                frames: report.captured_samples / 2,
+                dropped_samples: report.dropped_samples,
+            });
+        }
         self.position_ticks.store(0, Ordering::Release);
         self.plan_control = None;
-        Ok(())
+        thread_result?;
+        Ok(finished_recordings)
     }
 }
 
@@ -2275,6 +2416,7 @@ mod tests {
             role: TrackRole::Instrument,
             output_track_id: None,
             input_route: None,
+            record_armed: false,
             channel_config: TrackChannelConfig::default(),
             color: "#58a6b8".into(),
             group_name: None,

@@ -15,6 +15,20 @@ forma de onda limita la duración procesada a diez minutos y produce como máxim
 
 ## Límites actuales
 
+- Grabación desde Tauri: guarda primero el proyecto, asigna una fuente y arma
+  una o más pistas de audio en el Mezclador; Record inicia la captura desde el
+  cursor de Arreglo y Stop finaliza un WAV por pista bajo
+  `media/recordings/`. Cada toma se importa como fuente del proyecto y crea una
+  región en la pista armada. La región usa el historial normal, por lo que
+  deshacer quita la región y su asociación al proyecto, pero conserva el WAV;
+  rehacer vuelve a asociarla. Si el ring de captura se desborda, la región se
+  conserva y el aviso informa las muestras descartadas. La continuidad y el
+  resultado audible deben verificarse en hardware.
+- Esta primera modalidad no tiene cuenta previa, grabación por secciones ni
+  pausa durante la toma; A/B debe estar desactivado. No hay todavía destino
+  físico independiente por pista ni medidor de entrada dedicado. Al cambiar una
+  asignación mientras suena, se aplica en el siguiente inicio.
+
 - Se puede seleccionar un canal mono o una pareja estéreo de la fuente; la
   selección se conserva en la región. Las regiones históricas sin selección
   explícita se convierten a estéreo con el downmix estándar de `ffmpeg`.

@@ -42,10 +42,12 @@ mutación.
   silencio, solo, ganancia y panorama; asignar/quitar un nombre de grupo a una
   selección de pistas en una sola operación reversible, sin vincular sus valores
   de mezcla; asignar una entrada física opaca a una pista de audio y una salida
-  interna a una pista de audio, bus o Master;
+  interna a una pista de audio, bus o Master; armar/desarmar grabación;
 - escenas/casillas: crear, renombrar, reordenar y quitar escenas; asignar o
   quitar casillas que referencian clips existentes sin copiarlos;
 - audio: agregar, recortar, mover, ajustar ganancia y desvanecimientos de clips;
+  asignar/quitar entrada y armar pistas con `SetTrackInputRoute` y
+  `SetTrackRecordArm`;
 - medios: asociar una fuente original o proxy a una pista de audio mediante un
   comando reversible; validar que la firma y el hash del proxy correspondan a
   la fuente;
@@ -64,13 +66,17 @@ quedan cubiertas por el mismo historial reversible. Las mutaciones del proyecto
 generan `ProjectEvent` dentro de `DomainEventPayload::ProjectChanged`.
 
 La entrada física se persiste como clave opaca de dispositivo más uno o dos
-índices de canal. `SetTrackInputRoute` es reversible y el dominio sólo valida la
-forma del dato; PipeWire resuelve la clave al iniciar Play. El adaptador captura
-F32 estéreo a un ring SPSC y el plan lo mezcla en la pista antes de aplicar su
-ganancia/pan y ruteo interno. Las claves ausentes producen un error accionable
-al iniciar el stream. La selección actual admite los dos canales iniciales de
-la interfaz AudioBox; enumeración de capacidades por dispositivo, ruteo físico
-de salida y armado/grabación siguen fuera de este corte.
+índices de canal. `SetTrackInputRoute` y `SetTrackRecordArm` son reversibles; el
+dominio sólo permite armar una pista de audio con entrada asignada. PipeWire
+resuelve la clave al iniciar Play/Record. El adaptador captura F32 estéreo a un
+ring SPSC y el plan mezcla los canales seleccionados en la pista antes de aplicar
+ganancia/pan y ruteo interno. Durante Record un worker escribe además un WAV por
+pista armada bajo `media/recordings/`; Stop finaliza el archivo y ejecuta
+`ImportAudio` para crear la fuente y región reversibles en el punto de inicio.
+El callback no hace I/O. La primera versión requiere proyecto guardado y no
+ofrece cuenta previa, A/B ni pausa durante grabación. Las claves ausentes
+producen un error accionable. Siguen pendientes capacidades reales por
+dispositivo y salidas físicas por pista.
 
 ## Límites actuales
 

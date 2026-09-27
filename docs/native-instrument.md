@@ -19,11 +19,10 @@ historial y perfiles de audio usan las operaciones existentes del bridge Tauri.
 
 La shell puede presentar pistas/clips resumidos y una vista previa compacta de
 notas del snapshot, y reproducir material MIDI de instrumento mediante el
-runtime existente. No ofrece edición de clips/notas, Session clip launching,
-reproducción de regiones de audio, grabación live ni monitorización de entrada.
-El modelo ya incluye algunos metadatos y comandos de clips de audio, lo que no
-equivale a un flujo funcional de pista de audio. Las tareas de OpenSpec siguen
-abiertas hasta que los flujos end-to-end y la inspección visual sean verificados.
+runtime existente. No ofrece edición de clips/notas ni lanzamiento de clips en
+Session. La reproducción de regiones de audio y la grabación de entradas armadas
+están conectadas; monitorización MIDI live desde Tauri sigue pendiente. Las
+tareas de OpenSpec siguen abiertas hasta verificar los flujos y la interfaz.
 
 `estudio-daw-synth` ofrece dos fuentes: el sinte sinusoidal polifónico (fallback
 sin dependencias) y un adaptador opcional a FluidSynth para reproducir
@@ -124,9 +123,9 @@ El botón Play reproduce los clips MIDI del proyecto siguiendo `start_tick`, el
 PPQ de cada toma y el tempo del proyecto. Pause silencia el callback y congela
 el scheduler; Play reanuda el mismo stream, y Stop cierra PipeWire y los workers.
 El periodo usa el perfil actualmente seleccionado al abrir un stream. El
-objetivo PCM se aplica por separado a cada worker SoundFont. La ruta actual no
-reproduce todavía `AudioClip`, no graba desde el shell Tauri y no monitoriza MIDI
-entrante desde ese shell.
+objetivo PCM se aplica por separado a cada worker SoundFont. El shell Tauri
+reproduce `AudioClip` y captura a WAV las entradas de pistas armadas para crear
+regiones al detener. El control de MIDI entrante desde ese shell sigue pendiente.
 
 ## Probar SineSynth
 
@@ -253,9 +252,10 @@ enumerado; de otro modo se usa la ruta automática de PipeWire. Pause silencia
 la salida y suspende el scheduler sin bloquear el callback; Play reanuda y Stop
 cierra el stream y los workers.
 
-Este corte no reproduce `AudioClip`, no graba ni monitoriza entradas live desde
-Tauri y no reporta el quantum efectivo. La captura WAV y MIDI live siguen
-disponibles mediante CLI y respetan el perfil Live/Grabar. El margen PCM se
+Este corte reproduce `AudioClip` y graba entradas armadas desde Tauri; aún no
+incluye cuenta previa, tomas por secciones ni monitorización MIDI live desde la
+shell, y no reporta el quantum efectivo. La captura WAV y MIDI live también
+siguen disponibles mediante CLI y respetan el perfil Live/Grabar. El margen PCM se
 aplica a la cola de cada worker SoundFont; SineSynth no mantiene esa cola.
 Sustain CC64 de los takes se entrega a FluidSynth y SineSynth.
 

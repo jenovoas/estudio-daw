@@ -90,6 +90,10 @@ pub enum ProjectCommand {
         track_id: String,
         input_route: Option<TrackInputRoute>,
     },
+    SetTrackRecordArm {
+        track_id: String,
+        armed: bool,
+    },
     SetTracksGroup {
         track_ids: Vec<String>,
         group_name: Option<String>,
@@ -739,6 +743,26 @@ impl CommandRuntime {
                         );
                     }
                     track.input_route = input_route;
+                    if track.input_route.is_none() {
+                        track.record_armed = false;
+                    }
+                    project
+                        .validate_persisted_contracts()
+                        .map_err(|error| error.to_string())
+                })
+                .map_err(|error| CommandError::Project(error.to_string()))?,
+            ProjectCommand::SetTrackRecordArm { track_id, armed } => self
+                .project_history
+                .transact("set track record arm", |project| -> Result<(), String> {
+                    let track = project
+                        .tracks
+                        .iter_mut()
+                        .find(|item| item.id == track_id)
+                        .ok_or_else(|| format!("unknown track: {track_id}"))?;
+                    if armed && (track.role != TrackRole::Audio || track.input_route.is_none()) {
+                        return Err("asigna una entrada física antes de armar la pista".into());
+                    }
+                    track.record_armed = armed;
                     project
                         .validate_persisted_contracts()
                         .map_err(|error| error.to_string())
@@ -1185,6 +1209,7 @@ mod tests {
                     role: TrackRole::Instrument,
                     output_track_id: None,
                     input_route: None,
+                    record_armed: false,
                     channel_config: TrackChannelConfig::default(),
                     color: "#58a6b8".into(),
                     group_name: None,
@@ -1201,6 +1226,7 @@ mod tests {
                     role: TrackRole::Audio,
                     output_track_id: None,
                     input_route: None,
+                    record_armed: false,
                     channel_config: TrackChannelConfig {
                         input_channels: Some(2),
                         output_channels: 2,

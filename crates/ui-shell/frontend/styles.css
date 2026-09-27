@@ -99,6 +99,8 @@ button:disabled { opacity: .4; cursor: not-allowed !important; }
 .transport-button:hover:not(:disabled) { background: #52585c; }
 .transport-play { color: #28190d; border-color: #ffae68; background: var(--accent); box-shadow: 0 1px #ffd3aa inset; }
 .transport-play:hover:not(:disabled) { background: #ffb36f; }
+.transport-record { color: #ffc1b9; border-color: #814a45; background: #4a3433; }
+.transport-record.is-selected { color: #fff; border-color: #f25b50; background: #c73f36; box-shadow: 0 0 7px #f25b5080; }
 .transport-panic { color: #ffc1b9; border-color: #814a45; background: #4a3433; font-weight: 800; }
 .transport-metronome.is-selected { color: #24190d; border-color: #ffae68; background: var(--accent); }
 .transport-separator { height: 27px; border-left: 1px solid #50565a; }

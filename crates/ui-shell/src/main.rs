@@ -41,6 +41,7 @@ struct TrackSummary {
     color: String,
     input_channels: Option<u32>,
     input_route: Option<TrackInputRoute>,
+    record_armed: bool,
     output_channels: u32,
     output_track_id: Option<String>,
     group_name: Option<String>,
@@ -243,6 +244,7 @@ fn summarize(application: &ProjectApplication, audio_engine_connected: bool) -> 
             color: track.color.clone(),
             input_channels: track.channel_config.input_channels,
             input_route: track.input_route.clone(),
+            record_armed: track.record_armed,
             output_channels: track.channel_config.output_channels,
             output_track_id: track.output_track_id.clone(),
             group_name: track.group_name.clone(),
@@ -460,6 +462,7 @@ fn add_track(kind: String, state: State<'_, DesktopState>) -> Result<UiSnapshot,
         role,
         output_track_id: None,
         input_route: None,
+        record_armed: false,
         channel_config: TrackChannelConfig {
             input_channels: if role == TrackRole::Audio {
                 Some(2)
@@ -789,6 +792,7 @@ fn new_project_model() -> Project {
             role: TrackRole::Instrument,
             output_track_id: None,
             input_route: None,
+            record_armed: false,
             channel_config: TrackChannelConfig::default(),
             color: "#58a6b8".into(),
             group_name: None,
@@ -992,8 +996,9 @@ fn set_transport(
         audio.seek(&project, settings.active(), position_ticks)?;
         return Ok(summarize(application, audio.is_connected()));
     }
+    let recording = command == "record";
     let session_command = match command.as_str() {
-        "play" => SessionCommand::Play,
+        "play" | "record" => SessionCommand::Play,
         "pause" => SessionCommand::Pause,
         "stop" => SessionCommand::Stop,
         _ => return Err(format!("comando de transporte desconocido: {command}")),
@@ -1002,6 +1007,42 @@ fn set_transport(
         .audio
         .lock()
         .map_err(|_| "el estado del motor de audio quedó bloqueado".to_owned())?;
+    if command == "pause" && audio.is_recording() {
+        return Err(
+            "detén la grabación antes de pausar; así se conserva la continuidad de la toma".into(),
+        );
+    }
+    let recording_directory = if recording {
+        if audio.is_connected() {
+            return Err("detén el transporte antes de iniciar una grabación".into());
+        }
+        let project = application.snapshot().project.project;
+        if project.transport.loop_range.is_some() {
+            return Err("desactiva el rango A/B antes de grabar; la grabación por secciones aún no está disponible".into());
+        }
+        if !project
+            .tracks
+            .iter()
+            .any(|track| track.record_armed && track.input_route.is_some())
+        {
+            return Err(
+                "asigna una entrada y arma al menos una pista de audio antes de grabar".into(),
+            );
+        }
+        let project_path = application
+            .project_path()
+            .ok_or_else(|| "guarda el proyecto antes de grabar audio".to_owned())?;
+        let directory = project_path
+            .parent()
+            .unwrap_or_else(|| std::path::Path::new("."))
+            .join("media")
+            .join("recordings");
+        std::fs::create_dir_all(&directory)
+            .map_err(|error| format!("no se pudo preparar media/recordings: {error}"))?;
+        Some(directory)
+    } else {
+        None
+    };
     let settings = if matches!(session_command, SessionCommand::Play) {
         Some(load_audio_runtime_settings().map_err(|error| error.to_string())?)
     } else {
@@ -1022,6 +1063,7 @@ fn set_transport(
                 active_profile,
                 position_ticks.unwrap_or_default(),
                 &settings.backend_device_key,
+                recording_directory,
             ) {
                 // Keep the domain transport stopped if device/backend startup
                 // fails after the command was accepted.
@@ -1038,10 +1080,60 @@ fn set_transport(
             }
         }
         SessionCommand::Pause => audio.pause(true),
-        SessionCommand::Stop => audio.stop()?,
+        SessionCommand::Stop => {
+            for recording in audio.stop()? {
+                import_finished_recording(application, recording)?;
+            }
+        }
         _ => unreachable!("el adaptador sólo acepta play/pause/stop"),
     }
     Ok(summarize(application, audio.is_connected()))
+}
+
+fn import_finished_recording(
+    application: &mut ProjectApplication,
+    recording: audio_runtime::FinishedInputRecording,
+) -> Result<(), String> {
+    if recording.frames == 0 {
+        return Err(format!(
+            "la grabación de '{}' no contiene muestras; el archivo se conserva en {}",
+            recording.track_name,
+            recording.path.display()
+        ));
+    }
+    let source =
+        estudio_daw_media_adapter::inspect_media_source(&recording.path).map_err(|error| {
+            format!(
+                "se capturó '{}', pero no se pudo indexar {}: {error}",
+                recording.track_name,
+                recording.path.display()
+            )
+        })?;
+    application
+        .execute_project(ProjectCommand::ImportAudio {
+            track_id: recording.track_id.clone(),
+            name: format!("Grabación {}", recording.track_name),
+            source,
+            start_tick: recording.start_tick,
+            duration_samples: recording.frames,
+            sample_rate: recording.sample_rate_hz,
+            channels: 2,
+            source_channel_selection: recording.channel_selection,
+        })
+        .map_err(|error| {
+            format!(
+                "se capturó el audio, pero no se pudo añadir la región ({}): {error}",
+                recording.path.display()
+            )
+        })?;
+    if recording.dropped_samples > 0 {
+        return Err(format!(
+            "grabación creada con {} muestras descartadas; archivo: {}",
+            recording.dropped_samples,
+            recording.path.display()
+        ));
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -1142,6 +1234,30 @@ fn set_track_input_route(
             track_id,
             input_route,
         })
+        .map_err(|error| error.to_string())?;
+    let connected = state
+        .audio
+        .lock()
+        .map_err(|_| "el estado del motor de audio quedó bloqueado".to_owned())?
+        .is_connected();
+    Ok(summarize(application, connected))
+}
+
+#[tauri::command]
+fn set_track_record_arm(
+    track_id: String,
+    armed: bool,
+    state: State<'_, DesktopState>,
+) -> Result<UiSnapshot, String> {
+    let mut application = state
+        .application
+        .lock()
+        .map_err(|_| "el estado de la aplicación quedó bloqueado".to_owned())?;
+    let application = application
+        .as_mut()
+        .ok_or_else(|| "primero abre un proyecto".to_owned())?;
+    application
+        .execute_project(ProjectCommand::SetTrackRecordArm { track_id, armed })
         .map_err(|error| error.to_string())?;
     let connected = state
         .audio
@@ -1303,6 +1419,7 @@ fn main() {
             set_track_mixer,
             set_track_output,
             set_track_input_route,
+            set_track_record_arm,
             set_tracks_group,
             history_action,
             audio_runtime_settings,

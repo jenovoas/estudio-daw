@@ -54,6 +54,7 @@ const elements = {
   noticeTitle: document.querySelector("#notice-title"),
   noticeText: document.querySelector("#notice-text"),
   play: document.querySelector("#play"),
+  record: document.querySelector("#record"),
   pause: document.querySelector("#pause"),
   stop: document.querySelector("#stop"),
   panic: document.querySelector("#panic"),
@@ -75,6 +76,7 @@ const elements = {
 let hasProject = false;
 let audioSettings = null;
 let audioInputDevices = [];
+let audioRecording = false;
 let projectTransportState = "stopped";
 let transportPositionTick = 0;
 let transportPositionPollPending = false;
@@ -236,7 +238,7 @@ async function whileBusy(buttons, operation) {
 
 function setProjectEnabled(enabled) {
   hasProject = enabled;
-  for (const button of [elements.save, elements.saveAs, elements.play, elements.pause, elements.stop, elements.addMidiTrack, elements.addAudioTrack, elements.addBusTrack]) {
+  for (const button of [elements.save, elements.saveAs, elements.play, elements.record, elements.pause, elements.stop, elements.addMidiTrack, elements.addAudioTrack, elements.addBusTrack]) {
     button.disabled = !enabled;
     if (!enabled) button.title = `${button.getAttribute("aria-label") ?? "Acción"}: abre o crea un proyecto primero`;
   }
@@ -358,7 +360,21 @@ function createTrackInputControl(track) {
   select.addEventListener("change", saveRoute);
   channels.addEventListener("change", saveRoute);
   channelField.append(channels);
-  field.append(caption, select, channelField);
+  const arm = document.createElement("button");
+  arm.type = "button";
+  arm.className = `mixer-toggle${track.recordArmed ? " is-selected" : ""}`;
+  arm.textContent = track.recordArmed ? "REC ARM" : "ARMAR REC";
+  arm.setAttribute("aria-pressed", String(track.recordArmed));
+  arm.setAttribute("aria-label", `${track.recordArmed ? "Desarmar" : "Armar"} grabación ${track.name}`);
+  arm.title = existing
+    ? "La entrada se grabará al pulsar ● en la barra de transporte"
+    : "Asigna una entrada física antes de armar la pista";
+  arm.disabled = !existing || projectTransportState !== "stopped";
+  arm.addEventListener("click", () => runCommand(
+    track.recordArmed ? "Pista desarmada" : "Pista armada para grabación",
+    () => platform.setTrackRecordArm(track.id, !track.recordArmed),
+  ));
+  field.append(caption, select, channelField, arm);
   return field;
 }
 
@@ -681,6 +697,7 @@ function renderSnapshot(snapshot) {
   const validTrackIds = new Set(snapshot.tracks.map((track) => track.id));
   selectedTrackIds = new Set([...selectedTrackIds].filter((trackId) => validTrackIds.has(trackId)));
   projectTransportState = snapshot.transportState;
+  audioRecording = audioRecording && projectTransportState !== "stopped";
   elements.panic.disabled = !snapshot.audioEngineConnected || !["playing", "paused"].includes(projectTransportState);
   loopRange = snapshot.loopRange ?? null;
   if (!loopRange) pendingLoopStartTick = null;
@@ -704,6 +721,16 @@ function renderSnapshot(snapshot) {
   elements.audioCount.textContent = snapshot.audioClipCount;
   elements.revision.textContent = `REV ${snapshot.projectRevision}`;
   elements.projectStatus.textContent = snapshot.projectPath ? "PROYECTO ABIERTO" : "PROYECTO SIN GUARDAR";
+  const armedTracks = snapshot.tracks.filter((track) => track.recordArmed && track.inputRoute);
+  elements.record.disabled = !snapshot.projectPath || projectTransportState !== "stopped" || armedTracks.length === 0;
+  elements.record.title = !snapshot.projectPath
+    ? "Guarda el proyecto antes de grabar"
+    : armedTracks.length === 0
+      ? "Asigna una entrada y arma una pista de audio"
+      : "Grabar en las pistas armadas; detén el transporte para finalizar la toma";
+  elements.record.setAttribute("aria-pressed", String(audioRecording));
+  elements.record.classList.toggle("is-selected", audioRecording);
+  elements.pause.disabled = audioRecording || !snapshot.audioEngineConnected;
   elements.engine.textContent = snapshot.audioEngineConnected
     ? "Core listo · motor de audio conectado"
     : "Core listo · motor de audio aún no conectado";
@@ -1353,8 +1380,43 @@ elements.play.addEventListener("click", async () => {
     setNotice("No se pudo iniciar la reproducción", String(error));
   } });
 });
+elements.record.addEventListener("click", async () => {
+  stopPreview();
+  await whileBusy([elements.record], async () => {
+    try {
+      const snapshot = await platform.setTransport("record", editCursorTick * 2);
+      audioRecording = true;
+      renderSnapshot(snapshot);
+      renderTransportPosition(await platform.transportPosition());
+      setNotice("Grabación en curso", "Se capturan las pistas armadas. Usa Detener para finalizar y crear las regiones de audio.");
+    } catch (error) {
+      audioRecording = false;
+      setNotice("No se pudo iniciar la grabación", String(error));
+    }
+  });
+});
 elements.pause.addEventListener("click", () => runCommand("Transporte pausado", () => platform.setTransport("pause")));
-elements.stop.addEventListener("click", () => runCommand("Transporte detenido", () => platform.setTransport("stop")));
+elements.stop.addEventListener("click", async () => {
+  const priorAudioCount = Number(elements.audioCount.textContent) || 0;
+  try {
+    const snapshot = await platform.setTransport("stop");
+    audioRecording = false;
+    renderSnapshot(snapshot);
+    const created = Math.max(0, snapshot.audioClipCount - priorAudioCount);
+    setNotice("Transporte detenido", created
+      ? `Se añadieron ${created} región${created === 1 ? "" : "es"} de audio grabada${created === 1 ? "" : "s"} al proyecto.`
+      : "El transporte se detuvo.");
+  } catch (error) {
+    const wasRecording = audioRecording;
+    audioRecording = false;
+    try {
+      renderSnapshot(await platform.projectSnapshot());
+    } catch (_) {
+      // Preserve the original transport error if refreshing the UI also fails.
+    }
+    setNotice(wasRecording ? "Grabación finalizada con incidencia" : "No se pudo detener el transporte", String(error));
+  }
+});
 elements.panic.addEventListener("click", () => runCommand("Notas MIDI apagadas", () => platform.setTransport("panic")));
 elements.metronome.addEventListener("click", async () => {
   const enabled = !metronomeEnabled;

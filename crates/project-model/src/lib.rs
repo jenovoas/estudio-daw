@@ -814,6 +814,9 @@ pub struct Track {
     /// el adaptador de plataforma la resuelve contra dispositivos vigentes.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub input_route: Option<TrackInputRoute>,
+    /// Armado de grabación de la entrada física; no inicia captura por sí solo.
+    #[serde(default)]
+    pub record_armed: bool,
     #[serde(default)]
     pub channel_config: TrackChannelConfig,
     /// Color belongs to the project so Session and Arrangement remain visually linked.
@@ -907,6 +910,8 @@ pub enum TrackValidationError {
     InvalidTrackOutput,
     #[error("la entrada física requiere una pista de audio y uno o dos canales distintos en un dispositivo identificado")]
     InvalidInputRoute,
+    #[error("el armado requiere una pista de audio con entrada física asignada")]
+    InvalidRecordArm,
     #[error("audio source identity, owner, or format metadata is invalid")]
     InvalidAudioSource,
     #[error("audio playlist identity or region references are invalid")]
@@ -934,6 +939,7 @@ impl Track {
             role,
             output_track_id: None,
             input_route: None,
+            record_armed: false,
             channel_config: TrackChannelConfig {
                 input_channels: audio_channels,
                 output_channels: 2,
@@ -985,6 +991,9 @@ impl Track {
             {
                 return Err(TrackValidationError::InvalidInputRoute);
             }
+        }
+        if self.record_armed && (self.role != TrackRole::Audio || self.input_route.is_none()) {
+            return Err(TrackValidationError::InvalidRecordArm);
         }
         if !self.mixer.gain_db.is_finite()
             || !(-60.0..=12.0).contains(&self.mixer.gain_db)
@@ -1316,6 +1325,7 @@ pub fn import_project_xml(xml: &str) -> Result<ImportResult, ProjectError> {
                 role,
                 output_track_id: None,
                 input_route: None,
+                record_armed: false,
                 channel_config: TrackChannelConfig {
                     input_channels: is_audio_track
                         .then(|| track.channel.as_ref().and_then(|c| c.audio_channels))

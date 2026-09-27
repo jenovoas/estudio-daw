@@ -59,11 +59,10 @@ git diff --check
 
 ## Límites actuales que no son fallos de la interfaz
 
-Crear una pista de audio crea y guarda una pista vacía; todavía no importa,
-reproduce ni graba audio. El estado del mezclador se guarda en el proyecto y se
-incluye en instantáneas, pero aún no controla la ganancia/panorama real del motor ni tiene
-controles interactivos en la vista. Session, navegador de medios, forma de onda,
-ruteo, armado/monitorización y medidores de pista siguen pendientes en
+Este documento se conserva como guía de depuración de una etapa anterior. El
+estado actual ya importa y reproduce regiones de audio; permite asignar entradas
+PipeWire, armar pistas y grabar WAV como regiones reversibles. Para los límites
+vigentes, consultar `docs/audio-import.md` y las tareas abiertas en
 `openspec/changes/workstation-arrangement-surface-v2/tasks.md`.
 
 ## Plantilla para reportar un fallo

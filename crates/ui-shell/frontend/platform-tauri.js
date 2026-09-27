@@ -50,9 +50,11 @@ window.estudioPlatform = {
     return invoke("save_project_as", { path });
   },
   setTransport: (command, positionTicks = null) => invoke("set_transport", { command, positionTicks }),
+  projectSnapshot: () => invoke("project_snapshot"),
   setTrackMixer: (trackId, mixer) => invoke("set_track_mixer", { trackId, ...mixer }),
   setTrackOutput: (trackId, outputTrackId) => invoke("set_track_output", { trackId, outputTrackId }),
   setTrackInputRoute: (trackId, inputRoute) => invoke("set_track_input_route", { trackId, inputRoute }),
+  setTrackRecordArm: (trackId, armed) => invoke("set_track_record_arm", { trackId, armed }),
   setTracksGroup: (trackIds, groupName) => invoke("set_tracks_group", { trackIds, groupName }),
   transportPosition: () => invoke("transport_position"),
   trackMeters: () => invoke("track_meters"),

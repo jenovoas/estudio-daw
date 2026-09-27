@@ -708,8 +708,12 @@ ganancia cuando está persistido y mide la salida estéreo final. La selección 
 salida Master ya está disponible en los ajustes de aplicación. El Mezclador
 permite asignar una entrada PipeWire y canales 1/2 a cada pista de audio; Play
 captura en un ring SPSC y mezcla esa señal a la pista. La asignación se aplica
-al siguiente inicio. Siguen pendientes destinos físicos independientes por
-pista, armado/grabación, envíos/retornos y procesadores. Se pueden
+al siguiente inicio. También permite armar pistas: Record crea un WAV por pista
+bajo `media/recordings/` y Stop lo registra como región en el cursor de Arreglo.
+La región es reversible y el archivo se conserva al deshacer. Esta primera toma
+requiere guardar el proyecto y no admite cuenta previa, A/B ni pausa. Siguen
+pendientes destinos físicos independientes por pista, medidor de entrada,
+tomas/secciones, envíos/retornos y procesadores. Se pueden
 importar archivos de audio a pistas existentes,
 copiándolos a la carpeta `media` junto al proyecto o vinculando el original,
 con metadatos básicos, preescucha corta antes de confirmar la importación,
@@ -744,8 +748,8 @@ activo para soltar sustain y apagar notas; sólo está disponible durante Play o
 pausa. El botón «♪» activa el clic de metrónomo con acento de compás según
 tempo y métrica; se puede conmutar mientras suena, y queda apagado al abrir la
 aplicación. Faltan validación funcional/acústica de los cambios de transporte,
-selección de salidas físicas,
-grabación live y monitorización de entrada. El scheduler MIDI compara los ticks
+selección de salidas físicas por pista, cuenta previa, grabación por secciones,
+medidor de entrada y QA funcional/acústica de grabación. El scheduler MIDI compara los ticks
 de evento con la posición del plan después de cada bloque; el sondeo es de 1 ms
 y no ofrece precisión sample-accurate. No
 se declara terminada la interfaz. La propuesta y las tareas abiertas de

@@ -1,5 +1,29 @@
 # Handoff de continuación — 2026-09-27
 
+## Actualización — grabación de audio Tauri (avance OpenSpec 2.5)
+
+- Continuación local desde `acad816` (entrada PipeWire por pista). El Mezclador
+  ahora arma/desarma pistas de audio con entrada asignada. Record captura cada
+  pista armada a WAV en `media/recordings/`; Stop finaliza la captura y registra
+  fuente/región mediante `ImportAudio` en el cursor inicial. La región entra al
+  historial reversible y usa el decodificador incremental ya conectado.
+- El stream PipeWire de entrada alimenta un ring SPSC y el escritor WAV por rings
+  separados; el callback no escribe al disco. Se requiere guardar el proyecto.
+  Durante la primera toma se deshabilita pausa y se rechaza A/B, porque aún no
+  hay cuenta previa ni captura por secciones. Si el ring WAV pierde muestras,
+  se conserva la región y el error queda visible tras refrescar la instantánea.
+- Verificación: `cargo fmt --all -- --check`, `cargo check --workspace`,
+  `node --check` de ambos scripts frontend y `git diff --check` pasaron.
+  `openspec validate workstation-arrangement-surface-v2 --strict` conserva
+  ocho avisos lingüísticos preexistentes. No se ejecutaron pruebas ni QA
+  funcional/acústica con AudioBox. El commit del corte se identifica en `git log`.
+- OpenSpec 2.5 es avance parcial, no completa. Pendiente comprobar Record → Stop
+  → reproducción → undo/redo en Tauri con entrada física; también cuenta previa,
+  tomas por secciones, medidor de entrada, salidas físicas por pista y asegurar
+  el manejo de desbordamientos. 2.4 sigue parcial por selección de salidas y QA.
+
+## Estado previo — entrada física por pista (avance OpenSpec 2.4)
+
 ## Actualización — entrada física por pista (avance OpenSpec 2.4)
 
 - El modelo guarda `TrackInputRoute` como clave opaca PipeWire y selección mono/estéreo de canales 1/2. `SetTrackInputRoute` aplica por historial reversible; el dominio valida sólo identidad y forma, sin depender del backend.
