@@ -692,7 +692,9 @@ copiándolos a la carpeta `media` junto al proyecto o vinculando el original,
 con metadatos básicos, preescucha corta antes de confirmar la importación,
 selección mono/estéreo de canales de origen, posición inicial por compás y
 forma de onda real reducida. En Arreglo se pueden mover, recortar hacia dentro
-y quitar regiones sin reescribir la fuente; los cambios son reversibles.
+y quitar regiones sin reescribir la fuente; los cambios son reversibles. Un
+clic en la regla o en un espacio vacío coloca el cursor de edición, que sirve
+como punto de inserción para la siguiente importación.
 Es un prototipo de capacidades parciales: su composición
 visual actual no satisface todavía el flujo creativo de Ableton Live 12; no
 incluye lanzamiento de clips en Session, edición de clips/notas, reproducción

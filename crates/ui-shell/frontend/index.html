@@ -48,7 +48,8 @@
         <button id="browser-open" class="browser-action"><span class="action-glyph">▱</span><span><strong>Abrir proyecto</strong><small>Cargar una sesión existente</small></span><span class="action-arrow">›</span></button>
         <div class="browser-section-label browser-section-spaced">MEDIOS DE USUARIO</div>
         <label class="media-import-field">Pista de destino<select id="audio-import-track" disabled><option value="">Crea una pista de audio</option></select></label>
-        <label class="media-import-field">Ubicación inicial (compás)<input id="audio-import-bar" type="number" min="1" step="1" value="1" disabled /></label>
+        <label class="media-import-field">Ubicación inicial (compás; clic en regla para ajustar)<input id="audio-import-bar" type="number" min="1" step="1" value="1" disabled /></label>
+        <div id="edit-cursor-position" class="edit-cursor-position">Cursor: compás 1 · pulso 1</div>
         <label class="media-import-field">Procedencia<select id="audio-import-mode" disabled><option value="copy">Copiar a la carpeta del proyecto</option><option value="link">Vincular archivo original</option></select></label>
         <label class="media-import-field">Canales de origen<select id="audio-import-channels" disabled><option value="">Selecciona un archivo</option></select></label>
         <div id="audio-import-selected" class="audio-import-selected">No hay archivo seleccionado</div>

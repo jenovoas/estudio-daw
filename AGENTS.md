@@ -282,4 +282,4 @@ de evidencia descritos en el handoff.
 
 - HEAD publicado inicial de este corte: `57f0e5f` (`feat: previsualiza e importa canales de audio`). 2.2 sigue abierta y el cambio en curso conecta mover, recortar hacia dentro y quitar regiones desde el Arreglo, preservando la fuente y usando comandos reversibles.
 - Verificación de código: `cargo check --workspace`, `cargo fmt --all -- --check`, `node --check crates/ui-shell/frontend/main.js` y `git diff --check`. No se ejecutó la suite ni se hizo QA visual/auditiva en la aplicación.
-- Pendientes de 2.2: colocar regiones con el cursor de edición, QA en ejecución y cotejo auditivo. No inferir que la selección de canales ya enruta audio. Ver `docs/HANDOFF_CONTINUACION_2026-09-27.md` y `tasks.md`.
+- El cursor de inserción local de Arreglo ya se coloca con clic en la regla o en un espacio vacío de pista; la importación usa su posición, y el campo de compás lo coloca al inicio de ese compás. Pendientes de 2.2: QA en ejecución y cotejo auditivo. El cursor aún no se comparte con Session/transporte; la selección de canales no implica ruteo de audio. Ver `docs/HANDOFF_CONTINUACION_2026-09-27.md` y `tasks.md`.

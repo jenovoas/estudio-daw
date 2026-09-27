@@ -22,8 +22,11 @@ forma de onda limita la duración procesada a diez minutos y produce como máxim
 - El diálogo permite inspeccionar metadatos y preescuchar hasta 30 segundos de
   Opus mediante WebAudio antes de confirmar la importación. Las regiones
   importadas conservan el mismo control de preescucha; no mueve el transporte.
-- La ubicación elegible es el compás inicial; todavía no hay cursor de edición
-  ni colocación por tiempo absoluto.
+- El cursor de edición de Arreglo se coloca haciendo clic en la regla o en un
+  espacio vacío de pista, con resolución de un cuarto de pulso. La región se
+  importa desde ese punto; el campo de compás coloca el cursor al comienzo del
+  compás indicado. Todavía no es un cursor compartido con Session ni sigue el
+  transporte.
 - En Arreglo se arrastra una región para moverla y sus bordes para recortarla
   hacia dentro. El botón × quita sólo la región; conserva la fuente registrada
   y el archivo original. Los cambios entran en el historial deshacer/rehacer.

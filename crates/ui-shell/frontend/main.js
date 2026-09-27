@@ -9,6 +9,7 @@ const elements = {
   importSelected: document.querySelector("#audio-import-selected"),
   importTrack: document.querySelector("#audio-import-track"),
   importBar: document.querySelector("#audio-import-bar"),
+  editCursorPosition: document.querySelector("#edit-cursor-position"),
   importMode: document.querySelector("#audio-import-mode"),
   importChannels: document.querySelector("#audio-import-channels"),
   browserDemo: document.querySelector("#browser-demo"),
@@ -62,6 +63,8 @@ let hasProject = false;
 let audioSettings = null;
 let projectTransportState = "stopped";
 let pendingAudioPath = null;
+let editCursorTick = 0;
+let editCursorProjectId = null;
 const waveformCache = new Map();
 let previewContext = null;
 let currentPreview = null;
@@ -242,6 +245,10 @@ function renderMixerSurface(tracks) {
 
 function renderSnapshot(snapshot) {
   setProjectEnabled(true);
+  if (snapshot.projectId !== editCursorProjectId) {
+    editCursorTick = 0;
+    editCursorProjectId = snapshot.projectId;
+  }
   projectTransportState = snapshot.transportState;
   elements.save.disabled = !snapshot.projectPath;
   elements.save.title = snapshot.projectPath ? "Guardar proyecto" : "Guarda como para elegir una ubicación";
@@ -292,6 +299,7 @@ function renderSnapshot(snapshot) {
     emptyLane.className = "empty-state timeline-empty";
     emptyLane.textContent = "Sin pistas en el arreglo";
     elements.lanes.append(emptyLane);
+    renderEditCursor();
     return;
   }
 
@@ -317,6 +325,10 @@ function renderSnapshot(snapshot) {
     const lane = document.createElement("div");
     lane.className = "timeline-lane";
     lane.style.setProperty("--track-color", track.color);
+    lane.addEventListener("click", (event) => {
+      if (event.target.closest(".audio-clip, .midi-clip, button")) return;
+      setEditCursorFromX(event.clientX, lane.getBoundingClientRect());
+    });
     const clips = snapshot.midiClips.filter((clip) => clip.trackId === track.id);
     for (const clip of clips) {
       const block = document.createElement("div");
@@ -398,8 +410,13 @@ function renderSnapshot(snapshot) {
       empty.textContent = "Sin clips";
       lane.append(empty);
     }
+    const cursor = document.createElement("span");
+    cursor.className = "edit-cursor";
+    cursor.setAttribute("aria-hidden", "true");
+    lane.append(cursor);
     elements.lanes.append(lane);
   }
+  renderEditCursor();
 }
 
 function makeAudioTrimHandle(edge, name) {
@@ -626,13 +643,12 @@ elements.importCommit.addEventListener("click", async () => {
   stopPreview();
   await whileBusy([elements.importCommit], async () => {
     try {
-      const bar = Math.max(1, Number(elements.importBar.value) || 1);
       const snapshot = await platform.importAudio({
         path: pendingAudioPath,
         trackId,
         copyIntoProject: elements.importMode.value === "copy",
         sourceChannelSelection: elements.importChannels.value.split(",").map(Number),
-        startTick: Math.round((bar - 1) * (Number(document.querySelector("#timeline-ruler")?.dataset.beatsPerBar) || 4) * 480),
+        startTick: editCursorTick,
       });
       pendingAudioPath = null;
       elements.importSelected.textContent = "No hay archivo seleccionado";
@@ -681,7 +697,32 @@ function renderTimelineRuler(beatsPerBar) {
     tick.textContent = String(bar);
     elements.ruler.append(tick);
   }
+  const cursor = document.createElement("span");
+  cursor.className = "edit-cursor";
+  cursor.setAttribute("aria-hidden", "true");
+  elements.ruler.append(cursor);
   elements.ruler.dataset.beatsPerBar = String(beatsPerBar);
+  renderEditCursor();
+}
+
+function renderEditCursor() {
+  const beatsPerBar = Number(elements.ruler.dataset.beatsPerBar) || 4;
+  const timelineTicks = beatsPerBar * 16 * 480;
+  const left = `${Math.max(0, Math.min(100, editCursorTick / timelineTicks * 100))}%`;
+  document.querySelectorAll(".edit-cursor").forEach((cursor) => { cursor.style.left = left; });
+  const bar = Math.floor(editCursorTick / (beatsPerBar * 480)) + 1;
+  const beat = ((editCursorTick % (beatsPerBar * 480)) / 480) + 1;
+  elements.editCursorPosition.textContent = `Cursor: compás ${bar} · pulso ${beat.toLocaleString("es-CL", { maximumFractionDigits: 2 })}`;
+  elements.importBar.value = String(bar);
+}
+
+function setEditCursorFromX(clientX, bounds) {
+  if (bounds.width <= 0) return;
+  const beatsPerBar = Number(elements.ruler.dataset.beatsPerBar) || 4;
+  const timelineTicks = beatsPerBar * 16 * 480;
+  const fraction = Math.max(0, Math.min(1, (clientX - bounds.left) / bounds.width));
+  editCursorTick = Math.round(fraction * timelineTicks / 120) * 120;
+  renderEditCursor();
 }
 
 async function runCommand(title, operation) {
@@ -718,6 +759,15 @@ async function addTrack(kind, button) {
 
 elements.addMidiTrack.addEventListener("click", () => addTrack("midi", elements.addMidiTrack));
 elements.addAudioTrack.addEventListener("click", () => addTrack("audio", elements.addAudioTrack));
+elements.ruler.addEventListener("click", (event) => {
+  setEditCursorFromX(event.clientX, elements.ruler.getBoundingClientRect());
+});
+elements.importBar.addEventListener("change", () => {
+  const bar = Math.max(1, Number(elements.importBar.value) || 1);
+  const beatsPerBar = Number(elements.ruler.dataset.beatsPerBar) || 4;
+  editCursorTick = Math.round((bar - 1) * beatsPerBar * 480);
+  renderEditCursor();
+});
 elements.showArrangement.addEventListener("click", () => selectSurface("arrangement"));
 elements.showSession.addEventListener("click", () => selectSurface("session"));
 elements.showMixer.addEventListener("click", () => selectSurface("mixer"));

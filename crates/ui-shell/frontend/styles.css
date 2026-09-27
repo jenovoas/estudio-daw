@@ -132,6 +132,9 @@ button:disabled { opacity: .4; cursor: not-allowed !important; }
 .timeline-ruler { display: grid; grid-template-columns: repeat(16, minmax(42px, 1fr)); }
 .bar-tick { position: relative; display: flex; align-items: center; padding: 0 0 0 7px; border-left: 1px solid #737a7d; color: #d2d5d6; font-size: 9px; font-weight: 600; font-variant-numeric: tabular-nums; }
 .bar-tick::after { position: absolute; bottom: 0; left: 0; width: 1px; height: 5px; content: ""; background: #c2c6c8; }
+.edit-cursor { position: absolute; z-index: 8; top: 0; bottom: 0; width: 1px; background: #ffcf78; box-shadow: 0 0 3px #ffcf78; pointer-events: none; }
+.timeline-ruler .edit-cursor { z-index: 10; background: #ffd487; }
+.edit-cursor-position { margin: 0 7px 5px; color: #d7bf91; font-size: 8px; font-variant-numeric: tabular-nums; }
 .arrangement-track-list, .arrangement-lanes { display: grid; grid-auto-rows: 76px; align-content: start; }
 .track-row { position: sticky; left: 0; z-index: 2; display: flex; flex-direction: column; justify-content: center; gap: 5px; padding: 0 11px; overflow: hidden; background: linear-gradient(90deg, #33373a, #2e3235); border-right: 1px solid #141617; border-bottom: 1px solid #181a1c; box-shadow: inset 3px 0 var(--track-color, #58a6b8); }
 .track-name { min-width: 0; display: flex; align-items: center; gap: 8px; color: #e7e8e8; font-size: 10px; font-weight: 650; }
