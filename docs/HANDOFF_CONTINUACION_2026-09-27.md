@@ -90,3 +90,9 @@
 - El modelo para el coordinador de loop usa revisión atómica más snapshot protegido fuera del callback. Cada vuelta futura se prepara con la revisión más reciente. Publicación/retiro del plan y reemplazo de agenda se serializan con la búsqueda manual para evitar cruces entre plan y MIDI.
 - Verificación local: `cargo check -p estudio-daw-ui-shell`, `cargo fmt --all -- --check`, ambos `node --check` y `git diff --check`; no se ejecutaron pruebas ni QA visual/acústica. OpenSpec sigue 9/35; 2.3 y 4.3 permanecen abiertas por QA, controladores MIDI restantes y sincronía del scheduler.
 - Consultar `git log` para los SHAs de implementación/documentación que publican este avance y la actualización de tareas.
+
+## Actualización — scheduler guiado por el reloj de audio
+
+- El scheduler compara los ticks absolutos de cada evento con la posición publicada por `TransportPositionNode` después de procesar el bloque. Pause congela el reloj, y seek/loop reemplazan la agenda cuando el plan nuevo queda activo; ya no se acumula deriva de un `Instant` independiente.
+- El scheduler sondea el atómico cada 1 ms y los instrumentos consumen eventos por bloque/worker. Esto alinea la agenda con el transporte, pero no garantiza aplicación sample-accurate. Falta QA funcional/acústica y restauración de otros controladores MIDI.
+- Validar con `cargo check`, formato, sintaxis JS, diff check y OpenSpec; no ejecutar suites. Consultar el commit más reciente en `git log` y actualizar vault.

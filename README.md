@@ -717,7 +717,9 @@ vuelve a iniciar para aplicar el nuevo rango. Al mover, recortar o quitar una
 región durante Play, el plan activo se recompila en un límite de bloque sin
 cerrar PipeWire; si la edición ocurre en pausa, se aplica al reanudar. Faltan
 restauración del resto de controladores MIDI al navegar, selección de salidas físicas,
-grabación live y monitorización de entrada. No
+grabación live y monitorización de entrada. El scheduler MIDI compara los ticks
+de evento con la posición del plan después de cada bloque; el sondeo es de 1 ms
+y no ofrece precisión sample-accurate. No
 se declara terminada la interfaz. La propuesta y las tareas abiertas de
 [workstation-arrangement-surface-v2](openspec/changes/workstation-arrangement-surface-v2/)
 registran Ableton Live 12 como referencia de UX prioritaria y Ardour sólo como

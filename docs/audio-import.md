@@ -58,6 +58,6 @@ forma de onda limita la duración procesada a diez minutos y produce como máxim
 La tarea OpenSpec 2.2 permanece abierta hasta completar QA visual del flujo de
 importación y edición en la aplicación. La tarea 2.3 también sigue abierta por
 QA funcional/acústica, posicionamiento compartido del transporte, restauración
-de controladores MIDI y sincronía sample-accurate del scheduler; los cambios de
+de controladores MIDI y ajuste sample-accurate del scheduler; los cambios de
 región durante Play ya reconstruyen el plan activo. No se ejecutó suite de
 pruebas en esta intervención.

@@ -170,13 +170,14 @@ Para explorar estructuralmente el código, usa la habilidad instalada `codebase-
   adicional se prepara antes de abrir el stream; las siguientes se preparan
   fuera del callback. Errores del coordinador aparecen al consultar posición.
 - Cambiar el rango con el transporte ya iniciado no modifica el coordinador de
-  esa sesión; detener e iniciar aplica el rango nuevo. No afirmar QA acústica ni
-  sincronía sample-accurate: el scheduler MIDI conserva su reloj de pared.
+  esa sesión; detener e iniciar aplica el rango nuevo. El scheduler MIDI compara
+  eventos con los ticks publicados al terminar cada bloque; no afirmar QA
+  acústica ni sincronía sample-accurate.
 - Verificación de este corte: `cargo check -p estudio-daw-ui-shell`,
   `cargo fmt --all -- --check`, `git diff --check` y validación OpenSpec normal
   (válida con ocho avisos lingüísticos conocidos). No se ejecutaron pruebas.
   OpenSpec sigue en 9/35; 2.3 y 4.3 permanecen parciales hasta completar QA,
-  rebuild al editar y los controladores/funciones aún pendientes.
+  restauración de controladores y las funciones aún pendientes.
 - SHA inicial: `33836f5`; consultar `git log` para SHA final/publicación. Vault:
   registrar el avance append-only en `BITACORA_AGENTES.md` y actualizar
   `ESTADO_ACTUAL.md`.
@@ -190,8 +191,10 @@ Para explorar estructuralmente el código, usa la habilidad instalada `codebase-
 - El coordinador A/B toma snapshots versionados del proyecto para preparar las
   vueltas siguientes. No mezclar agendas de seek y loop: publicación, retiro y
   reemplazo de agenda se serializan fuera del callback.
-- Continúan pendientes QA funcional/acústica, otros controladores MIDI y
-  sincronía del scheduler con el reloj del plan. OpenSpec 2.3/4.3 sigue abierta;
+- El scheduler compara los ticks MIDI con la posición atómica publicada por el
+  plan tras procesar cada bloque; su sondeo es de 1 ms y no se afirma precisión
+  sample-accurate. Continúan pendientes QA funcional/acústica y otros
+  controladores MIDI. OpenSpec 2.3/4.3 sigue abierta;
   no ejecutar suites salvo instrucción del usuario.
 
 ## Avance posterior — búsqueda de transporte — 2026-09-27
