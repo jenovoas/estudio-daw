@@ -110,6 +110,9 @@ independientes por pista, medidor de entrada y QA con AudioBox.
 La escala de la interfaz es una preferencia local del WebView, no del proyecto.
 Tauri controla el zoom entre 80 % y 150 %; Ctrl++/Ctrl+- ajusta en pasos de 10 %
 y Ctrl+0 restaura el 100 %. Los campos de texto conservan sus teclas + y -.
+Ctrl+1/2/3 cambia Arreglo/Session/Mezclador; Ctrl+S guarda, Ctrl+Mayús+S abre
+Guardar como y Ctrl+Z/Ctrl+Mayús+Z deshace/rehace. Estos atajos se omiten en
+campos editables.
 
 Las pistas editables tienen una acción de quitar en Arreglo, Session y Mezclador.
 El comando elimina sus clips, regiones y referencias de medios del proyecto,

@@ -695,7 +695,9 @@ disponible y, en caso contrario, usa el destino predeterminado. El cambio no
 interrumpe un stream activo.
 El tamaño de la interfaz se ajusta de 80 % a 150 % con Ctrl++/Ctrl+- o los
 controles de zoom de la barra superior; Ctrl+0 lo restablece. La preferencia se
-guarda localmente y no cambia el proyecto.
+guarda localmente y no cambia el proyecto. Ctrl+1/2/3 cambia Arreglo, Session y
+Mezclador; Ctrl+S guarda, Ctrl+Mayús+S abre Guardar como, Ctrl+Z deshace y
+Ctrl+Mayús+Z rehace. Estos atajos no interceptan la escritura en campos.
 Las pistas que no sean Master se pueden quitar desde Arreglo, Session o Mezclador;
 la acción también es reversible y elimina clips/regiones del proyecto sin borrar
 los archivos fuente del disco.

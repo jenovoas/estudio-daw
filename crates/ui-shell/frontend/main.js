@@ -231,6 +231,21 @@ function handleUiZoomShortcut(event) {
   }
 }
 
+function handleWorkstationShortcut(event) {
+  if (!event.ctrlKey || event.altKey || event.metaKey || event.repeat) return;
+  if (event.target instanceof Element && event.target.closest("input, textarea, select, [contenteditable='true']")) return;
+  const key = event.key.toLowerCase();
+  const button = key === "1" ? elements.showArrangement
+    : key === "2" ? elements.showSession
+      : key === "3" ? elements.showMixer
+        : key === "s" ? (event.shiftKey ? elements.saveAs : elements.save)
+          : key === "z" ? (event.shiftKey ? elements.redo : elements.undo)
+            : null;
+  if (!button) return;
+  event.preventDefault();
+  button.click();
+}
+
 async function whileBusy(buttons, operation) {
   const previous = buttons.map((button) => button.disabled);
   for (const button of buttons) {
@@ -1819,6 +1834,7 @@ elements.zoomIn.addEventListener("click", () => void setUiZoom(uiZoom + UI_ZOOM_
 elements.zoomOut.addEventListener("click", () => void setUiZoom(uiZoom - UI_ZOOM_STEP));
 elements.zoomReset.addEventListener("click", () => void setUiZoom(1));
 document.addEventListener("keydown", handleUiZoomShortcut);
+document.addEventListener("keydown", handleWorkstationShortcut);
 
 // Este shell inicial sólo resume datos compactos; jamás solicita PCM o buffers
 // GPU al core a través del bridge.

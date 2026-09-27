@@ -4,7 +4,7 @@
 
 ### Requirement: los menús de la estación de trabajo exponen el mapa completo de comandos
 
-La estación DEBE organizar las acciones admitidas en familias localizables: Proyecto/Sesión, Edición, Crear, Vista/Ventana, Pista, Clip/Región, Transporte, Audio/MIDI, Ajustes/Opciones y Ayuda. DEBE ofrecer menús contextuales y atajos para flujos frecuentes. Las familias de comandos auditadas en `../../design.md` son el inventario mínimo del producto; la hoja de ruta DEBE contabilizar cada familia y PUEDE ampliarla con análisis musical, notación, programación y edición asistida propias de Estudio DAW. Cada opción DEBE corresponder a un comando tipado, una acción real de vista/estado o un adaptador de plataforma. Cada opción DEBE tener una condición de disponibilidad correcta, política de deshacer si modifica el proyecto, etiqueta accesible e información veraz de resultado/error. Una acción no implementada NO DEBE mostrarse habilitada ni completada.
+La estación DEBE (MUST) organizar las acciones admitidas en familias localizables: Proyecto/Sesión, Edición, Crear, Vista/Ventana, Pista, Clip/Región, Transporte, Audio/MIDI, Ajustes/Opciones y Ayuda. DEBE ofrecer menús contextuales y atajos para flujos frecuentes. Las familias de comandos auditadas en `../../design.md` son el inventario mínimo del producto; la hoja de ruta DEBE contabilizar cada familia y PUEDE ampliarla con análisis musical, notación, programación y edición asistida propias de Estudio DAW. Cada opción DEBE corresponder a un comando tipado, una acción real de vista/estado o un adaptador de plataforma. Cada opción DEBE tener una condición de disponibilidad correcta, política de deshacer si modifica el proyecto, etiqueta accesible e información veraz de resultado/error. Una acción no implementada NO DEBE mostrarse habilitada ni completada.
 
 #### Scenario: revisar los menús del producto
 
@@ -21,7 +21,7 @@ La estación DEBE organizar las acciones admitidas en familias localizables: Pro
 
 ### Requirement: las pistas de audio son entidades completas de primer nivel
 
-El proyecto DEBE modelar las pistas de audio por separado de las pistas MIDI/instrumento, con identidad/orden estables, nombre/color, configuración de canales, estado activa/silencio/solo, ganancia/panorama, estado de ruteo de entrada/salida y una lista ordenada no destructiva de regiones de audio. Las regiones DEBEN referenciar medios fuente y conservar el desplazamiento dentro de la fuente, la posición temporal, la duración, los desvanecimientos y la ganancia de región. Quitar, mover o recortar una región NO DEBE borrar ni alterar silenciosamente el archivo fuente. Session, Arrangement y Mezclador DEBEN mostrar la misma identidad y estado de pista. La interfaz NO DEBE llamar «audio» a una pista sólo por su aspecto si falta la ruta de importación/reproducción.
+El proyecto DEBE (MUST) modelar las pistas de audio por separado de las pistas MIDI/instrumento, con identidad/orden estables, nombre/color, configuración de canales, estado activa/silencio/solo, ganancia/panorama, estado de ruteo de entrada/salida y una lista ordenada no destructiva de regiones de audio. Las regiones DEBEN referenciar medios fuente y conservar el desplazamiento dentro de la fuente, la posición temporal, la duración, los desvanecimientos y la ganancia de región. Quitar, mover o recortar una región NO DEBE borrar ni alterar silenciosamente el archivo fuente. Session, Arrangement y Mezclador DEBEN mostrar la misma identidad y estado de pista. La interfaz NO DEBE llamar «audio» a una pista sólo por su aspecto si falta la ruta de importación/reproducción.
 
 #### Scenario: crear y administrar una pista de audio
 
@@ -46,7 +46,7 @@ El proyecto DEBE modelar las pistas de audio por separado de las pistas MIDI/ins
 
 ### Requirement: Session y Arrangement son vistas conectadas sobre pistas compartidas
 
-La estación DEBE ofrecer una vista Session de clips/escenas y una vista Arrangement de línea de tiempo sobre las mismas pistas ordenadas, medios, estado de mezcla y transporte del proyecto. Session organiza columnas de pistas y filas de escenas; Arrangement organiza las mismas pistas verticalmente contra el tiempo musical. Cambiar de vista DEBE conservar el contenido del proyecto y el estado de reproducción. Ableton Live 12 DEBE ser la referencia visual y de interacción principal para la jerarquía creativa, densidad y relación entre ambas vistas. Ardour PUEDE consultarse únicamente para detalles técnicos de ingeniería de audio; NO DEBE definir la jerarquía visual ni el flujo creativo. El estilo visual por sí solo no satisface este requisito.
+La estación DEBE (MUST) ofrecer una vista Session de clips/escenas y una vista Arrangement de línea de tiempo sobre las mismas pistas ordenadas, medios, estado de mezcla y transporte del proyecto. Session organiza columnas de pistas y filas de escenas; Arrangement organiza las mismas pistas verticalmente contra el tiempo musical. Cambiar de vista DEBE conservar el contenido del proyecto y el estado de reproducción. Ableton Live 12 DEBE ser la referencia visual y de interacción principal para la jerarquía creativa, densidad y relación entre ambas vistas. Ardour PUEDE consultarse únicamente para detalles técnicos de ingeniería de audio; NO DEBE definir la jerarquía visual ni el flujo creativo. El estilo visual por sí solo no satisface este requisito.
 
 La selección actual de pistas DEBE permanecer coherente al alternar entre Session, Arrangement y Mezclador. La pertenencia a un grupo organizativo DEBE persistir en el proyecto y poder asignarse o quitarse mediante una operación reversible. Agrupar pistas no DEBE enlazar ni propagar activa/silencio/solo/ganancia/panorama: cada pista conserva su propio estado de mezcla.
 
@@ -78,7 +78,7 @@ La selección actual de pistas DEBE permanecer coherente al alternar entre Sessi
 
 ### Requirement: las casillas y escenas de Session producen reproducción real
 
-El lanzamiento de clips/escenas en Session DEBE compartir el reloj de transporte, tempo y compás del proyecto. La cuantización, sustitución/parada por pista y lanzamiento de escena completa DEBEN planificarse fuera de la devolución de audio mediante mensajes de control acotados; cambiar de casilla NO DEBE reconstruir ni reiniciar el dispositivo. Las notas MIDI y regiones de audio DEBEN detenerse/liberarse correctamente al terminar el clip, al sustituirlo, pausar o detener el transporte. Los ajustes de lanzamiento —cuantización, modo de repetición/lanzamiento y acciones posteriores— sólo se muestran si su comportamiento está implementado con exactitud.
+El lanzamiento de clips/escenas en Session DEBE (MUST) compartir el reloj de transporte, tempo y compás del proyecto. La cuantización, sustitución/parada por pista y lanzamiento de escena completa DEBEN planificarse fuera de la devolución de audio mediante mensajes de control acotados; cambiar de casilla NO DEBE reconstruir ni reiniciar el dispositivo. Las notas MIDI y regiones de audio DEBEN detenerse/liberarse correctamente al terminar el clip, al sustituirlo, pausar o detener el transporte. Los ajustes de lanzamiento —cuantización, modo de repetición/lanzamiento y acciones posteriores— sólo se muestran si su comportamiento está implementado con exactitud.
 
 #### Scenario: lanzar un clip MIDI o de audio
 
@@ -94,7 +94,7 @@ El lanzamiento de clips/escenas en Session DEBE compartir el reloj de transporte
 
 ### Requirement: los encabezados de pista y canales del mezclador representan el flujo real de señal
 
-Los encabezados de pistas de audio y MIDI/instrumento DEBEN identificar el tipo de pista y ofrecer sólo controles implementados. El mezclador y los controles DEBEN seguir el modelo compartido y configurable de Session/Arrangement de Live, mostrando valores y actividad reales, no controles o medidores simulados. Para la corrección técnica de pistas de audio, entrada, cadena de procesadores, panorama/ganancia, medidor y salida DEBEN formar un flujo legible; puede contrastarse con la descripción de canales de Ardour cuando sea útil. Los valores de ganancia/panorama/silencio/solo/activa DEBEN coincidir en todas las vistas. El armado de grabación, monitorización de entrada, ruteo, envíos, buses y procesadores sólo DEBEN habilitarse cuando esté disponible su ruta completa de ejecución.
+Los encabezados de pistas de audio y MIDI/instrumento DEBEN (MUST) identificar el tipo de pista y ofrecer sólo controles implementados. El mezclador y los controles DEBEN seguir el modelo compartido y configurable de Session/Arrangement de Live, mostrando valores y actividad reales, no controles o medidores simulados. Para la corrección técnica de pistas de audio, entrada, cadena de procesadores, panorama/ganancia, medidor y salida DEBEN formar un flujo legible; puede contrastarse con la descripción de canales de Ardour cuando sea útil. Los valores de ganancia/panorama/silencio/solo/activa DEBEN coincidir en todas las vistas. El armado de grabación, monitorización de entrada, ruteo, envíos, buses y procesadores sólo DEBEN habilitarse cuando esté disponible su ruta completa de ejecución.
 
 #### Scenario: cambiar estado compartido del mezclador
 
@@ -110,7 +110,7 @@ Los encabezados de pistas de audio y MIDI/instrumento DEBEN identificar el tipo 
 
 ### Requirement: el navegador y el editor inferior son herramientas creativas contextuales
 
-El navegador DEBE ofrecer búsqueda y navegación de medios reales del proyecto/usuario y de instrumentos/dispositivos instalados, filtros de metadatos, escucha previa y arrastrar/soltar sólo cuando el motor lo admita. DEBE conservar la procedencia y nunca afirmar acceso a contenido sólo por su etiqueta visual. El panel contextual inferior DEBE cambiar según la selección: editor de notas MIDI para clips MIDI, controles de región/fuente para audio o parámetros reales para dispositivos cargados.
+El navegador DEBE (MUST) ofrecer búsqueda y navegación de medios reales del proyecto/usuario y de instrumentos/dispositivos instalados, filtros de metadatos, escucha previa y arrastrar/soltar sólo cuando el motor lo admita. DEBE conservar la procedencia y nunca afirmar acceso a contenido sólo por su etiqueta visual. El panel contextual inferior DEBE cambiar según la selección: editor de notas MIDI para clips MIDI, controles de región/fuente para audio o parámetros reales para dispositivos cargados.
 
 #### Scenario: buscar y escuchar medios
 
@@ -121,7 +121,7 @@ El navegador DEBE ofrecer búsqueda y navegación de medios reales del proyecto/
 
 ### Requirement: transporte y ajustes informan el estado real del motor
 
-El transporte DEBE exponer reproducir/pausar/detener, posición musical, tempo/compás y las operaciones implementadas de bucle, metrónomo, navegación y grabación. Posición y reproducción DEBEN provenir del reloj de transporte de sesión y de eventos del motor. Los ajustes de audio DEBEN distinguir preferencias guardadas de ajustes aplicados al flujo activo, incluido si hace falta reiniciar. La interfaz DEBE informar errores de dispositivo en vez de indicar éxito cuando falle un comando de dominio o el inicio del motor.
+El transporte DEBE (MUST) exponer reproducir/pausar/detener, posición musical, tempo/compás y las operaciones implementadas de bucle, metrónomo, navegación y grabación. Posición y reproducción DEBEN provenir del reloj de transporte de sesión y de eventos del motor. Los ajustes de audio DEBEN distinguir preferencias guardadas de ajustes aplicados al flujo activo, incluido si hace falta reiniciar. La interfaz DEBE informar errores de dispositivo en vez de indicar éxito cuando falle un comando de dominio o el inicio del motor.
 
 El rango de repetición del transporte, cuando se define, DEBE persistir en ticks de transporte, validar que el final sea posterior al inicio y admitir deshacer/rehacer. Guardar el rango no implica que la reproducción en bucle esté activa; el control de loop sólo se presenta como funcional cuando el motor coordina el salto de audio y MIDI.
 
@@ -140,7 +140,7 @@ El rango de repetición del transporte, cuando se define, DEBE persistir en tick
 
 ### Requirement: la fidelidad de interfaz se verifica como flujo de producción musical
 
-La interfaz DEBE tener una jerarquía de estación de trabajo con superficie creativa utilizable de inmediato, organización clara de pistas/escenas, forma de onda y notas MIDI legibles, transporte compacto y persistente, navegador/editor contextual y mezclador integrado. La validación visual DEBE inspeccionar una ventana en ejecución en tamaños estándar y mínimo y recorrer los flujos principales; los colores, capturas del código fuente o una compilación no demuestran fidelidad del producto.
+La interfaz DEBE (MUST) tener una jerarquía de estación de trabajo con superficie creativa utilizable de inmediato, organización clara de pistas/escenas, forma de onda y notas MIDI legibles, transporte compacto y persistente, navegador/editor contextual y mezclador integrado. La validación visual DEBE inspeccionar una ventana en ejecución en tamaños estándar y mínimo y recorrer los flujos principales; los colores, capturas del código fuente o una compilación no demuestran fidelidad del producto.
 
 #### Scenario: revisar una sesión estándar
 
