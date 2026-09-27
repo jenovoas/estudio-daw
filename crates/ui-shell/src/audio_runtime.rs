@@ -2515,7 +2515,8 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(plan.node_count(), 2);
+        // The global metronome node remains in the graph while its atomic toggle is off.
+        assert_eq!(plan.node_count(), 3);
         assert_eq!(senders.len(), 2);
         assert_eq!(schedule.len(), 4);
         assert_eq!(schedule[0].at, Duration::ZERO);
