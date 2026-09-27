@@ -8,7 +8,9 @@ use estudio_daw_audio_engine::{
     render_plan_exchange, AudioNode, AudioNodeError, RenderPlanBuilder, RenderPlanControl,
     SampleRingBuffer,
 };
-use estudio_daw_audio_platform::{run_pipewire_output_until, PipeWireStreamConfig};
+use estudio_daw_audio_platform::{
+    run_pipewire_input_until, run_pipewire_output_until, PipeWireStreamConfig,
+};
 use estudio_daw_midi_engine::RecordedMidiMessage;
 use estudio_daw_project_model::{
     AudioClip, InstrumentConfig, Project, TrackKind, TrackRole, TransportLoopRange,
@@ -288,6 +290,8 @@ impl AudioNode for AudioClipMixerNode {
 struct RoutedTrackSignal {
     sources: Vec<Box<dyn AudioNode>>,
     scratch: Vec<f32>,
+    input_ring: Option<Arc<SampleRingBuffer>>,
+    input_channels: Option<Vec<u16>>,
     output_index: Option<usize>,
     gain_left: f32,
     gain_right: f32,
@@ -315,6 +319,7 @@ impl ProjectRoutingNode {
         output_indices: Vec<Option<usize>>,
         order: Vec<usize>,
         master_index: Option<usize>,
+        input_rings: &mut HashMap<String, Arc<SampleRingBuffer>>,
         track_meters: &Arc<Mutex<HashMap<String, Arc<TrackMeter>>>>,
     ) -> Result<Self, String> {
         let mut tracks = Vec::with_capacity(project.tracks.len());
@@ -333,6 +338,11 @@ impl ProjectRoutingNode {
             tracks.push(RoutedTrackSignal {
                 sources,
                 scratch: vec![0.0; max_samples],
+                input_ring: input_rings.remove(&track.id),
+                input_channels: track
+                    .input_route
+                    .as_ref()
+                    .map(|route| route.channels.clone()),
                 output_index: output_indices[index],
                 gain_left,
                 gain_right,
@@ -360,6 +370,22 @@ impl AudioNode for ProjectRoutingNode {
         interleaved.fill(0.0);
         for track in &mut self.tracks {
             track.scratch[..sample_count].fill(0.0);
+            if let Some(ring) = &track.input_ring {
+                self.source_scratch[..sample_count].fill(0.0);
+                let read = ring.pop(&mut self.source_scratch[..sample_count]);
+                for (frame_index, stereo) in self.source_scratch[..read].chunks_exact(2).enumerate()
+                {
+                    let output = &mut track.scratch[frame_index * 2..frame_index * 2 + 2];
+                    match track.input_channels.as_deref() {
+                        Some([channel]) => output.fill(stereo[usize::from(*channel)]),
+                        Some([left, right]) => {
+                            output[0] = stereo[usize::from(*left)];
+                            output[1] = stereo[usize::from(*right)];
+                        }
+                        _ => output.copy_from_slice(stereo),
+                    }
+                }
+            }
             for source in &mut track.sources {
                 self.source_scratch[..sample_count].fill(0.0);
                 source.process(&mut self.source_scratch[..sample_count])?;
@@ -739,6 +765,9 @@ struct PlaybackSession {
     loop_error: Arc<std::sync::Mutex<Option<String>>>,
     project_model: Arc<LoopProjectModel>,
     active_project_revision: Arc<AtomicU64>,
+    input_stop: Arc<AtomicBool>,
+    input_threads: Vec<JoinHandle<()>>,
+    input_rings: HashMap<String, Arc<SampleRingBuffer>>,
 }
 
 struct LoopProjectModel {
@@ -929,6 +958,24 @@ impl AudioRuntimeHost {
         let max_samples = config
             .period_frames
             .saturating_mul(config.channels as usize);
+        let input_rings: HashMap<_, _> = project
+            .tracks
+            .iter()
+            .filter(|track| track.input_route.is_some())
+            .map(|track| {
+                (
+                    track.id.clone(),
+                    Arc::new(SampleRingBuffer::new(
+                        config
+                            .period_frames
+                            .saturating_mul(config.channels as usize)
+                            .saturating_mul(4),
+                    )),
+                )
+            })
+            .collect();
+        let input_stop = Arc::new(AtomicBool::new(false));
+        let mut input_threads: Vec<JoinHandle<()>> = Vec::new();
         let paused = Arc::new(AtomicBool::new(false));
         let project_model = Arc::new(LoopProjectModel {
             project: std::sync::Mutex::new(project.clone()),
@@ -946,6 +993,7 @@ impl AudioRuntimeHost {
             Arc::clone(&self.track_meters),
             start_position_ticks,
             loop_range.map(|range| range.end_tick),
+            input_rings.clone(),
         )?;
         let (control, processor) = render_plan_exchange(plan);
         let control = Arc::new(std::sync::Mutex::new(control));
@@ -963,10 +1011,78 @@ impl AudioRuntimeHost {
                 Arc::clone(&self.track_meters),
                 range.start_tick,
                 Some(range.end_tick),
+                input_rings.clone(),
             )?)
         } else {
             None
         };
+        for track in project
+            .tracks
+            .iter()
+            .filter(|track| track.input_route.is_some())
+        {
+            let route = track.input_route.as_ref().expect("filtro de ruta");
+            let target = route
+                .device_key
+                .strip_prefix("pipewire:")
+                .ok_or_else(|| format!("la entrada de '{}' no pertenece a PipeWire", track.name))?
+                .to_owned();
+            let available = audio_devices()
+                .map_err(|error| {
+                    format!("no se pudieron consultar las entradas PipeWire: {error}")
+                })?
+                .into_iter()
+                .any(|device| {
+                    device.name == target
+                        && device.media_class.to_ascii_lowercase().contains("source")
+                        && !device.media_class.to_ascii_lowercase().contains("monitor")
+                });
+            if !available {
+                input_stop.store(true, Ordering::Release);
+                for input_thread in input_threads.drain(..) {
+                    let _ = input_thread.join();
+                }
+                return Err(format!(
+                    "la entrada seleccionada para '{}' ya no está disponible: {target}",
+                    track.name
+                ));
+            }
+            let ring = Arc::clone(input_rings.get(&track.id).expect("ring por pista"));
+            let stop_input = Arc::clone(&input_stop);
+            let (input_ready_tx, input_ready_rx) = mpsc::sync_channel(1);
+            let input_config = config;
+            let handle = thread::Builder::new()
+                .name(format!("estudio-daw-input-{}", track.id))
+                .spawn(move || {
+                    let _ = run_pipewire_input_until(
+                        input_config,
+                        target,
+                        ring,
+                        stop_input,
+                        input_ready_tx,
+                    );
+                })
+                .map_err(|error| error.to_string())?;
+            match input_ready_rx.recv_timeout(Duration::from_secs(5)) {
+                Ok(Ok(())) => input_threads.push(handle),
+                Ok(Err(error)) => {
+                    input_stop.store(true, Ordering::Release);
+                    let _ = handle.join();
+                    return Err(format!(
+                        "no se pudo abrir la entrada de '{}': {error}",
+                        track.name
+                    ));
+                }
+                Err(error) => {
+                    input_stop.store(true, Ordering::Release);
+                    let _ = handle.join();
+                    return Err(format!(
+                        "la entrada de '{}' no respondió: {error}",
+                        track.name
+                    ));
+                }
+            }
+        }
         let (schedule_tx, schedule_rx) = mpsc::channel();
 
         let stop = Arc::new(AtomicBool::new(false));
@@ -1035,6 +1151,9 @@ impl AudioRuntimeHost {
                     loop_error: Arc::new(std::sync::Mutex::new(None)),
                     project_model: Arc::clone(&project_model),
                     active_project_revision: Arc::clone(&active_project_revision),
+                    input_stop: Arc::clone(&input_stop),
+                    input_threads,
+                    input_rings,
                 });
                 self.plan_control = Some(Arc::clone(&control));
                 if let (Some(range), Some(prepared)) = (loop_range, prepared_loop) {
@@ -1043,6 +1162,7 @@ impl AudioRuntimeHost {
                     let loop_position = Arc::clone(&self.position_ticks);
                     let loop_metronome = Arc::clone(&self.metronome_enabled);
                     let loop_track_meters = Arc::clone(&self.track_meters);
+                    let loop_input_rings = self.playback.as_ref().unwrap().input_rings.clone();
                     let loop_control = Arc::clone(&control);
                     let loop_schedule = self.playback.as_ref().unwrap().schedule.clone();
                     let loop_project = Arc::clone(&project_model);
@@ -1066,6 +1186,7 @@ impl AudioRuntimeHost {
                                 loop_position,
                                 loop_metronome,
                                 loop_track_meters,
+                                loop_input_rings,
                                 loop_active_revision,
                             ) {
                                 if let Ok(mut state) = loop_error.lock() {
@@ -1176,6 +1297,7 @@ impl AudioRuntimeHost {
             Arc::clone(&self.track_meters),
             position_ticks,
             range.map(|range| range.end_tick),
+            playback.input_rings.clone(),
         )?;
         if control.publish(plan).is_err() {
             return Err("el motor aún está aplicando un cambio anterior de plan".to_owned());
@@ -1207,6 +1329,7 @@ impl AudioRuntimeHost {
             return Ok(());
         };
         playback.stop.store(true, Ordering::Release);
+        playback.input_stop.store(true, Ordering::Release);
         playback.connected.store(false, Ordering::Release);
         if let Some(loop_thread) = playback.loop_thread {
             let _ = loop_thread.join();
@@ -1215,6 +1338,9 @@ impl AudioRuntimeHost {
             .thread
             .join()
             .map_err(|_| "el hilo de reproducción terminó inesperadamente".to_owned())??;
+        for input_thread in playback.input_threads {
+            let _ = input_thread.join();
+        }
         self.position_ticks.store(0, Ordering::Release);
         self.plan_control = None;
         Ok(())
@@ -1306,6 +1432,7 @@ fn build_project_playback(
         Arc::new(Mutex::new(HashMap::new())),
         start_position_ticks,
         None,
+        HashMap::new(),
     )
 }
 
@@ -1334,6 +1461,7 @@ fn build_project_playback_with_end(
     track_meters: Arc<Mutex<HashMap<String, Arc<TrackMeter>>>>,
     start_position_ticks: u64,
     end_position_ticks: Option<u64>,
+    mut input_rings: HashMap<String, Arc<SampleRingBuffer>>,
 ) -> Result<
     (
         estudio_daw_audio_engine::RenderPlan,
@@ -1792,6 +1920,7 @@ fn build_project_playback_with_end(
         output_indices,
         route_order,
         master_index,
+        &mut input_rings,
         &track_meters,
     )?);
     if let Some(end_after_frames) = loop_end_frames {
@@ -1840,6 +1969,7 @@ fn coordinate_loop(
     position_ticks: Arc<AtomicU64>,
     metronome_enabled: Arc<AtomicBool>,
     track_meters: Arc<Mutex<HashMap<String, Arc<TrackMeter>>>>,
+    input_rings: HashMap<String, Arc<SampleRingBuffer>>,
     active_project_revision: Arc<AtomicU64>,
 ) -> Result<(), String> {
     let mut prepared_revision = project_model.revision.load(Ordering::Acquire);
@@ -1860,6 +1990,7 @@ fn coordinate_loop(
                 Arc::clone(&position_ticks),
                 Arc::clone(&metronome_enabled),
                 Arc::clone(&track_meters),
+                input_rings.clone(),
             )?;
         }
         let (plan, senders, events) = prepared;
@@ -1880,6 +2011,7 @@ fn coordinate_loop(
                 Arc::clone(&position_ticks),
                 Arc::clone(&metronome_enabled),
                 Arc::clone(&track_meters),
+                input_rings.clone(),
             )?;
             continue;
         }
@@ -1917,6 +2049,7 @@ fn coordinate_loop(
             Arc::clone(&position_ticks),
             Arc::clone(&metronome_enabled),
             Arc::clone(&track_meters),
+            input_rings.clone(),
         )?;
     }
     Ok(())
@@ -1932,6 +2065,7 @@ fn prepare_latest_loop_plan(
     position_ticks: Arc<AtomicU64>,
     metronome_enabled: Arc<AtomicBool>,
     track_meters: Arc<Mutex<HashMap<String, Arc<TrackMeter>>>>,
+    input_rings: HashMap<String, Arc<SampleRingBuffer>>,
 ) -> Result<
     (
         (
@@ -1956,6 +2090,7 @@ fn prepare_latest_loop_plan(
             Arc::clone(&track_meters),
             range.start_tick,
             Some(range.end_tick),
+            input_rings.clone(),
         )
         .map_err(|error| format!("no se pudo preparar la siguiente vuelta A/B: {error}"))?;
         if project_model.revision.load(Ordering::Acquire) == revision {
@@ -2139,6 +2274,7 @@ mod tests {
             kind: TrackKind::Midi,
             role: TrackRole::Instrument,
             output_track_id: None,
+            input_route: None,
             channel_config: TrackChannelConfig::default(),
             color: "#58a6b8".into(),
             group_name: None,

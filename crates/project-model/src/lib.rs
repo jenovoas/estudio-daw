@@ -810,6 +810,10 @@ pub struct Track {
     /// Destino interno opcional del proyecto. La salida física pertenece al adaptador de plataforma.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub output_track_id: Option<String>,
+    /// Entrada física elegida para esta pista. La clave es opaca al dominio;
+    /// el adaptador de plataforma la resuelve contra dispositivos vigentes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub input_route: Option<TrackInputRoute>,
     #[serde(default)]
     pub channel_config: TrackChannelConfig,
     /// Color belongs to the project so Session and Arrangement remain visually linked.
@@ -832,6 +836,14 @@ pub struct Track {
     /// pistas sin instrumento hasta que el usuario elige uno explícitamente.
     #[serde(default)]
     pub instrument: Option<InstrumentConfig>,
+}
+
+/// Ruteo de una o dos entradas de una fuente física hacia una pista de audio.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct TrackInputRoute {
+    pub device_key: String,
+    pub channels: Vec<u16>,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -893,6 +905,8 @@ pub enum TrackValidationError {
     MultipleMasterTracks,
     #[error("track output must reference a different existing audio track; the master has no project output")]
     InvalidTrackOutput,
+    #[error("la entrada física requiere una pista de audio y uno o dos canales distintos en un dispositivo identificado")]
+    InvalidInputRoute,
     #[error("audio source identity, owner, or format metadata is invalid")]
     InvalidAudioSource,
     #[error("audio playlist identity or region references are invalid")]
@@ -919,6 +933,7 @@ impl Track {
             kind,
             role,
             output_track_id: None,
+            input_route: None,
             channel_config: TrackChannelConfig {
                 input_channels: audio_channels,
                 output_channels: 2,
@@ -956,6 +971,20 @@ impl Track {
         if self.channel_config.output_channels == 0 || self.channel_config.input_channels == Some(0)
         {
             return Err(TrackValidationError::InvalidChannels);
+        }
+        if let Some(route) = &self.input_route {
+            let mut channels = std::collections::HashSet::new();
+            if self.role != TrackRole::Audio
+                || route.device_key.trim().is_empty()
+                || route.channels.is_empty()
+                || route.channels.len() > 2
+                || route
+                    .channels
+                    .iter()
+                    .any(|channel| *channel >= 2 || !channels.insert(*channel))
+            {
+                return Err(TrackValidationError::InvalidInputRoute);
+            }
         }
         if !self.mixer.gain_db.is_finite()
             || !(-60.0..=12.0).contains(&self.mixer.gain_db)
@@ -1286,6 +1315,7 @@ pub fn import_project_xml(xml: &str) -> Result<ImportResult, ProjectError> {
                 kind,
                 role,
                 output_track_id: None,
+                input_route: None,
                 channel_config: TrackChannelConfig {
                     input_channels: is_audio_track
                         .then(|| track.channel.as_ref().and_then(|c| c.audio_channels))

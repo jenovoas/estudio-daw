@@ -705,9 +705,11 @@ Arrangement y Mezclador exponen ACT/M/S y ganancia/panorama para pistas no maste
 Los grupos sólo organizan: no enlazan la mezcla de sus pistas. Los medidores de
 pista muestran pico y RMS de bloque; el canal Master aplica activa/silencio/
 ganancia cuando está persistido y mide la salida estéreo final. La selección de
-salida Master ya está disponible en los ajustes de aplicación; siguen pendientes
-la selección de entrada física, el ruteo físico independiente por pista, los
-envíos/retornos y los procesadores. Se pueden
+salida Master ya está disponible en los ajustes de aplicación. El Mezclador
+permite asignar una entrada PipeWire y canales 1/2 a cada pista de audio; Play
+captura en un ring SPSC y mezcla esa señal a la pista. La asignación se aplica
+al siguiente inicio. Siguen pendientes destinos físicos independientes por
+pista, armado/grabación, envíos/retornos y procesadores. Se pueden
 importar archivos de audio a pistas existentes,
 copiándolos a la carpeta `media` junto al proyecto o vinculando el original,
 con metadatos básicos, preescucha corta antes de confirmar la importación,

@@ -454,6 +454,82 @@ pub fn run_pipewire_output_until(
     Ok(())
 }
 
+/// Captura una fuente física hasta que se solicita detenerla. El callback sólo
+/// copia F32 estéreo al ring SPSC; la conversión/ruteo ocurre en el plan.
+pub fn run_pipewire_input_until(
+    config: PipeWireStreamConfig,
+    capture_node: String,
+    ring: Arc<SampleRingBuffer>,
+    stop: Arc<AtomicBool>,
+    ready: std::sync::mpsc::SyncSender<Result<(), String>>,
+) -> Result<(), PipeWireError> {
+    let config = config.validate()?;
+    pw::init();
+    let main_loop = pw::main_loop::MainLoopRc::new(None)?;
+    let context = pw::context::ContextRc::new(&main_loop, None)?;
+    let core = context.connect_rc(None)?;
+    let stream = pw::stream::StreamBox::new(
+        &core,
+        "estudio-daw-track-input",
+        properties! {
+            *pw::keys::MEDIA_TYPE => "Audio",
+            *pw::keys::MEDIA_CATEGORY => "Capture",
+            *pw::keys::MEDIA_ROLE => "Music",
+            *pw::keys::AUDIO_CHANNELS => config.channels.to_string(),
+            *pw::keys::NODE_LATENCY => format!("{}/{}", config.period_frames, config.sample_rate),
+            *pw::keys::TARGET_OBJECT => capture_node,
+            "node.async" => "true",
+        },
+    )?;
+    let _listener = stream
+        .add_local_listener_with_user_data(())
+        .process(move |stream, _| {
+            let Some(mut buffer) = stream.dequeue_buffer() else {
+                return;
+            };
+            let Some(data) = buffer.datas_mut().first_mut() else {
+                return;
+            };
+            let valid_bytes =
+                (data.chunk().size() as usize).min(data.data().map_or(0, |bytes| bytes.len()));
+            let Some(bytes) = data.data() else {
+                return;
+            };
+            let (_, samples, _) = unsafe { bytes[..valid_bytes].align_to::<f32>() };
+            let _ = ring.push(samples);
+        })
+        .register()?;
+    let mut params = audio_params(config);
+    if let Err(error) = stream.connect(
+        spa::utils::Direction::Input,
+        None,
+        pw::stream::StreamFlags::AUTOCONNECT | pw::stream::StreamFlags::MAP_BUFFERS,
+        &mut params,
+    ) {
+        let _ = ready.send(Err(error.to_string()));
+        return Err(error.into());
+    }
+    let _ = ready.send(Ok(()));
+    let stop_check = Arc::clone(&stop);
+    let loop_to_quit = main_loop.clone();
+    let timer = main_loop.loop_().add_timer(move |_| {
+        if stop_check.load(Ordering::Acquire) {
+            loop_to_quit.quit();
+        }
+    });
+    timer
+        .update_timer(
+            Some(Duration::from_millis(2)),
+            Some(Duration::from_millis(2)),
+        )
+        .into_result()
+        .map_err(|error| PipeWireError::Timer(format!("{error:?}")))?;
+    main_loop.run();
+    drop(_listener);
+    drop(stream);
+    Ok(())
+}
+
 fn process_output_block(processor: &mut RenderPlanProcessor, samples: &mut [f32], paused: bool) {
     if paused || processor.process(samples).is_err() {
         samples.fill(0.0);

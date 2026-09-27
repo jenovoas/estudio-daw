@@ -74,6 +74,7 @@ const elements = {
 
 let hasProject = false;
 let audioSettings = null;
+let audioInputDevices = [];
 let projectTransportState = "stopped";
 let transportPositionTick = 0;
 let transportPositionPollPending = false;
@@ -126,13 +127,18 @@ function renderAudioProfile(view = null) {
 
 async function loadAudioSettings() {
   try {
-    const [devices, view] = await Promise.all([
+    const [devices, inputs, view] = await Promise.all([
       platform.audioOutputDevices().catch((error) => {
         setNotice("No se pudo consultar PipeWire", String(error));
         return [];
       }),
+      platform.audioInputDevices().catch((error) => {
+        setNotice("No se pudo consultar las entradas PipeWire", String(error));
+        return [];
+      }),
       platform.audioRuntimeSettings(),
     ]);
+    audioInputDevices = inputs;
     audioSettings = view.settings;
     elements.audioProfile.value = audioSettings.activeProfile;
     const options = [new Option("Automática (AudioBox si está disponible)", "pipewire:default")];
@@ -278,7 +284,11 @@ function trackSignalFlow(track, tracks) {
     return `Suma de pistas enrutadas → ganancia/pan de bus → medidor → ${destination}`;
   }
   if (track.kind === "audio") {
-    return `Regiones de audio → ganancia/desvanecimientos de región → ganancia/pan → medidor → ${destination}`;
+    const sources = ["Regiones (ganancia/desvanecimientos)"];
+    if (track.inputRoute) {
+      sources.unshift(`Entrada física ${track.inputRoute.channels.map((channel) => channel + 1).join("+")}`);
+    }
+    return `${sources.join(" + ")} → ganancia/pan → medidor → ${destination}`;
   }
   return `Eventos MIDI → instrumento → ganancia/pan → medidor → ${destination}`;
 }
@@ -306,6 +316,49 @@ function createTrackOutputControl(track, tracks) {
   select.value = track.outputTrackId ?? targets.find((target) => target.role === "master")?.id ?? "";
   select.addEventListener("change", () => updateTrackOutput(track, select.value));
   field.append(caption, select);
+  return field;
+}
+
+function createTrackInputControl(track) {
+  if (track.virtualMaster || track.role !== "audio") return null;
+  const field = document.createElement("div");
+  field.className = "mixer-output-select";
+  const caption = document.createElement("span");
+  caption.textContent = "Entrada física · próximo inicio";
+  const select = document.createElement("select");
+  select.setAttribute("aria-label", `Entrada física de ${track.name}`);
+  select.disabled = projectTransportState !== "stopped";
+  select.append(new Option("Sin entrada asignada", ""));
+  for (const device of audioInputDevices) {
+    select.append(new Option(device.description ? `${device.description} · ${device.name}` : device.name, device.key));
+  }
+  const existing = track.inputRoute?.deviceKey;
+  if (existing && !audioInputDevices.some((device) => device.key === existing)) {
+    select.append(new Option(`No disponible · ${existing}`, existing));
+  }
+  select.value = existing ?? "";
+  const channelField = document.createElement("label");
+  channelField.textContent = "Canales de entrada";
+  channelField.className = "mixer-output-select";
+  const channels = document.createElement("select");
+  channels.setAttribute("aria-label", `Canales de entrada de ${track.name}`);
+  channels.disabled = projectTransportState !== "stopped";
+  channels.append(
+    new Option("1 + 2 · estéreo", "0,1"),
+    new Option("1 · mono", "0"),
+    new Option("2 · mono", "1"),
+  );
+  channels.value = track.inputRoute?.channels?.join(",") ?? "0,1";
+  const saveRoute = () => {
+    const inputRoute = select.value
+      ? { deviceKey: select.value, channels: channels.value.split(",").map(Number) }
+      : null;
+    runCommand("Entrada de pista actualizada", () => platform.setTrackInputRoute(track.id, inputRoute));
+  };
+  select.addEventListener("change", saveRoute);
+  channels.addEventListener("change", saveRoute);
+  channelField.append(channels);
+  field.append(caption, select, channelField);
   return field;
 }
 
@@ -579,12 +632,14 @@ function renderMixerSurface(tracks) {
     const selection = createTrackSelectionControl(track);
     const removeButton = createTrackRemovalButton(track);
     const outputControl = createTrackOutputControl(track, tracks);
+    const inputControl = createTrackInputControl(track);
     const channelHeading = document.createElement("div");
     channelHeading.className = "mixer-channel-heading";
     if (selection) channelHeading.append(selection);
     channelHeading.append(title);
     if (removeButton) channelHeading.append(removeButton);
     channel.append(channelHeading, role, routing, mix);
+    if (inputControl) channel.append(inputControl);
     if (outputControl) channel.append(outputControl);
     const meter = createTrackMeter(track);
     if (meter) channel.append(meter);

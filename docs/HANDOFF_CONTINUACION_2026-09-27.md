@@ -1,5 +1,13 @@
 # Handoff de continuación — 2026-09-27
 
+## Actualización — entrada física por pista (avance OpenSpec 2.4)
+
+- El modelo guarda `TrackInputRoute` como clave opaca PipeWire y selección mono/estéreo de canales 1/2. `SetTrackInputRoute` aplica por historial reversible; el dominio valida sólo identidad y forma, sin depender del backend.
+- El Mezclador enumera fuentes físicas y permite seleccionar la entrada/canales; el resumen muestra el sentido de la señal. La configuración se cambia con el transporte detenido y se aplica al siguiente Play.
+- PipeWire captura cada ruta a un ring SPSC preasignado. El plan consume y mezcla la entrada a la pista antes de ganancia/pan y ruteo interno. Las fuentes ausentes producen error al iniciar.
+- Verificación: `cargo fmt --all -- --check`, `cargo check --workspace`, `node --check` de ambos scripts frontend, `git diff --check` pasan. `openspec validate workstation-arrangement-surface-v2 --strict` conserva ocho avisos lingüísticos ya conocidos. No se ejecutaron pruebas ni QA manual de AudioBox.
+- Pendiente en 2.4: salidas físicas por pista, consultar canales/capacidades reales, medidor de entrada y QA con AudioBox/desconexión. Grabación/armado y control explícito de monitorización corresponden a 2.5. No marcar 2.4 como completa.
+
 ## Actualización — búsqueda de transporte durante Play
 
 - Continuación publicada: consultar `git log`; la búsqueda se aplica mediante un plan nuevo en el siguiente límite de bloque y conserva abierto PipeWire. Un clic en la regla reubica audio y MIDI; el scheduler sustituye la agenda y las regiones se decodifican desde la nueva posición.

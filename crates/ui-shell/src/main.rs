@@ -13,7 +13,8 @@ use estudio_daw_application::{
 use estudio_daw_midi_engine::{MidiSource, MidiTake, RecordedMidiEvent, RecordedMidiMessage};
 use estudio_daw_project_model::{
     ImportProvenance, InstrumentConfig, MidiClip, Project, TimeSignature, Track,
-    TrackChannelConfig, TrackKind, TrackMixerState, TrackRole, Transport, TransportLoopRange,
+    TrackChannelConfig, TrackInputRoute, TrackKind, TrackMixerState, TrackRole, Transport,
+    TransportLoopRange,
 };
 use estudio_daw_runtime_diagnostics::audio_devices;
 use serde::Serialize;
@@ -39,6 +40,7 @@ struct TrackSummary {
     note_count: usize,
     color: String,
     input_channels: Option<u32>,
+    input_route: Option<TrackInputRoute>,
     output_channels: u32,
     output_track_id: Option<String>,
     group_name: Option<String>,
@@ -240,6 +242,7 @@ fn summarize(application: &ProjectApplication, audio_engine_connected: bool) -> 
                     .count(),
             color: track.color.clone(),
             input_channels: track.channel_config.input_channels,
+            input_route: track.input_route.clone(),
             output_channels: track.channel_config.output_channels,
             output_track_id: track.output_track_id.clone(),
             group_name: track.group_name.clone(),
@@ -456,6 +459,7 @@ fn add_track(kind: String, state: State<'_, DesktopState>) -> Result<UiSnapshot,
         kind: track_kind,
         role,
         output_track_id: None,
+        input_route: None,
         channel_config: TrackChannelConfig {
             input_channels: if role == TrackRole::Audio {
                 Some(2)
@@ -784,6 +788,7 @@ fn new_project_model() -> Project {
             kind: TrackKind::Midi,
             role: TrackRole::Instrument,
             output_track_id: None,
+            input_route: None,
             channel_config: TrackChannelConfig::default(),
             color: "#58a6b8".into(),
             group_name: None,
@@ -1120,6 +1125,33 @@ fn set_track_output(
 }
 
 #[tauri::command]
+fn set_track_input_route(
+    track_id: String,
+    input_route: Option<TrackInputRoute>,
+    state: State<'_, DesktopState>,
+) -> Result<UiSnapshot, String> {
+    let mut application = state
+        .application
+        .lock()
+        .map_err(|_| "el estado de la aplicación quedó bloqueado".to_owned())?;
+    let application = application
+        .as_mut()
+        .ok_or_else(|| "primero abre un proyecto".to_owned())?;
+    application
+        .execute_project(ProjectCommand::SetTrackInputRoute {
+            track_id,
+            input_route,
+        })
+        .map_err(|error| error.to_string())?;
+    let connected = state
+        .audio
+        .lock()
+        .map_err(|_| "el estado del motor de audio quedó bloqueado".to_owned())?
+        .is_connected();
+    Ok(summarize(application, connected))
+}
+
+#[tauri::command]
 fn set_tracks_group(
     track_ids: Vec<String>,
     group_name: Option<String>,
@@ -1208,6 +1240,26 @@ fn audio_output_devices() -> Result<Vec<AudioOutputDeviceSummary>, String> {
 }
 
 #[tauri::command]
+fn audio_input_devices() -> Result<Vec<AudioOutputDeviceSummary>, String> {
+    audio_devices()
+        .map_err(|error| format!("no se pudieron consultar las entradas de audio: {error}"))
+        .map(|devices| {
+            devices
+                .into_iter()
+                .filter(|device| {
+                    let class = device.media_class.to_ascii_lowercase();
+                    class.contains("source") && !class.contains("monitor")
+                })
+                .map(|device| AudioOutputDeviceSummary {
+                    key: format!("pipewire:{}", device.name),
+                    name: device.name,
+                    description: device.description,
+                })
+                .collect()
+        })
+}
+
+#[tauri::command]
 fn save_audio_settings(
     settings: AudioRuntimeSettings,
     state: State<'_, DesktopState>,
@@ -1250,10 +1302,12 @@ fn main() {
             set_transport,
             set_track_mixer,
             set_track_output,
+            set_track_input_route,
             set_tracks_group,
             history_action,
             audio_runtime_settings,
             audio_output_devices,
+            audio_input_devices,
             save_audio_settings
         ])
         .run(tauri::generate_context!())

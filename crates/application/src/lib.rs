@@ -518,6 +518,7 @@ mod tests {
                 kind: TrackKind::Audio,
                 role: estudio_daw_project_model::TrackRole::Audio,
                 output_track_id: None,
+                input_route: None,
                 channel_config: estudio_daw_project_model::TrackChannelConfig {
                     input_channels: Some(2),
                     output_channels: 2,

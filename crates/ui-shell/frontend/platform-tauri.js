@@ -52,6 +52,7 @@ window.estudioPlatform = {
   setTransport: (command, positionTicks = null) => invoke("set_transport", { command, positionTicks }),
   setTrackMixer: (trackId, mixer) => invoke("set_track_mixer", { trackId, ...mixer }),
   setTrackOutput: (trackId, outputTrackId) => invoke("set_track_output", { trackId, outputTrackId }),
+  setTrackInputRoute: (trackId, inputRoute) => invoke("set_track_input_route", { trackId, inputRoute }),
   setTracksGroup: (trackIds, groupName) => invoke("set_tracks_group", { trackIds, groupName }),
   transportPosition: () => invoke("transport_position"),
   trackMeters: () => invoke("track_meters"),
@@ -59,5 +60,6 @@ window.estudioPlatform = {
   historyAction: (action) => invoke("history_action", { action }),
   audioRuntimeSettings: () => invoke("audio_runtime_settings"),
   audioOutputDevices: () => invoke("audio_output_devices"),
+  audioInputDevices: () => invoke("audio_input_devices"),
   saveAudioSettings: (settings) => invoke("save_audio_settings", { settings }),
 };

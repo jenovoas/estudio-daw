@@ -9,8 +9,8 @@ use estudio_daw_project_model::{
     add_audio_clip, add_audio_clip_for_source, append_media_source, attach_media_source,
     attach_midi_take, quantize_midi_clip, set_audio_clip_fades, set_audio_clip_gain,
     trim_audio_clip, AudioClip, ClipReference, ClipSlot, MediaSource, Project, ProjectEvent,
-    ProjectHistory, ProjectSnapshot, ProxyAsset, Scene, Track, TrackKind, TrackMixerState,
-    TrackRole, TransportLoopRange,
+    ProjectHistory, ProjectSnapshot, ProxyAsset, Scene, Track, TrackInputRoute, TrackKind,
+    TrackMixerState, TrackRole, TransportLoopRange,
 };
 use estudio_daw_session::{Session, SessionCommand, TransportSnapshot, TransportState};
 use serde::{Deserialize, Serialize};
@@ -85,6 +85,10 @@ pub enum ProjectCommand {
     SetTrackOutput {
         track_id: String,
         output_track_id: Option<String>,
+    },
+    SetTrackInputRoute {
+        track_id: String,
+        input_route: Option<TrackInputRoute>,
     },
     SetTracksGroup {
         track_ids: Vec<String>,
@@ -718,6 +722,28 @@ impl CommandRuntime {
                         .map_err(|error| error.to_string())
                 })
                 .map_err(|error| CommandError::Project(error.to_string()))?,
+            ProjectCommand::SetTrackInputRoute {
+                track_id,
+                input_route,
+            } => self
+                .project_history
+                .transact("set track input route", |project| -> Result<(), String> {
+                    let track = project
+                        .tracks
+                        .iter_mut()
+                        .find(|item| item.id == track_id)
+                        .ok_or_else(|| format!("unknown track: {track_id}"))?;
+                    if input_route.is_some() && track.role != TrackRole::Audio {
+                        return Err(
+                            "la entrada física sólo se puede asignar a una pista de audio".into(),
+                        );
+                    }
+                    track.input_route = input_route;
+                    project
+                        .validate_persisted_contracts()
+                        .map_err(|error| error.to_string())
+                })
+                .map_err(|error| CommandError::Project(error.to_string()))?,
             ProjectCommand::SetTracksGroup {
                 track_ids,
                 group_name,
@@ -1158,6 +1184,7 @@ mod tests {
                     kind: TrackKind::Midi,
                     role: TrackRole::Instrument,
                     output_track_id: None,
+                    input_route: None,
                     channel_config: TrackChannelConfig::default(),
                     color: "#58a6b8".into(),
                     group_name: None,
@@ -1173,6 +1200,7 @@ mod tests {
                     kind: TrackKind::Audio,
                     role: TrackRole::Audio,
                     output_track_id: None,
+                    input_route: None,
                     channel_config: TrackChannelConfig {
                         input_channels: Some(2),
                         output_channels: 2,
