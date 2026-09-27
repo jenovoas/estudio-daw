@@ -144,6 +144,7 @@ const UI_ACTIONS = [
   { id: "audio.remove", label: "Quitar región", menu: "Contexto", contexts: ["audio"] },
   { id: "track.moveUp", label: "Mover pista antes", menu: "Contexto", contexts: ["track"] },
   { id: "track.moveDown", label: "Mover pista después", menu: "Contexto", contexts: ["track"] },
+  { id: "track.duplicate", label: "Duplicar pista", menu: "Contexto", contexts: ["track"] },
   { id: "track.remove", label: "Quitar pista", menu: "Contexto", contexts: ["track"] },
 ];
 
@@ -165,6 +166,9 @@ function executeUiAction(action, context = null) {
     context?.track?.querySelector('[data-track-order="up"]:not(:disabled)')?.click();
   } else if (action.id === "track.moveDown") {
     context?.track?.querySelector('[data-track-order="down"]:not(:disabled)')?.click();
+  } else if (action.id === "track.duplicate") {
+    const trackId = context?.track?.dataset.trackId;
+    if (trackId) void runCommand("Pista duplicada", () => platform.duplicateTrack(trackId));
   } else if (action.id === "track.remove") {
     context?.track?.querySelector(".track-remove-button")?.click();
   } else {
@@ -254,6 +258,7 @@ function showContextMenu(event) {
     if (action.id === "audio.remove") return Boolean(clip?.querySelector(".audio-region-remove:not(:disabled)"));
     if (action.id === "track.moveUp") return Boolean(track?.querySelector('[data-track-order="up"]:not(:disabled)'));
     if (action.id === "track.moveDown") return Boolean(track?.querySelector('[data-track-order="down"]:not(:disabled)'));
+    if (action.id === "track.duplicate") return Boolean(track?.querySelector(".track-remove-button"));
     if (action.id === "track.remove") return Boolean(track?.querySelector(".track-remove-button:not(:disabled)"));
     return true;
   });

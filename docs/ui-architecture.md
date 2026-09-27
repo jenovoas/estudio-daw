@@ -133,6 +133,9 @@ las familias completas de Proyecto, edición de clips, preferencias ni ayuda.
 Transporte también ofrece Play/Pause/Stop/Record, pánico, metrónomo y los
 controles existentes del rango A/B; cada opción sigue el estado habilitado del
 control que reutiliza.
+En el menú contextual de una pista no Master también se puede duplicar: el
+comando crea IDs nuevos para pista, clips, fuentes y casillas, y conserva la
+procedencia de las fuentes compartidas sin editar sus archivos.
 
 La barra de herramientas lateral y las pestañas del encabezado cambian entre
 Arreglo, Session y Mezclador. Session presenta pistas por columnas y escenas

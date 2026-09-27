@@ -596,6 +596,58 @@ fn remove_track(track_id: String, state: State<'_, DesktopState>) -> Result<UiSn
 }
 
 #[tauri::command]
+fn duplicate_track(track_id: String, state: State<'_, DesktopState>) -> Result<UiSnapshot, String> {
+    let mut application = state
+        .application
+        .lock()
+        .map_err(|_| "el estado de la aplicación quedó bloqueado".to_owned())?;
+    let application = application
+        .as_mut()
+        .ok_or_else(|| "primero crea o abre un proyecto".to_owned())?;
+    let snapshot = application.snapshot();
+    let tracks = &snapshot.project.project.tracks;
+    let source = tracks
+        .iter()
+        .find(|track| track.id == track_id)
+        .ok_or_else(|| format!("no existe la pista {track_id}"))?;
+    let index = tracks
+        .iter()
+        .position(|track| track.id == track_id)
+        .unwrap_or(tracks.len())
+        + 1;
+    let name = format!("{} copia", source.name);
+    let mut new_track_id = format!("{track_id}-copy-{}", unix_timestamp_millis());
+    let mut suffix = 1_u32;
+    while tracks.iter().any(|track| track.id == new_track_id) {
+        new_track_id = format!("{track_id}-copy-{}-{suffix}", unix_timestamp_millis());
+        suffix += 1;
+    }
+    application
+        .execute_project(ProjectCommand::DuplicateTrack {
+            track_id,
+            new_track_id,
+            name,
+            index: Some(index),
+        })
+        .map_err(|error| error.to_string())?;
+    let project = application.snapshot().project.project;
+    let mut audio = state
+        .audio
+        .lock()
+        .map_err(|_| "el estado del motor de audio quedó bloqueado".to_owned())?;
+    let connected = audio.is_connected();
+    if connected {
+        let settings = load_audio_runtime_settings().map_err(|error| error.to_string())?;
+        audio
+            .refresh_project(&project, settings.active())
+            .map_err(|error| {
+                format!("la pista se duplicó, pero no se pudo actualizar el audio: {error}")
+            })?;
+    }
+    Ok(summarize(application, connected))
+}
+
+#[tauri::command]
 fn move_track(
     track_id: String,
     index: usize,
@@ -1662,6 +1714,7 @@ fn main() {
             new_project,
             add_track,
             move_track,
+            duplicate_track,
             remove_track,
             import_audio,
             edit_audio_region,
