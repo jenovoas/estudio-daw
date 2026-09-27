@@ -440,6 +440,10 @@ mod tests {
                 },
             },
             tracks: vec![midi_track("track-1"), midi_track("track-2")],
+            audio_sources: Vec::new(),
+            audio_playlists: Vec::new(),
+            scenes: Vec::new(),
+            clip_slots: Vec::new(),
             midi_clips: vec![
                 MidiClip {
                     id: "clip-1".into(),

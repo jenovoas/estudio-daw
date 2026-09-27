@@ -525,11 +525,16 @@ mod tests {
                 media_source: None,
                 instrument: None,
             }],
+            audio_sources: Vec::new(),
+            audio_playlists: Vec::new(),
+            scenes: Vec::new(),
+            clip_slots: Vec::new(),
             midi_clips: Vec::new(),
             audio_clips: vec![AudioClip {
                 id: "clip-audio-1".into(),
                 name: "Región".into(),
                 track_id: "track-audio".into(),
+                source_id: None,
                 start_tick: 0,
                 source_start_samples: 0,
                 duration_samples: 48_000,
@@ -631,7 +636,7 @@ mod tests {
 
         let application = ProjectApplication::open(&project_path).unwrap();
         let project = application.snapshot().project.project;
-        assert_eq!(project.schema_version, "estudio-daw.project.v4");
+        assert_eq!(project.schema_version, "estudio-daw.project.v5");
         assert!(project.midi_clips.is_empty());
         assert!(project.audio_clips.is_empty());
     }

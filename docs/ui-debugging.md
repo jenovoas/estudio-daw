@@ -1,8 +1,8 @@
 # Diagnóstico de la interfaz Tauri
 
-Esta guía permite distinguir un problema de frontend, de IPC/modelo, de proyecto
+Esta guía permite distinguir un problema de interfaz web, de IPC/modelo, de proyecto
 guardado y de salida de audio. Los resultados deben anotarse con el SHA y el
-comando exacto; no inferir funcionamiento de una etiqueta o de un render visual.
+comando exacto; no inferir funcionamiento de una etiqueta o de una imagen estática.
 
 ## Lanzar y observar errores
 
@@ -13,16 +13,16 @@ cargo run -p estudio-daw-ui-shell
 ```
 
 La salida de esa terminal contiene errores Rust, fallos de inicialización de
-PipeWire y mensajes del proceso Tauri. Los errores de frontend/IPC se muestran
-en la consola de desarrollo del webview y en el aviso inferior de la ventana.
+PipeWire y mensajes del proceso Tauri. Los errores de interfaz web/IPC se muestran
+en la consola de desarrollo del visor web y en el aviso inferior de la ventana.
 El texto del aviso incluye la cadena de error devuelta por el comando Tauri.
 
 Para comprobar persistencia, guarda como JSON y abre ese mismo archivo en un
-editor de texto. El valor `estudio-daw.project.v4` es sólo el identificador
-interno del formato JSON, no una versión ni release del producto. Busca
-`"tracks"`, `"role"`, `"channel_config"`, `"mixer"` y el
-identificador de pista permite confirmar el estado escrito sin depender del
-render de la ventana.
+editor de texto. El valor `estudio-daw.project.v5` identifica la revisión
+interna del formato JSON; no es una versión del producto ni una publicación. Busca
+`"tracks"`, `"audio_sources"`, `"audio_playlists"`, `"audio_clips"`,
+`"scenes"` y `"clip_slots"`. Las regiones/slots guardan identificadores hacia
+los clips; no deben contener una segunda copia de sus notas o fuente.
 
 ## Comprobaciones deterministas por área
 
@@ -33,10 +33,10 @@ cargo test -p estudio-daw-application -- --test-threads=1
 cargo test -p estudio-daw-ui-shell -- --test-threads=1
 ```
 
-Las pruebas de `project-model` cubren migración v1/v2/v3, defaults, roles,
-identidad/orden y persistencia. `command-bus` cubre validación, historial y eventos de dominio. `application` cubre ciclo de
-apertura/guardado y undo. `ui-shell` cubre snapshots, resúmenes y scheduler MIDI.
-Para verificar todo el repositorio:
+Las pruebas de `project-model` cubren migración v1–v4, valores predeterminados,
+roles, fuentes/listas/regiones, referencias de casillas, identidad/orden y persistencia. `command-bus` cubre validación, historial y eventos de dominio. `application` cubre el ciclo de
+apertura/guardado y deshacer. `ui-shell` cubre instantáneas, resúmenes y planificador MIDI.
+Para comprobar todo el espacio de trabajo:
 
 ```sh
 cargo test --workspace -- --test-threads=1
@@ -48,22 +48,22 @@ git diff --check
 ## Qué comprobar en la ventana
 
 1. Crear proyecto nuevo: aparece una pista MIDI vacía y se habilitan Guardar
-   como, transporte e historial según el snapshot.
+   como, transporte e historial según la instantánea.
 2. Pulsar `＋M` y `＋A`: el contador/lista cambia; la pista nueva participa en
-   undo/redo y sobrevive a guardar, cerrar y abrir el JSON.
-3. Abrir Demo MIDI: el snapshot reporta clips MIDI y Play intenta iniciar el
+   deshacer/rehacer y sobrevive a guardar, cerrar y abrir el JSON.
+3. Abrir la demostración MIDI: la instantánea reporta clips MIDI y reproducir intenta iniciar el
    instrumento elegido en la salida configurada. AudioBox/PipeWire se comprueba
    separadamente; el indicador “conectado” no mide latencia tecla→parlante.
 4. Si una acción falla, copiar el texto completo del aviso, el comando de la
    terminal y `git rev-parse HEAD`; así se puede ubicar la frontera que falló.
 
-## Límites actuales que no son fallos de UI
+## Límites actuales que no son fallos de la interfaz
 
-Crear una pista de audio crea y persiste una pista vacía; todavía no importa,
-reproduce ni graba audio. El estado de mixer se persiste en el proyecto y se
-incluye en snapshots, pero aún no controla el gain/pan real del motor ni tiene
-controles interactivos en la vista. Session, Browser de medios, waveform,
-routing, arm/monitor y medidores de pista siguen pendientes en
+Crear una pista de audio crea y guarda una pista vacía; todavía no importa,
+reproduce ni graba audio. El estado del mezclador se guarda en el proyecto y se
+incluye en instantáneas, pero aún no controla la ganancia/panorama real del motor ni tiene
+controles interactivos en la vista. Session, navegador de medios, forma de onda,
+ruteo, armado/monitorización y medidores de pista siguen pendientes en
 `openspec/changes/workstation-arrangement-surface-v2/tasks.md`.
 
 ## Plantilla para reportar un fallo

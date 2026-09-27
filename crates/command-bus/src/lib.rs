@@ -564,6 +564,10 @@ mod tests {
                     instrument: None,
                 },
             ],
+            audio_sources: Vec::new(),
+            audio_playlists: Vec::new(),
+            scenes: Vec::new(),
+            clip_slots: Vec::new(),
             midi_clips: vec![MidiClip {
                 id: "midi-clip-1".into(),
                 name: "Take".into(),
@@ -602,6 +606,7 @@ mod tests {
                 id: "clip-1".into(),
                 name: "Audio".into(),
                 track_id: "track-audio".into(),
+                source_id: None,
                 start_tick: 0,
                 source_start_samples: 0,
                 duration_samples: 48_000,
@@ -883,20 +888,16 @@ mod tests {
             ))
             .unwrap();
 
-        assert_eq!(
-            runtime.snapshot().project.project.tracks[1].media_source,
-            Some(source.clone())
-        );
+        let attached = runtime.snapshot();
+        assert_eq!(attached.project.project.audio_sources.len(), 1);
+        assert_eq!(attached.project.project.audio_sources[0].media, source);
         runtime
             .apply(envelope(
                 "undo-media-1",
                 DomainCommand::Project(ProjectCommand::Undo),
             ))
             .unwrap();
-        assert_eq!(
-            runtime.snapshot().project.project.tracks[1].media_source,
-            None
-        );
+        assert!(runtime.snapshot().project.project.audio_sources.is_empty());
 
         let bus = DomainCommandBus::bounded(1);
         bus.dispatch(envelope(

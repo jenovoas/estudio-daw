@@ -26,7 +26,7 @@ pub enum ProjectError {
     Xml(#[from] quick_xml::DeError),
 }
 
-/// Error de lectura versionada de `project.json`.
+/// Error de lectura del formato persistido de `project.json`.
 #[derive(Debug, Error)]
 pub enum ProjectJsonError {
     #[error("JSON de proyecto inválido: {0}")]
@@ -35,7 +35,7 @@ pub enum ProjectJsonError {
     InvalidRoot,
     #[error("`schema_version` debe ser una cadena")]
     InvalidVersionType,
-    #[error("versión de proyecto no soportada: {0}")]
+    #[error("revisión del formato de proyecto no soportada: {0}")]
     UnsupportedVersion(String),
     #[error("pista de proyecto inválida: {0}")]
     InvalidTrack(String),
@@ -64,6 +64,50 @@ pub struct MediaSource {
     pub original_hash: String,
     #[serde(default)]
     pub proxy: Option<ProxyAsset>,
+}
+
+/// Media original de un proyecto. Su archivo no pertenece a ninguna región:
+/// varias regiones de una playlist pueden referenciar la misma fuente.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct AudioSource {
+    pub id: String,
+    pub owner_track_id: String,
+    pub media: MediaSource,
+    #[serde(default)]
+    pub sample_rate_hz: Option<u32>,
+    #[serde(default)]
+    pub channels: Option<u16>,
+}
+
+/// Orden explícito de regiones de audio para una pista.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct AudioPlaylist {
+    pub id: String,
+    pub track_id: String,
+    pub region_ids: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct Scene {
+    pub id: String,
+    pub name: String,
+}
+
+/// Un slot referencia un clip persistido; no contiene una copia del MIDI/audio.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ClipSlot {
+    pub id: String,
+    pub scene_id: String,
+    pub track_id: String,
+    #[serde(default)]
+    pub clip: Option<ClipReference>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(tag = "kind", content = "clip_id", rename_all = "snake_case")]
+pub enum ClipReference {
+    Midi(String),
+    Audio(String),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -602,6 +646,14 @@ pub struct Project {
     pub transport: Transport,
     pub tracks: Vec<Track>,
     #[serde(default)]
+    pub audio_sources: Vec<AudioSource>,
+    #[serde(default)]
+    pub audio_playlists: Vec<AudioPlaylist>,
+    #[serde(default)]
+    pub scenes: Vec<Scene>,
+    #[serde(default)]
+    pub clip_slots: Vec<ClipSlot>,
+    #[serde(default)]
     pub midi_clips: Vec<MidiClip>,
     #[serde(default)]
     pub audio_clips: Vec<AudioClip>,
@@ -609,8 +661,8 @@ pub struct Project {
 }
 
 impl Project {
-    /// Verifica identidad y límites globales de roles persistidos.
-    pub fn validate_track_contracts(&self) -> Result<(), TrackValidationError> {
+    /// Verifica identidad y relaciones persistidas entre pistas, medios y clips.
+    pub fn validate_persisted_contracts(&self) -> Result<(), TrackValidationError> {
         let mut ids = std::collections::HashSet::new();
         let mut master_count = 0;
         for track in &self.tracks {
@@ -623,7 +675,120 @@ impl Project {
         if master_count > 1 {
             return Err(TrackValidationError::MultipleMasterTracks);
         }
+
+        let tracks: std::collections::HashMap<_, _> =
+            self.tracks.iter().map(|t| (t.id.as_str(), t)).collect();
+        let mut source_ids = std::collections::HashSet::new();
+        for source in &self.audio_sources {
+            if source.id.trim().is_empty() || !source_ids.insert(source.id.as_str()) {
+                return Err(TrackValidationError::InvalidAudioSource);
+            }
+            if !tracks
+                .get(source.owner_track_id.as_str())
+                .is_some_and(|t| t.role == TrackRole::Audio)
+                || source.sample_rate_hz == Some(0)
+                || source.channels == Some(0)
+                || source.media.original_path.as_os_str().is_empty()
+                || source.media.original_signature.trim().is_empty()
+            {
+                return Err(TrackValidationError::InvalidAudioSource);
+            }
+        }
+        let audio_clips: std::collections::HashMap<_, _> = self
+            .audio_clips
+            .iter()
+            .map(|c| (c.id.as_str(), c))
+            .collect();
+        let mut playlist_tracks = std::collections::HashSet::new();
+        let mut playlist_ids = std::collections::HashSet::new();
+        let mut listed_regions = std::collections::HashSet::new();
+        for playlist in &self.audio_playlists {
+            if playlist.id.trim().is_empty()
+                || !playlist_ids.insert(playlist.id.as_str())
+                || !playlist_tracks.insert(playlist.track_id.as_str())
+                || !tracks
+                    .get(playlist.track_id.as_str())
+                    .is_some_and(|t| t.role == TrackRole::Audio)
+            {
+                return Err(TrackValidationError::InvalidAudioPlaylist);
+            }
+            for region_id in &playlist.region_ids {
+                if !listed_regions.insert(region_id.as_str())
+                    || !audio_clips
+                        .get(region_id.as_str())
+                        .is_some_and(|clip| clip.track_id == playlist.track_id)
+                {
+                    return Err(TrackValidationError::InvalidAudioPlaylist);
+                }
+            }
+        }
+        for clip in &self.audio_clips {
+            if clip.duration_samples == 0
+                || clip.sample_rate == 0
+                || !(1..=32).contains(&clip.channels)
+                || !clip.gain_db.is_finite()
+                || clip.fade_in_samples.saturating_add(clip.fade_out_samples)
+                    > clip.duration_samples
+            {
+                return Err(TrackValidationError::InvalidAudioPlaylist);
+            }
+            if let Some(source_id) = clip.source_id.as_deref() {
+                if !self
+                    .audio_sources
+                    .iter()
+                    .any(|s| s.id == source_id && s.owner_track_id == clip.track_id)
+                {
+                    return Err(TrackValidationError::InvalidAudioSource);
+                }
+            }
+        }
+        if listed_regions.len() != audio_clips.len() || audio_clips.len() != self.audio_clips.len()
+        {
+            return Err(TrackValidationError::InvalidAudioPlaylist);
+        }
+
+        let scene_ids: std::collections::HashSet<_> =
+            self.scenes.iter().map(|s| s.id.as_str()).collect();
+        if scene_ids.len() != self.scenes.len()
+            || self
+                .scenes
+                .iter()
+                .any(|s| s.id.trim().is_empty() || s.name.trim().is_empty())
+        {
+            return Err(TrackValidationError::InvalidClipSlot);
+        }
+        let midi_clips: std::collections::HashMap<_, _> =
+            self.midi_clips.iter().map(|c| (c.id.as_str(), c)).collect();
+        let mut slot_ids = std::collections::HashSet::new();
+        let mut slot_coordinates = std::collections::HashSet::new();
+        for slot in &self.clip_slots {
+            if slot.id.trim().is_empty()
+                || !slot_ids.insert(slot.id.as_str())
+                || !scene_ids.contains(slot.scene_id.as_str())
+                || !tracks.contains_key(slot.track_id.as_str())
+                || !slot_coordinates.insert((slot.scene_id.as_str(), slot.track_id.as_str()))
+            {
+                return Err(TrackValidationError::InvalidClipSlot);
+            }
+            let compatible = match slot.clip.as_ref() {
+                None => true,
+                Some(ClipReference::Midi(id)) => midi_clips
+                    .get(id.as_str())
+                    .is_some_and(|clip| clip.track_id == slot.track_id),
+                Some(ClipReference::Audio(id)) => audio_clips
+                    .get(id.as_str())
+                    .is_some_and(|clip| clip.track_id == slot.track_id),
+            };
+            if !compatible {
+                return Err(TrackValidationError::InvalidClipSlot);
+            }
+        }
         Ok(())
+    }
+
+    /// Compatibilidad para llamadores previos al contrato de medios/regiones.
+    pub fn validate_track_contracts(&self) -> Result<(), TrackValidationError> {
+        self.validate_persisted_contracts()
     }
 }
 
@@ -664,7 +829,8 @@ pub fn load_project_json(bytes: &[u8]) -> Result<Project, ProjectJsonError> {
         "estudio-daw.project.v1"
         | "estudio-daw.project.v2"
         | "estudio-daw.project.v3"
-        | "estudio-daw.project.v4" => {}
+        | "estudio-daw.project.v4"
+        | "estudio-daw.project.v5" => {}
         unsupported => {
             return Err(ProjectJsonError::UnsupportedVersion(unsupported.into()));
         }
@@ -676,6 +842,7 @@ pub fn load_project_json(bytes: &[u8]) -> Result<Project, ProjectJsonError> {
     if object.get("schema_version").and_then(|v| v.as_str()) != Some("estudio-daw.project.v2")
         && object.get("schema_version").and_then(|v| v.as_str()) != Some("estudio-daw.project.v3")
         && object.get("schema_version").and_then(|v| v.as_str()) != Some("estudio-daw.project.v4")
+        && object.get("schema_version").and_then(|v| v.as_str()) != Some("estudio-daw.project.v5")
     {
         if let Some(tracks) = object.get_mut("tracks").and_then(|v| v.as_array_mut()) {
             for track in tracks {
@@ -699,6 +866,7 @@ pub fn load_project_json(bytes: &[u8]) -> Result<Project, ProjectJsonError> {
     // Los proyectos antiguos parten activos, sin mute/solo, en unidad y centrados.
     if object.get("schema_version").and_then(|v| v.as_str()) != Some("estudio-daw.project.v3")
         && object.get("schema_version").and_then(|v| v.as_str()) != Some("estudio-daw.project.v4")
+        && object.get("schema_version").and_then(|v| v.as_str()) != Some("estudio-daw.project.v5")
     {
         if let Some(tracks) = object.get_mut("tracks").and_then(|v| v.as_array_mut()) {
             for track in tracks {
@@ -761,16 +929,150 @@ pub fn load_project_json(bytes: &[u8]) -> Result<Project, ProjectJsonError> {
             });
         }
     }
-    if object.get("schema_version").and_then(|v| v.as_str()) != Some("estudio-daw.project.v4") {
+    if object.get("schema_version").and_then(|v| v.as_str()) != Some("estudio-daw.project.v4")
+        && object.get("schema_version").and_then(|v| v.as_str()) != Some("estudio-daw.project.v5")
+    {
         object.insert(
             "schema_version".into(),
             serde_json::Value::String("estudio-daw.project.v4".into()),
         );
     }
 
+    // project.v5 normaliza la propiedad de medios y crea una playlist por
+    // pista de audio. Los slots sólo guardan referencias a clips persistidos.
+    let mut sources = object
+        .get("audio_sources")
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default();
+    let mut playlists = object
+        .get("audio_playlists")
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default();
+    for track_value in object
+        .get_mut("tracks")
+        .and_then(|v| v.as_array_mut())
+        .into_iter()
+        .flatten()
+    {
+        let Some(track) = track_value.as_object_mut() else {
+            continue;
+        };
+        if track.get("kind").and_then(|v| v.as_str()) != Some("audio") {
+            continue;
+        }
+        let track_id = track
+            .get("id")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let source_id = format!("source-{track_id}");
+        if let Some(media) = track.remove("media_source").filter(|v| !v.is_null()) {
+            if !sources
+                .iter()
+                .any(|v| v.get("id").and_then(|x| x.as_str()) == Some(&source_id))
+            {
+                sources.push(serde_json::json!({
+                    "id": source_id,
+                    "owner_track_id": track_id,
+                    "media": media,
+                    "sample_rate_hz": null,
+                    "channels": null
+                }));
+            }
+        }
+        if !playlists
+            .iter()
+            .any(|v| v.get("track_id").and_then(|x| x.as_str()) == Some(&track_id))
+        {
+            playlists.push(serde_json::json!({"id": format!("playlist-{track_id}"), "track_id": track_id, "region_ids": []}));
+        }
+    }
+    if let Some(clips) = object.get_mut("audio_clips").and_then(|v| v.as_array_mut()) {
+        for clip in clips {
+            let Some(clip_obj) = clip.as_object_mut() else {
+                continue;
+            };
+            let track_id = clip_obj
+                .get("track_id")
+                .and_then(|v| v.as_str())
+                .unwrap_or_default()
+                .to_owned();
+            let source_id = format!("source-{track_id}");
+            if sources
+                .iter()
+                .any(|v| v.get("id").and_then(|x| x.as_str()) == Some(&source_id))
+            {
+                clip_obj
+                    .entry("source_id")
+                    .or_insert_with(|| serde_json::Value::String(source_id.clone()));
+                if let Some(source) = sources
+                    .iter_mut()
+                    .find(|v| v.get("id").and_then(|x| x.as_str()) == Some(&source_id))
+                {
+                    if source
+                        .get("sample_rate_hz")
+                        .map_or(true, serde_json::Value::is_null)
+                    {
+                        source["sample_rate_hz"] = clip_obj
+                            .get("sample_rate")
+                            .cloned()
+                            .unwrap_or(serde_json::Value::Null);
+                    }
+                    if source
+                        .get("channels")
+                        .map_or(true, serde_json::Value::is_null)
+                    {
+                        source["channels"] = clip_obj
+                            .get("channels")
+                            .cloned()
+                            .unwrap_or(serde_json::Value::Null);
+                    }
+                }
+            }
+            if let Some(playlist) = playlists
+                .iter_mut()
+                .find(|v| v.get("track_id").and_then(|x| x.as_str()) == Some(&track_id))
+            {
+                if !playlist.get("region_ids").is_some_and(|v| v.is_array()) {
+                    playlist["region_ids"] = serde_json::Value::Array(Vec::new());
+                }
+                let Some(regions) = playlist
+                    .get_mut("region_ids")
+                    .and_then(|v| v.as_array_mut())
+                else {
+                    continue;
+                };
+                let id = clip_obj
+                    .get("id")
+                    .cloned()
+                    .unwrap_or(serde_json::Value::Null);
+                if !regions.contains(&id) {
+                    regions.push(id);
+                }
+            }
+        }
+    }
+    object.insert("audio_sources".into(), serde_json::Value::Array(sources));
+    object.insert(
+        "audio_playlists".into(),
+        serde_json::Value::Array(playlists),
+    );
+    object
+        .entry("scenes")
+        .or_insert_with(|| serde_json::Value::Array(Vec::new()));
+    object
+        .entry("clip_slots")
+        .or_insert_with(|| serde_json::Value::Array(Vec::new()));
+    object.insert(
+        "schema_version".into(),
+        serde_json::Value::String("estudio-daw.project.v5".into()),
+    );
+
     let project: Project = serde_json::from_value(value)?;
     project
-        .validate_track_contracts()
+        .validate_persisted_contracts()
         .map_err(|error| ProjectJsonError::InvalidTrack(error.to_string()))?;
     Ok(project)
 }
@@ -931,6 +1233,10 @@ pub struct AudioClip {
     pub id: String,
     pub name: String,
     pub track_id: String,
+    /// Region-local source reference; None is retained only for legacy metadata
+    /// regions that have not yet been relinked to a source record.
+    #[serde(default)]
+    pub source_id: Option<String>,
     pub start_tick: u64,
     pub source_start_samples: u64,
     pub duration_samples: u64,
@@ -977,7 +1283,7 @@ pub struct Track {
     /// Procedencia original/proxy de una pista de audio. Las pistas MIDI no
     /// deben usar este campo; `None` conserva compatibilidad con project.json
     /// anteriores.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub media_source: Option<MediaSource>,
     /// Fuente de sonido asignada a la pista MIDI. `None` conserva proyectos y
     /// pistas sin instrumento hasta que el usuario elige uno explícitamente.
@@ -1040,6 +1346,12 @@ pub enum TrackValidationError {
     InvalidMixer,
     #[error("a project can contain at most one master track")]
     MultipleMasterTracks,
+    #[error("audio source identity, owner, or format metadata is invalid")]
+    InvalidAudioSource,
+    #[error("audio playlist identity or region references are invalid")]
+    InvalidAudioPlaylist,
+    #[error("scene or clip-slot identity/reference is invalid")]
+    InvalidClipSlot,
 }
 
 impl Track {
@@ -1204,6 +1516,8 @@ pub enum AudioClipError {
     InvalidSampleRate,
     #[error("el número de canales debe estar entre 1 y 32")]
     InvalidChannels,
+    #[error("el formato del clip no coincide con los metadatos de su fuente")]
+    SourceFormatMismatch,
     #[error("no existe el clip de audio '{0}'")]
     ClipNotFound(String),
     #[error("la ganancia debe ser un valor finito")]
@@ -1405,6 +1719,7 @@ pub fn import_project_xml(xml: &str) -> Result<ImportResult, ProjectError> {
             } else {
                 TrackKind::Midi
             };
+            let is_audio_track = matches!(&kind, TrackKind::Audio);
             let notes = arrangement_notes
                 .iter()
                 .filter(|group| group.track == track.id)
@@ -1428,13 +1743,17 @@ pub fn import_project_xml(xml: &str) -> Result<ImportResult, ProjectError> {
                 kind,
                 role,
                 channel_config: TrackChannelConfig {
-                    input_channels: track.channel.as_ref().and_then(|c| c.audio_channels),
+                    input_channels: is_audio_track
+                        .then(|| track.channel.as_ref().and_then(|c| c.audio_channels))
+                        .flatten(),
                     output_channels: 2,
                 },
                 color: default_track_color(),
                 mixer: TrackMixerState::default(),
                 notes,
-                audio_channels: track.channel.and_then(|c| c.audio_channels),
+                audio_channels: is_audio_track
+                    .then(|| track.channel.and_then(|c| c.audio_channels))
+                    .flatten(),
                 media_source: None,
                 instrument,
             }
@@ -1442,13 +1761,17 @@ pub fn import_project_xml(xml: &str) -> Result<ImportResult, ProjectError> {
         .collect();
 
     let project = Project {
-        schema_version: "estudio-daw.project.v4".into(),
+        schema_version: "estudio-daw.project.v5".into(),
         project_id: "imported-dawproject".into(),
         transport: Transport {
             tempo_bpm: tempo,
             time_signature: signature,
         },
         tracks,
+        audio_sources: Vec::new(),
+        audio_playlists: Vec::new(),
+        scenes: Vec::new(),
+        clip_slots: Vec::new(),
         midi_clips: Vec::new(),
         audio_clips: Vec::new(),
         import_provenance: ImportProvenance {
@@ -1469,13 +1792,37 @@ pub fn attach_media_source(
 ) -> Result<(), MediaAttachError> {
     let track = project
         .tracks
-        .iter_mut()
+        .iter()
         .find(|track| track.id == track_id)
         .ok_or_else(|| MediaAttachError::TrackNotFound(track_id.into()))?;
     if track.kind != TrackKind::Audio {
         return Err(MediaAttachError::NotAudioTrack(track_id.into()));
     }
-    track.media_source = Some(source);
+    let source_id = format!("source-{track_id}");
+    project.audio_sources.retain(|item| item.id != source_id);
+    project.audio_sources.push(AudioSource {
+        id: source_id,
+        owner_track_id: track_id.to_owned(),
+        media: source,
+        sample_rate_hz: None,
+        channels: None,
+    });
+    if !project
+        .audio_playlists
+        .iter()
+        .any(|item| item.track_id == track_id)
+    {
+        project.audio_playlists.push(AudioPlaylist {
+            id: format!("playlist-{track_id}"),
+            track_id: track_id.to_owned(),
+            region_ids: project
+                .audio_clips
+                .iter()
+                .filter(|clip| clip.track_id == track_id)
+                .map(|clip| clip.id.clone())
+                .collect(),
+        });
+    }
     Ok(())
 }
 
@@ -1499,9 +1846,12 @@ pub fn add_audio_clip(
     if track.kind != TrackKind::Audio {
         return Err(AudioClipError::NotAudioTrack(track_id.into()));
     }
-    if track.media_source.is_none() {
-        return Err(AudioClipError::MissingSource(track_id.into()));
-    }
+    let source_id = project
+        .audio_sources
+        .iter()
+        .find(|source| source.owner_track_id == track_id)
+        .map(|source| source.id.clone())
+        .ok_or_else(|| AudioClipError::MissingSource(track_id.into()))?;
     if duration_samples == 0 {
         return Err(AudioClipError::InvalidDuration);
     }
@@ -1511,11 +1861,26 @@ pub fn add_audio_clip(
     if !(1..=32).contains(&channels) {
         return Err(AudioClipError::InvalidChannels);
     }
+    let source = project
+        .audio_sources
+        .iter_mut()
+        .find(|source| source.id == source_id)
+        .ok_or_else(|| AudioClipError::MissingSource(track_id.into()))?;
+    if source
+        .sample_rate_hz
+        .is_some_and(|rate| rate != sample_rate)
+        || source.channels.is_some_and(|count| count != channels)
+    {
+        return Err(AudioClipError::SourceFormatMismatch);
+    }
+    source.sample_rate_hz = Some(sample_rate);
+    source.channels = Some(channels);
     let id = format!("audio-clip-{}", project.audio_clips.len() + 1);
     project.audio_clips.push(AudioClip {
         id: id.clone(),
         name: name.into(),
         track_id: track_id.into(),
+        source_id: Some(source_id),
         start_tick,
         source_start_samples,
         duration_samples,
@@ -1525,6 +1890,19 @@ pub fn add_audio_clip(
         fade_in_samples: 0,
         fade_out_samples: 0,
     });
+    let playlist = project
+        .audio_playlists
+        .iter_mut()
+        .find(|item| item.track_id == track_id);
+    if let Some(playlist) = playlist {
+        playlist.region_ids.push(id.clone());
+    } else {
+        project.audio_playlists.push(AudioPlaylist {
+            id: format!("playlist-{track_id}"),
+            track_id: track_id.into(),
+            region_ids: vec![id.clone()],
+        });
+    }
     Ok(id)
 }
 
@@ -1597,17 +1975,18 @@ pub fn ensure_track_audio_proxy(
 ) -> Result<ProxyCacheState, ProjectMediaError> {
     let track = project
         .tracks
-        .iter_mut()
+        .iter()
         .find(|track| track.id == track_id)
         .ok_or_else(|| ProjectMediaError::TrackNotFound(track_id.into()))?;
     if track.kind != TrackKind::Audio {
         return Err(ProjectMediaError::NotAudioTrack(track_id.into()));
     }
-    let source = track
-        .media_source
-        .as_mut()
+    let source = project
+        .audio_sources
+        .iter_mut()
+        .find(|source| source.owner_track_id == track_id)
         .ok_or_else(|| ProjectMediaError::MissingSource(track_id.into()))?;
-    Ok(cache.ensure_audio_proxy(source, profile)?)
+    Ok(cache.ensure_audio_proxy(&mut source.media, profile)?)
 }
 
 /// Adjunta una toma MIDI a la primera pista MIDI disponible.
@@ -1801,7 +2180,7 @@ mod tests {
 
         let project = load_project_json(legacy).unwrap();
 
-        assert_eq!(project.schema_version, "estudio-daw.project.v4");
+        assert_eq!(project.schema_version, "estudio-daw.project.v5");
         assert_eq!(project.project_id, "legacy-song");
         assert_eq!(project.tracks[0].name, "Voice");
         assert!(project.tracks[0].media_source.is_none());
@@ -1826,7 +2205,7 @@ mod tests {
 
         let project = load_project_json(v1).unwrap();
 
-        assert_eq!(project.schema_version, "estudio-daw.project.v4");
+        assert_eq!(project.schema_version, "estudio-daw.project.v5");
         assert_eq!(project.tracks[0].id, "track-midi");
         assert_eq!(project.tracks[0].instrument, Some(InstrumentConfig::Sine));
         assert_eq!(project.tracks[0].notes[0].midi_key, 60);
@@ -1851,7 +2230,7 @@ mod tests {
         }"#;
 
         let project = load_project_json(v2).unwrap();
-        assert_eq!(project.schema_version, "estudio-daw.project.v4");
+        assert_eq!(project.schema_version, "estudio-daw.project.v5");
         assert_eq!(
             project
                 .tracks
@@ -1882,13 +2261,139 @@ mod tests {
 
         let project = load_project_json(v3).unwrap();
         let track = &project.tracks[0];
-        assert_eq!(project.schema_version, "estudio-daw.project.v4");
+        assert_eq!(project.schema_version, "estudio-daw.project.v5");
         assert_eq!(track.role, TrackRole::Audio);
         assert_eq!(track.channel_config.input_channels, Some(2));
         assert_eq!(track.channel_config.output_channels, 2);
         assert_eq!(track.color, "#ca7850");
         assert!(track.mixer.mute);
         assert_eq!(track.mixer.pan, 0.25);
+    }
+
+    #[test]
+    fn migrates_v4_media_into_source_catalog_and_ordered_playlist() {
+        let v4 = br##"{
+            "schema_version":"estudio-daw.project.v4",
+            "project_id":"v4-regions",
+            "transport":{"tempo_bpm":120.0,"time_signature":{"numerator":4,"denominator":4}},
+            "tracks":[{"id":"audio-1","name":"Guitar","kind":"audio","role":"audio","channel_config":{"input_channels":2,"output_channels":2},"color":"#58a6b8","mixer":{"active":true,"mute":false,"solo":false,"gain_db":0.0,"pan":0.0},"notes":[],"audio_channels":2,"media_source":{"original_path":"audio/guitar.wav","original_signature":"size:96","original_hash":"sha256:abc","proxy":null},"instrument":null}],
+            "midi_clips":[],
+            "audio_clips":[{"id":"region-1","name":"Verse","track_id":"audio-1","start_tick":960,"source_start_samples":2400,"duration_samples":24000,"sample_rate":48000,"channels":2,"gain_db":-2.0,"fade_in_samples":100,"fade_out_samples":200}],
+            "import_provenance":{"format":"internal","format_version":"4","source_file":"","warnings":[]}
+        }"##;
+        let project = load_project_json(v4).unwrap();
+        assert_eq!(project.schema_version, "estudio-daw.project.v5");
+        assert!(project.tracks[0].media_source.is_none());
+        assert_eq!(
+            project.audio_sources[0].media.original_path,
+            PathBuf::from("audio/guitar.wav")
+        );
+        assert_eq!(project.audio_sources[0].media.original_signature, "size:96");
+        assert_eq!(project.audio_sources[0].media.original_hash, "sha256:abc");
+        assert_eq!(project.audio_sources[0].sample_rate_hz, Some(48_000));
+        assert_eq!(project.audio_sources[0].channels, Some(2));
+        assert_eq!(
+            project.audio_clips[0].source_id.as_deref(),
+            Some("source-audio-1")
+        );
+        assert_eq!(project.audio_clips[0].start_tick, 960);
+        assert_eq!(project.audio_clips[0].source_start_samples, 2400);
+        assert_eq!(project.audio_clips[0].duration_samples, 24000);
+        assert_eq!(project.audio_clips[0].gain_db, -2.0);
+        assert_eq!(project.audio_clips[0].fade_in_samples, 100);
+        assert_eq!(project.audio_playlists[0].region_ids, ["region-1"]);
+        assert_eq!(project.validate_track_contracts(), Ok(()));
+    }
+
+    #[test]
+    fn clip_slots_reference_existing_clip_without_copying_content() {
+        let mut project = import_dawproject("../../tests/fixtures/dawproject/minimal.dawproject")
+            .unwrap()
+            .project;
+        let midi_track_id = project
+            .tracks
+            .iter()
+            .find(|t| t.kind == TrackKind::Midi)
+            .unwrap()
+            .id
+            .clone();
+        project.midi_clips.push(MidiClip {
+            id: "midi-shared".into(),
+            name: "Phrase".into(),
+            track_id: midi_track_id.clone(),
+            start_tick: 0,
+            duration_ticks: 960,
+            take: MidiTake {
+                ppq: 480,
+                tempo_bpm: 120,
+                duration_micros: 1_000_000,
+                events: Vec::new(),
+            },
+        });
+        project.scenes.push(Scene {
+            id: "scene-a".into(),
+            name: "Intro".into(),
+        });
+        project.clip_slots.push(ClipSlot {
+            id: "slot-a".into(),
+            scene_id: "scene-a".into(),
+            track_id: midi_track_id,
+            clip: Some(ClipReference::Midi("midi-shared".into())),
+        });
+        assert_eq!(project.validate_track_contracts(), Ok(()));
+        let restored: Project =
+            serde_json::from_slice(&serde_json::to_vec(&project).unwrap()).unwrap();
+        assert_eq!(restored.midi_clips.len(), 1);
+        assert_eq!(
+            restored.clip_slots[0].clip,
+            Some(ClipReference::Midi("midi-shared".into()))
+        );
+        restored.validate_track_contracts().unwrap();
+    }
+
+    #[test]
+    fn rejects_clip_slot_referencing_another_tracks_clip() {
+        let mut project = import_dawproject("../../tests/fixtures/dawproject/minimal.dawproject")
+            .unwrap()
+            .project;
+        let first = project
+            .tracks
+            .iter()
+            .find(|t| t.kind == TrackKind::Midi)
+            .unwrap()
+            .id
+            .clone();
+        let second = "midi-second".to_owned();
+        project
+            .tracks
+            .push(Track::new(&second, "Other", TrackKind::Midi, TrackRole::Instrument).unwrap());
+        project.midi_clips.push(MidiClip {
+            id: "midi-owned-by-first".into(),
+            name: "Phrase".into(),
+            track_id: first,
+            start_tick: 0,
+            duration_ticks: 960,
+            take: MidiTake {
+                ppq: 480,
+                tempo_bpm: 120,
+                duration_micros: 1_000_000,
+                events: Vec::new(),
+            },
+        });
+        project.scenes.push(Scene {
+            id: "scene-a".into(),
+            name: "Intro".into(),
+        });
+        project.clip_slots.push(ClipSlot {
+            id: "slot-invalid".into(),
+            scene_id: "scene-a".into(),
+            track_id: second,
+            clip: Some(ClipReference::Midi("midi-owned-by-first".into())),
+        });
+        assert_eq!(
+            project.validate_persisted_contracts(),
+            Err(TrackValidationError::InvalidClipSlot)
+        );
     }
 
     #[test]
@@ -2258,22 +2763,21 @@ mod tests {
         trim_audio_clip(&mut project, &clip_id, 4_800, 24_000).unwrap();
         let json = serde_json::to_vec(&project).unwrap();
         let restored: Project = serde_json::from_slice(&json).unwrap();
+        assert_eq!(restored.audio_sources.len(), 1);
+        assert_eq!(restored.audio_sources[0].owner_track_id, audio_id);
+        assert_eq!(restored.audio_sources[0].media.original_path, original);
         assert_eq!(
-            restored
-                .tracks
-                .iter()
-                .find(|track| track.id == audio_id)
-                .unwrap()
-                .media_source
-                .as_ref()
-                .unwrap()
-                .original_path,
-            original
+            restored.audio_clips[0].source_id.as_deref(),
+            Some(restored.audio_sources[0].id.as_str())
         );
+        assert_eq!(restored.audio_playlists[0].region_ids, [clip_id]);
         assert_eq!(restored.audio_clips[0].start_tick, 960);
         assert_eq!(restored.audio_clips[0].duration_samples, 24_000);
         assert_eq!(restored.audio_clips[0].source_start_samples, 4_800);
         assert_eq!(restored.audio_clips[0].gain_db, -3.0);
+        assert_eq!(restored.audio_sources[0].sample_rate_hz, Some(48_000));
+        assert_eq!(restored.audio_sources[0].channels, Some(2));
+        assert_eq!(std::fs::read(&original).unwrap(), b"audio");
         std::fs::remove_file(original).unwrap();
     }
 
@@ -2301,13 +2805,13 @@ mod tests {
             })
             .unwrap();
         assert!(history.can_undo());
-        assert!(history.project().unwrap().tracks[1].media_source.is_some());
+        assert_eq!(history.project().unwrap().audio_sources.len(), 1);
 
         history.undo();
         assert!(history.can_redo());
-        assert!(history.project().unwrap().tracks[1].media_source.is_none());
+        assert!(history.project().unwrap().audio_sources.is_empty());
         history.redo();
-        assert!(history.project().unwrap().tracks[1].media_source.is_some());
+        assert_eq!(history.project().unwrap().audio_sources.len(), 1);
         let events = history.drain_events();
         assert_eq!(events.len(), 3);
         assert_eq!(events[0].revision, 1);
@@ -2378,6 +2882,10 @@ mod tests {
                 },
             },
             tracks: vec![],
+            audio_sources: vec![],
+            audio_playlists: vec![],
+            scenes: vec![],
+            clip_slots: vec![],
             midi_clips: vec![],
             audio_clips: vec![],
             import_provenance: ImportProvenance {

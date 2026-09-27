@@ -1,113 +1,137 @@
-# Spec Delta
+# Especificación diferencial
 
 ## ADDED Requirements
 
-### Requirement: A workstation menu exposes the complete product command map
-The workstation MUST organize its supported actions into discoverable Project/Session, Edit, Create, View/Window, Track, Clip/Region, Transport, Audio/MIDI, Settings/Options and Help menu families, with contextual menus and keyboard shortcuts for high-frequency workflows. The audited reference command families in `../../design.md` are the minimum product inventory; the product roadmap MUST account for each family and may extend it with Estudio DAW's music-analysis, notation, coding and assisted-editing capabilities. A menu item MUST map to a typed command, real view/state action or external platform adapter. Each item MUST have a correct enablement condition, undo policy where it edits the project, accessible label, and truthful completion/error feedback. An unimplemented action MUST NOT be presented as enabled or complete.
+### Requirement: los menús de la estación de trabajo exponen el mapa completo de comandos
 
-#### Scenario: Inspect the product menus
-- **WHEN** the user opens a main or context menu
-- **THEN** supported commands are grouped by the relevant project, editing, track, clip, transport, view or device workflow
-- **AND** commands disabled by current selection/project/device state explain the concrete reason
-- **AND** no decorative control appears to invoke a capability that does not exist
+La estación DEBE organizar las acciones admitidas en familias localizables: Proyecto/Sesión, Edición, Crear, Vista/Ventana, Pista, Clip/Región, Transporte, Audio/MIDI, Ajustes/Opciones y Ayuda. DEBE ofrecer menús contextuales y atajos para flujos frecuentes. Las familias de comandos auditadas en `../../design.md` son el inventario mínimo del producto; la hoja de ruta DEBE contabilizar cada familia y PUEDE ampliarla con análisis musical, notación, programación y edición asistida propias de Estudio DAW. Cada opción DEBE corresponder a un comando tipado, una acción real de vista/estado o un adaptador de plataforma. Cada opción DEBE tener una condición de disponibilidad correcta, política de deshacer si modifica el proyecto, etiqueta accesible e información veraz de resultado/error. Una acción no implementada NO DEBE mostrarse habilitada ni completada.
 
-#### Scenario: Trigger a menu action and its shortcut
-- **WHEN** the user chooses an enabled menu item or its displayed shortcut
-- **THEN** both dispatch the same typed operation
-- **AND** the operation result, project state and undo/redo state agree
+#### Scenario: revisar los menús del producto
 
-### Requirement: Audio tracks are complete first-class project entities
-The project MUST model audio tracks separately from MIDI/instrument tracks, with stable identity/order, name/color, channel configuration, active/mute/solo, gain/pan, source and output routing state, and an ordered non-destructive playlist of audio regions. Regions MUST reference source media and preserve source offset, timeline position, duration, fades and region gain. Removing/moving/trimming a region MUST NOT silently delete or alter its underlying source file. Session, Arrangement and Mixer MUST render the same track identity and state. The UI MUST NOT label a track “audio” solely for visual appearance when its import/playback path is absent.
+- **CUANDO** la persona abre un menú principal o contextual
+- **ENTONCES** los comandos admitidos se agrupan según el flujo de proyecto, edición, pista, clip, transporte, vista o dispositivo
+- **Y** las acciones deshabilitadas por la selección, el proyecto o el dispositivo indican el motivo concreto
+- **Y** ningún control decorativo aparenta ejecutar una capacidad inexistente
 
-#### Scenario: Create and manage an audio track
-- **WHEN** the user creates, names, reorders, duplicates, mutes, solos, activates or removes an audio track
-- **THEN** the project command bus validates the operation and makes it undoable/redoable
-- **AND** the same track order and state appear in Session, Arrangement and Mixer
-- **AND** incompatible MIDI-only content cannot be attached to that track
+#### Scenario: ejecutar una acción de menú y su atajo
 
-#### Scenario: Import and edit audio media
-- **WHEN** the user imports audio with a selected copy/link and channel mapping option
-- **THEN** the source provenance and technical metadata are retained
-- **AND** a non-destructive region appears at the selected musical/timeline position with a real waveform and editable duration/source offset
-- **AND** undoing the region edit leaves the source file intact
+- **CUANDO** la persona elige una opción habilitada o su atajo mostrado
+- **ENTONCES** ambos ejecutan la misma operación tipada
+- **Y** el resultado, el estado del proyecto y el estado de deshacer/rehacer coinciden
 
-#### Scenario: Play and route an audio track
-- **WHEN** the transport plays a project containing imported audio regions
-- **THEN** each region renders only within its timeline duration using its source offset, fades and gain, and reaches the selected real output through the track/mixer path
-- **AND** the callback remains bounded and allocation-free
-- **AND** selecting an input, arming or monitoring a track is enabled only when the corresponding capture/device path works
+### Requirement: las pistas de audio son entidades completas de primer nivel
 
-### Requirement: Session and Arrangement are linked views over shared tracks
-The workstation MUST provide a clip/scene Session View and a timeline Arrangement View over the same ordered project tracks, media, mixer state and transport. Session organizes track columns against scene rows; Arrangement organizes the same tracks vertically against musical time. View switching MUST preserve project content and active playback state. Ableton Live 12 MUST be the primary visual and interaction reference for the creative information hierarchy, density and relationship between these views. Ardour may be consulted only for technical audio-engineering details; it MUST NOT define the workstation's visual hierarchy or creative flow. Styling alone does not satisfy this requirement.
+El proyecto DEBE modelar las pistas de audio por separado de las pistas MIDI/instrumento, con identidad/orden estables, nombre/color, configuración de canales, estado activa/silencio/solo, ganancia/panorama, estado de ruteo de entrada/salida y una lista ordenada no destructiva de regiones de audio. Las regiones DEBEN referenciar medios fuente y conservar el desplazamiento dentro de la fuente, la posición temporal, la duración, los desvanecimientos y la ganancia de región. Quitar, mover o recortar una región NO DEBE borrar ni alterar silenciosamente el archivo fuente. Session, Arrangement y Mezclador DEBEN mostrar la misma identidad y estado de pista. La interfaz NO DEBE llamar «audio» a una pista sólo por su aspecto si falta la ruta de importación/reproducción.
 
-#### Scenario: Open a project in Session View
-- **WHEN** a project is shown in the primary creative view
-- **THEN** track columns and scene rows display typed clip slots, playing/queued state and scene launch controls
-- **AND** a slot offers actions appropriate to its track and clip type
-- **AND** empty slots provide real create/import actions or a genuine empty state
+#### Scenario: crear y administrar una pista de audio
 
-#### Scenario: Switch between Session and Arrangement
-- **WHEN** the user switches view during a project
-- **THEN** the same tracks, clips, source references, track controls and playhead are represented
-- **AND** playback does not stop or restart merely because the view changed
+- **CUANDO** la persona crea, nombra, reordena, duplica, silencia, activa, pone en solo o quita una pista de audio
+- **ENTONCES** el bus de comandos del proyecto valida la operación y permite deshacerla/rehacerla
+- **Y** Session, Arrangement y Mezclador muestran el mismo orden y estado
+- **Y** no se permite añadir a esa pista contenido exclusivo de MIDI
 
-#### Scenario: Inspect audio and MIDI in Arrangement
-- **WHEN** an audio or MIDI track has regions
-- **THEN** Arrangement shows real audio waveform or MIDI-note content on that track at musical positions
-- **AND** selection, move, trim, split, duplicate, loop and snap operations update project state through commands and can be undone
+#### Scenario: importar y editar medios de audio
 
-### Requirement: Session slots and scenes perform real playback
-Session clip/scene launch MUST share the project transport clock, tempo and musical meter. Launch quantization, per-track replacement/stop and scene-wide launch MUST be scheduled outside the audio callback with bounded control messages; switching a slot MUST NOT rebuild or restart the audio device. MIDI notes and audio regions MUST stop/release correctly at clip end, replacement, pause and transport stop. Clip launch settings such as quantization, loop/launch mode and follow actions are exposed only when their exact behavior is implemented.
+- **CUANDO** la persona importa audio tras elegir si copia o vincula el archivo y cómo asigna sus canales
+- **ENTONCES** se conserva la procedencia de la fuente y sus metadatos técnicos
+- **Y** aparece una región no destructiva en la posición musical/temporal elegida, con forma de onda real y duración/desplazamiento de fuente editables
+- **Y** deshacer la edición de región deja intacto el archivo fuente
 
-#### Scenario: Launch a MIDI or audio clip
-- **WHEN** the user launches a supported clip with a quantization setting
-- **THEN** it starts on the expected transport boundary and loops/ends according to persisted clip duration and launch settings
-- **AND** replacing it stops/releases that track's previous clip without affecting other tracks or reopening the device
+#### Scenario: reproducir y rutear una pista de audio
 
-#### Scenario: Launch a scene
-- **WHEN** the user launches a scene
-- **THEN** compatible populated slots start together on the shared quantization boundary
-- **AND** empty slots follow their explicit stop/continue behavior rather than launching fabricated content
+- **CUANDO** el transporte reproduce un proyecto con regiones de audio importadas
+- **ENTONCES** cada región se procesa sólo durante su duración en la línea de tiempo, con su desplazamiento de fuente, desvanecimientos y ganancia, y llega a la salida real seleccionada a través de la pista/mezclador
+- **Y** la devolución de audio permanece acotada y no asigna memoria
+- **Y** seleccionar una entrada, armar o monitorizar una pista sólo está habilitado cuando funciona la ruta de captura/dispositivo correspondiente
 
-### Requirement: Track headers and mixer strips represent real signal flow
-Audio and MIDI/instrument track headers MUST identify track type and provide only implemented controls. The mixer and track controls MUST follow Live's shared, configurable Session/Arrangement model and show actual values and activity, not simulated controls or meters. For audio-track technical correctness, input, processor chain, pan/gain, meter and output MUST form a legible signal path, cross-checked against the Ardour audio-strip description where useful. Track gain/pan/mute/solo/active values MUST stay consistent across all views. Recording arm, input monitoring, routing, sends, buses and processors MUST be enabled only when their complete backend path is available.
+### Requirement: Session y Arrangement son vistas conectadas sobre pistas compartidas
 
-#### Scenario: Change shared mixer state
-- **WHEN** the user changes gain, pan, mute, solo or active state from a supported view
-- **THEN** the value persists and immediately agrees in Session, Arrangement and Mixer
-- **AND** its project command participates in undo/redo
+La estación DEBE ofrecer una vista Session de clips/escenas y una vista Arrangement de línea de tiempo sobre las mismas pistas ordenadas, medios, estado de mezcla y transporte del proyecto. Session organiza columnas de pistas y filas de escenas; Arrangement organiza las mismas pistas verticalmente contra el tiempo musical. Cambiar de vista DEBE conservar el contenido del proyecto y el estado de reproducción. Ableton Live 12 DEBE ser la referencia visual y de interacción principal para la jerarquía creativa, densidad y relación entre ambas vistas. Ardour PUEDE consultarse únicamente para detalles técnicos de ingeniería de audio; NO DEBE definir la jerarquía visual ni el flujo creativo. El estilo visual por sí solo no satisface este requisito.
 
-#### Scenario: Open a track context menu
-- **WHEN** the user opens a context menu on a MIDI, audio, bus or master track
-- **THEN** it contains the applicable create/rename/reorder/edit/mix actions for that track type
-- **AND** unsupported route, record or processor actions are absent or disabled with a reason
+#### Scenario: abrir un proyecto en Session
 
-### Requirement: Browser and lower editor are contextual creative tools
-The browser MUST provide searchable, navigable project/user media and installed instruments/devices, metadata filters, preview and drag/drop only where the backend supports them. It MUST preserve provenance and never claim access to content based only on its visual label. A lower contextual panel MUST change with selection, providing a MIDI note editor for MIDI clips, audio region/source controls for audio clips, or real parameters for loaded devices.
+- **CUANDO** un proyecto aparece en la vista creativa principal
+- **ENTONCES** las columnas de pistas y filas de escenas muestran casillas tipadas, estado reproduciendo/en cola y controles de lanzamiento de escena
+- **Y** cada casilla ofrece acciones acordes con su tipo de pista y clip
+- **Y** las casillas vacías ofrecen acciones reales de creación/importación o un estado vacío auténtico
 
-#### Scenario: Browse and preview media
-- **WHEN** the user searches or previews a library item or audio file
-- **THEN** results come from indexed project/user/installed content with type and provenance
-- **AND** preview is audible and distinct from the session transport when shown as available
-- **AND** dropping a result into a track creates a compatible project entity through the application command path
+#### Scenario: alternar entre Session y Arrangement
 
-### Requirement: Transport and settings report actual engine state
-The transport MUST expose play/pause/stop, musical position, tempo/meter and the implemented loop/click/navigation/recording operations. Position and playback state MUST come from the session transport clock and runtime events. Audio settings MUST distinguish persisted preferences from settings currently applied to the active stream, including whether restart is required. The UI MUST report device errors instead of showing a successful state when domain command or runtime startup fails.
+- **CUANDO** la persona cambia de vista durante un proyecto
+- **ENTONCES** ambas representan las mismas pistas, clips, referencias de fuentes, controles de pista y cursor de reproducción
+- **Y** la reproducción no se detiene ni reinicia sólo por cambiar de vista
 
-#### Scenario: Pause and resume
-- **WHEN** the user pauses during playback and later resumes
-- **THEN** transport position, event scheduler, voices and audio consumption remain aligned
-- **AND** elapsed wall-clock time while paused does not advance musical content
+#### Scenario: revisar audio y MIDI en Arrangement
 
-### Requirement: UI fidelity is verified as a music-production workflow
-The UI MUST use a workstation hierarchy with an immediately usable creative surface, clear track/scene organization, readable audio waveform and MIDI note content, persistent but compact transport, contextual browser/editor and integrated mixer. Visual validation MUST inspect a running window at standard and minimum supported sizes and exercise the primary workflows; color tokens, screenshots of source code or a build alone do not establish product fidelity.
+- **CUANDO** una pista de audio o MIDI contiene regiones
+- **ENTONCES** Arrangement muestra la forma de onda real o el contenido de notas MIDI en su posición musical
+- **Y** selección, movimiento, recorte, división, duplicación, bucle y ajuste a rejilla actualizan el proyecto mediante comandos y se pueden deshacer
 
-#### Scenario: Review a standard session
-- **WHEN** a loaded mixed MIDI/audio project is reviewed at the supported desktop size
-- **THEN** Session, Arrangement, Browser, track controls and Mixer read as one connected workstation
-- **AND** the musical surfaces dominate available space instead of dashboard cards or generic web-page sections
+### Requirement: las casillas y escenas de Session producen reproducción real
 
-#### Scenario: Review minimum window size
-- **WHEN** the window is at its minimum supported dimensions
-- **THEN** transport, track identity, selected view and essential editing/launch actions remain reachable without overlap
-- **AND** optional panels collapse or scroll without obscuring the active track surface
+El lanzamiento de clips/escenas en Session DEBE compartir el reloj de transporte, tempo y compás del proyecto. La cuantización, sustitución/parada por pista y lanzamiento de escena completa DEBEN planificarse fuera de la devolución de audio mediante mensajes de control acotados; cambiar de casilla NO DEBE reconstruir ni reiniciar el dispositivo. Las notas MIDI y regiones de audio DEBEN detenerse/liberarse correctamente al terminar el clip, al sustituirlo, pausar o detener el transporte. Los ajustes de lanzamiento —cuantización, modo de repetición/lanzamiento y acciones posteriores— sólo se muestran si su comportamiento está implementado con exactitud.
+
+#### Scenario: lanzar un clip MIDI o de audio
+
+- **CUANDO** la persona lanza un clip admitido con ajuste de cuantización
+- **ENTONCES** comienza en el límite esperado del transporte y se repite/termina según su duración persistida y ajustes de lanzamiento
+- **Y** reemplazarlo detiene/libera el clip anterior de esa pista sin afectar otras pistas ni reabrir el dispositivo
+
+#### Scenario: lanzar una escena
+
+- **CUANDO** la persona lanza una escena
+- **ENTONCES** las casillas compatibles y ocupadas comienzan juntas en el límite de cuantización compartido
+- **Y** las casillas vacías siguen su comportamiento explícito de detener/continuar, sin inventar contenido
+
+### Requirement: los encabezados de pista y canales del mezclador representan el flujo real de señal
+
+Los encabezados de pistas de audio y MIDI/instrumento DEBEN identificar el tipo de pista y ofrecer sólo controles implementados. El mezclador y los controles DEBEN seguir el modelo compartido y configurable de Session/Arrangement de Live, mostrando valores y actividad reales, no controles o medidores simulados. Para la corrección técnica de pistas de audio, entrada, cadena de procesadores, panorama/ganancia, medidor y salida DEBEN formar un flujo legible; puede contrastarse con la descripción de canales de Ardour cuando sea útil. Los valores de ganancia/panorama/silencio/solo/activa DEBEN coincidir en todas las vistas. El armado de grabación, monitorización de entrada, ruteo, envíos, buses y procesadores sólo DEBEN habilitarse cuando esté disponible su ruta completa de ejecución.
+
+#### Scenario: cambiar estado compartido del mezclador
+
+- **CUANDO** la persona cambia ganancia, panorama, silencio, solo o estado activo desde una vista admitida
+- **ENTONCES** el valor se guarda y coincide inmediatamente en Session, Arrangement y Mezclador
+- **Y** el comando del proyecto participa en deshacer/rehacer
+
+#### Scenario: abrir el menú contextual de una pista
+
+- **CUANDO** la persona abre el menú contextual de una pista MIDI, audio, bus o master
+- **ENTONCES** aparecen las acciones aplicables de creación, nombre, orden, edición y mezcla según el tipo
+- **Y** las acciones no admitidas de ruteo, grabación o procesadores se omiten o explican por qué están deshabilitadas
+
+### Requirement: el navegador y el editor inferior son herramientas creativas contextuales
+
+El navegador DEBE ofrecer búsqueda y navegación de medios reales del proyecto/usuario y de instrumentos/dispositivos instalados, filtros de metadatos, escucha previa y arrastrar/soltar sólo cuando el motor lo admita. DEBE conservar la procedencia y nunca afirmar acceso a contenido sólo por su etiqueta visual. El panel contextual inferior DEBE cambiar según la selección: editor de notas MIDI para clips MIDI, controles de región/fuente para audio o parámetros reales para dispositivos cargados.
+
+#### Scenario: buscar y escuchar medios
+
+- **CUANDO** la persona busca o escucha un elemento de biblioteca o un archivo de audio
+- **ENTONCES** los resultados provienen de contenido indexado del proyecto/usuario/instalación, con tipo y procedencia
+- **Y** la escucha previa se oye y se distingue del transporte de sesión cuando se ofrece
+- **Y** soltar un resultado en una pista crea una entidad de proyecto compatible a través de la ruta de comandos de aplicación
+
+### Requirement: transporte y ajustes informan el estado real del motor
+
+El transporte DEBE exponer reproducir/pausar/detener, posición musical, tempo/compás y las operaciones implementadas de bucle, metrónomo, navegación y grabación. Posición y reproducción DEBEN provenir del reloj de transporte de sesión y de eventos del motor. Los ajustes de audio DEBEN distinguir preferencias guardadas de ajustes aplicados al flujo activo, incluido si hace falta reiniciar. La interfaz DEBE informar errores de dispositivo en vez de indicar éxito cuando falle un comando de dominio o el inicio del motor.
+
+#### Scenario: pausar y reanudar
+
+- **CUANDO** la persona pausa durante la reproducción y luego la reanuda
+- **ENTONCES** posición del transporte, planificador de eventos, voces y consumo de audio permanecen alineados
+- **Y** el tiempo de pared transcurrido durante la pausa no avanza el contenido musical
+
+### Requirement: la fidelidad de interfaz se verifica como flujo de producción musical
+
+La interfaz DEBE tener una jerarquía de estación de trabajo con superficie creativa utilizable de inmediato, organización clara de pistas/escenas, forma de onda y notas MIDI legibles, transporte compacto y persistente, navegador/editor contextual y mezclador integrado. La validación visual DEBE inspeccionar una ventana en ejecución en tamaños estándar y mínimo y recorrer los flujos principales; los colores, capturas del código fuente o una compilación no demuestran fidelidad del producto.
+
+#### Scenario: revisar una sesión estándar
+
+- **CUANDO** se revisa un proyecto MIDI/audio mixto en el tamaño de escritorio admitido
+- **ENTONCES** Session, Arrangement, Navegador, controles de pista y Mezclador se leen como una estación conectada
+- **Y** las superficies musicales dominan el espacio disponible, en vez de tarjetas de tablero o secciones genéricas de página web
+
+#### Scenario: revisar el tamaño mínimo de ventana
+
+- **CUANDO** la ventana está en sus dimensiones mínimas admitidas
+- **ENTONCES** transporte, identidad de pista, vista seleccionada y acciones esenciales de edición/lanzamiento siguen accesibles sin superponerse
+- **Y** los paneles opcionales se contraen o desplazan sin ocultar la superficie activa de pistas

@@ -410,7 +410,7 @@ fn demo_midi_take() -> MidiTake {
 
 fn new_project_model() -> Project {
     Project {
-        schema_version: "estudio-daw.project.v4".into(),
+        schema_version: "estudio-daw.project.v5".into(),
         project_id: format!("proyecto-{}", unix_timestamp_millis()),
         transport: Transport {
             tempo_bpm: 120.0,
@@ -432,6 +432,10 @@ fn new_project_model() -> Project {
             media_source: None,
             instrument: Some(InstrumentConfig::Sine),
         }],
+        audio_sources: Vec::new(),
+        audio_playlists: Vec::new(),
+        scenes: Vec::new(),
+        clip_slots: Vec::new(),
         midi_clips: Vec::new(),
         audio_clips: Vec::new(),
         import_provenance: ImportProvenance {
