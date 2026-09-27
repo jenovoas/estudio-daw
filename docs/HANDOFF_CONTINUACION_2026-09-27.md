@@ -18,7 +18,7 @@
 
 ## Siguiente trabajo
 
-1. Avanzar la tarea 2.2: importación de audio con procedencia, elección de copiar/vincular, asignación de canales, preescucha y colocación. 2.1 ya persiste la ruta interna al Master y muestra pistas en Arreglo, Session y Mezclador desde una instantánea común; el ruteo físico y la reproducción siguen pendientes.
+1. Avanzar la tarea 2.2: la importación ya registra procedencia, permite copiar/vincular, preescucha previa, selección mono/estéreo persistida y ubicación inicial por compás. Siguen pendientes el cursor de edición, los controles visuales de región y el QA en ejecución. 2.1 ya persiste la ruta interna al Master y muestra pistas en Arreglo, Session y Mezclador desde una instantánea común; el ruteo físico y la reproducción siguen pendientes.
 
 ## Acuerdos vigentes
 

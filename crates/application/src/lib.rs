@@ -541,6 +541,7 @@ mod tests {
                 duration_samples: 48_000,
                 sample_rate: 48_000,
                 channels: 2,
+                source_channel_selection: Vec::new(),
                 gain_db: 0.0,
                 fade_in_samples: 0,
                 fade_out_samples: 0,

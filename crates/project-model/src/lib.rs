@@ -217,6 +217,17 @@ impl Project {
                 || clip.sample_rate == 0
                 || !(1..=32).contains(&clip.channels)
                 || !clip.gain_db.is_finite()
+                || clip.source_channel_selection.len() > 2
+                || clip
+                    .source_channel_selection
+                    .iter()
+                    .any(|channel| *channel >= clip.channels)
+                || clip
+                    .source_channel_selection
+                    .iter()
+                    .collect::<std::collections::HashSet<_>>()
+                    .len()
+                    != clip.source_channel_selection.len()
                 || clip.fade_in_samples.saturating_add(clip.fade_out_samples)
                     > clip.duration_samples
             {
@@ -732,6 +743,10 @@ pub struct AudioClip {
     pub duration_samples: u64,
     pub sample_rate: u32,
     pub channels: u16,
+    /// Índices de canales de la fuente seleccionados para esta región. Vacío
+    /// conserva la interpretación histórica de usar todos los canales.
+    #[serde(default)]
+    pub source_channel_selection: Vec<u16>,
     #[serde(default)]
     pub gain_db: f32,
     #[serde(default)]
@@ -1440,6 +1455,7 @@ pub fn add_audio_clip_for_source(
         duration_samples,
         sample_rate,
         channels,
+        source_channel_selection: Vec::new(),
         gain_db: 0.0,
         fade_in_samples: 0,
         fade_out_samples: 0,

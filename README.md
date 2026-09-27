@@ -689,13 +689,15 @@ interno al Master; Arreglo, Session y Mezclador muestran las pistas desde la
 misma instantánea. Session sólo muestra encabezados/casillas vacías y Mezclador
 es de sólo lectura. Se pueden importar archivos de audio a pistas existentes,
 copiándolos a la carpeta `media` junto al proyecto o vinculando el original,
-con metadatos básicos, posición inicial por compás y forma de onda real reducida.
+con metadatos básicos, preescucha corta antes de confirmar la importación,
+selección mono/estéreo de canales de origen, posición inicial por compás y
+forma de onda real reducida.
 Es un prototipo de capacidades parciales: su composición
 visual actual no satisface todavía el flujo creativo de Ableton Live 12; no
-incluye lanzamiento de clips en Session, edición de clips/notas, preescucha de
-archivos desde el selector, reproducción de regiones de audio, selección de
-canales para archivos con más canales que la pista, selección de salidas físicas, grabación live
-ni monitorización de entrada. No se declara terminada la interfaz. La propuesta y las tareas abiertas de
+incluye lanzamiento de clips en Session, edición de clips/notas, reproducción
+de regiones de audio, ruteo/downmix de canales durante la reproducción,
+selección de salidas físicas, grabación live ni monitorización de entrada. No
+se declara terminada la interfaz. La propuesta y las tareas abiertas de
 [workstation-arrangement-surface-v2](openspec/changes/workstation-arrangement-surface-v2/)
 registran Ableton Live 12 como referencia de UX prioritaria y Ardour sólo como
 consulta técnica secundaria para el flujo de audio.

@@ -76,6 +76,14 @@ struct AudioClipSummary {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+struct AudioImportMetadata {
+    sample_rate_hz: u32,
+    channels: u16,
+    duration_seconds: f64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 struct MidiNoteSummary {
     start_beats: f64,
     duration_beats: f64,
@@ -404,6 +412,7 @@ fn import_audio(
     track_id: String,
     copy_into_project: bool,
     start_tick: u64,
+    source_channel_selection: Vec<u16>,
     state: State<'_, DesktopState>,
 ) -> Result<UiSnapshot, String> {
     let original_path = PathBuf::from(path);
@@ -430,9 +439,15 @@ fn import_audio(
     }) {
         return Err("este archivo ya está importado en la pista elegida".to_owned());
     }
-    if metadata.channels > u16::try_from(track.channel_config.output_channels).unwrap_or(2) {
+    if source_channel_selection.is_empty()
+        || source_channel_selection.len()
+            > usize::try_from(track.channel_config.output_channels).unwrap_or(2)
+        || source_channel_selection
+            .iter()
+            .any(|channel| *channel >= metadata.channels)
+    {
         return Err(format!(
-            "el archivo tiene {} canales y la pista admite {}; la asignación de canales aún no está disponible",
+            "la selección de canales no es válida para una fuente de {} canales y una pista de {}",
             metadata.channels, track.channel_config.output_channels
         ));
     }
@@ -483,6 +498,7 @@ fn import_audio(
             duration_samples: metadata.duration_samples,
             sample_rate: metadata.sample_rate_hz,
             channels: metadata.channels,
+            source_channel_selection,
         })
         .map_err(|error| error.to_string())?;
     let connected = state
@@ -534,6 +550,26 @@ fn audio_preview(source_id: String, state: State<'_, DesktopState>) -> Result<St
             .map(|source| source.media.original_path.clone())
             .ok_or_else(|| "la fuente de audio ya no está en el proyecto".to_owned())?
     };
+    encode_audio_preview(path)
+}
+
+#[tauri::command]
+fn inspect_audio_file(path: String) -> Result<AudioImportMetadata, String> {
+    let metadata = estudio_daw_media_adapter::inspect_audio_metadata(path)
+        .map_err(|error| error.to_string())?;
+    Ok(AudioImportMetadata {
+        sample_rate_hz: metadata.sample_rate_hz,
+        channels: metadata.channels,
+        duration_seconds: metadata.duration_samples as f64 / f64::from(metadata.sample_rate_hz),
+    })
+}
+
+#[tauri::command]
+fn audio_preview_file(path: String) -> Result<String, String> {
+    encode_audio_preview(PathBuf::from(path))
+}
+
+fn encode_audio_preview(path: PathBuf) -> Result<String, String> {
     let ogg =
         estudio_daw_media_adapter::audio_preview_ogg(path).map_err(|error| error.to_string())?;
     Ok(base64::Engine::encode(
@@ -859,6 +895,8 @@ fn main() {
             import_audio,
             audio_waveform,
             audio_preview,
+            audio_preview_file,
+            inspect_audio_file,
             demo_midi_project,
             open_project,
             project_snapshot,

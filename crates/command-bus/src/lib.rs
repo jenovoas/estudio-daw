@@ -99,6 +99,7 @@ pub enum ProjectCommand {
         duration_samples: u64,
         sample_rate: u32,
         channels: u16,
+        source_channel_selection: Vec<u16>,
     },
     TrimAudioClip {
         clip_id: String,
@@ -679,6 +680,7 @@ impl CommandRuntime {
                 duration_samples,
                 sample_rate,
                 channels,
+                source_channel_selection,
             } => self
                 .project_history
                 .transact("import audio", |project| {
@@ -690,7 +692,7 @@ impl CommandRuntime {
                     }
                     let source_id = append_media_source(project, &track_id, source)
                         .map_err(|error| error.to_string())?;
-                    add_audio_clip_for_source(
+                    let clip_id = add_audio_clip_for_source(
                         project,
                         &track_id,
                         &source_id,
@@ -701,8 +703,23 @@ impl CommandRuntime {
                         sample_rate,
                         channels,
                     )
-                    .map(|_| ())
-                    .map_err(|error| error.to_string())
+                    .map_err(|error| error.to_string())?;
+                    let clip = project
+                        .audio_clips
+                        .iter_mut()
+                        .find(|clip| clip.id == clip_id)
+                        .ok_or_else(|| String::from("la región importada no quedó disponible"))?;
+                    if source_channel_selection
+                        .iter()
+                        .any(|channel| *channel >= channels)
+                        || source_channel_selection.len() > 2
+                    {
+                        return Err(String::from(
+                            "la selección de canales de la fuente no es válida",
+                        ));
+                    }
+                    clip.source_channel_selection = source_channel_selection;
+                    Ok(())
                 })
                 .map_err(|error| CommandError::Project(error.to_string()))?,
             ProjectCommand::TrimAudioClip {
@@ -1071,6 +1088,7 @@ mod tests {
                 duration_samples: 48_000,
                 sample_rate: 48_000,
                 channels: 2,
+                source_channel_selection: Vec::new(),
                 gain_db: 0.0,
                 fade_in_samples: 0,
                 fade_out_samples: 0,
@@ -1852,6 +1870,7 @@ mod tests {
                     duration_samples: 48_000,
                     sample_rate: 48_000,
                     channels: 2,
+                    source_channel_selection: vec![0, 1],
                 }),
             ))
             .unwrap();
@@ -1860,6 +1879,7 @@ mod tests {
         assert_eq!(imported.audio_clips.len(), 2);
         assert_eq!(imported.audio_clips[1].name, "voice");
         assert_eq!(imported.audio_clips[1].start_tick, 960);
+        assert_eq!(imported.audio_clips[1].source_channel_selection, vec![0, 1]);
         assert_eq!(
             imported.audio_clips[1].source_id.as_deref(),
             Some("source-track-audio-1")

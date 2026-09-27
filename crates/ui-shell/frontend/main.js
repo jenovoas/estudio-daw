@@ -4,9 +4,13 @@ const elements = {
   open: document.querySelector("#open-project"),
   browserOpen: document.querySelector("#browser-open"),
   importAudio: document.querySelector("#browser-import-audio"),
+  importPreview: document.querySelector("#audio-import-preview"),
+  importCommit: document.querySelector("#audio-import-commit"),
+  importSelected: document.querySelector("#audio-import-selected"),
   importTrack: document.querySelector("#audio-import-track"),
   importBar: document.querySelector("#audio-import-bar"),
   importMode: document.querySelector("#audio-import-mode"),
+  importChannels: document.querySelector("#audio-import-channels"),
   browserDemo: document.querySelector("#browser-demo"),
   newProject: document.querySelector("#new-project"),
   demoProject: document.querySelector("#demo-project"),
@@ -57,6 +61,7 @@ const elements = {
 let hasProject = false;
 let audioSettings = null;
 let projectTransportState = "stopped";
+let pendingAudioPath = null;
 const waveformCache = new Map();
 let previewContext = null;
 let currentPreview = null;
@@ -129,9 +134,11 @@ function setProjectEnabled(enabled) {
     button.disabled = !enabled;
     if (!enabled) button.title = `${button.getAttribute("aria-label") ?? "Acción"}: abre o crea un proyecto primero`;
   }
-  for (const control of [elements.importAudio, elements.importTrack, elements.importBar, elements.importMode]) {
+  for (const control of [elements.importAudio, elements.importTrack, elements.importBar, elements.importMode, elements.importChannels]) {
     control.disabled = !enabled;
   }
+  elements.importPreview.disabled = !enabled || !pendingAudioPath;
+  elements.importCommit.disabled = !enabled || !pendingAudioPath;
 }
 
 function selectSurface(surface) {
@@ -269,8 +276,9 @@ function renderSnapshot(snapshot) {
     elements.importTrack.append(option);
   }
   elements.importTrack.disabled = audioTracks.length === 0;
-  elements.importAudio.disabled = audioTracks.length === 0;
+  elements.importAudio.disabled = false;
   if (audioTracks.some((track) => track.id === previousTrack)) elements.importTrack.value = previousTrack;
+  elements.importCommit.disabled = !pendingAudioPath || audioTracks.length === 0;
 
   elements.tracks.replaceChildren();
   elements.lanes.replaceChildren();
@@ -385,23 +393,11 @@ async function previewAudio(sourceId, button) {
     setNotice("Preescucha no disponible", "Detén o pausa el transporte antes de escuchar un fragmento aislado.");
     return;
   }
-  if (!previewContext) previewContext = new AudioContext();
   button.disabled = true;
   try {
     stopPreview();
     const encoded = await platform.audioPreview(sourceId);
-    const binary = atob(encoded);
-    const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
-    const audioBuffer = await previewContext.decodeAudioData(bytes.buffer);
-    await previewContext.resume();
-    const source = previewContext.createBufferSource();
-    source.buffer = audioBuffer;
-    source.connect(previewContext.destination);
-    currentPreview = source;
-    source.addEventListener("ended", () => {
-      if (currentPreview === source) currentPreview = null;
-    }, { once: true });
-    source.start();
+    await playPreviewBytes(encoded);
     setNotice("Preescucha", "Fragmento aislado de hasta 30 segundos; no mueve el transporte del proyecto.");
   } catch (error) {
     setNotice("No se pudo preescuchar el audio", String(error));
@@ -409,6 +405,105 @@ async function previewAudio(sourceId, button) {
     button.disabled = false;
   }
 }
+
+async function playPreviewBytes(encoded) {
+  if (!previewContext) previewContext = new AudioContext();
+  const binary = atob(encoded);
+  const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
+  const audioBuffer = await previewContext.decodeAudioData(bytes.buffer);
+  await previewContext.resume();
+  const source = previewContext.createBufferSource();
+  source.buffer = audioBuffer;
+  source.connect(previewContext.destination);
+  currentPreview = source;
+  source.addEventListener("ended", () => {
+    if (currentPreview === source) currentPreview = null;
+  }, { once: true });
+  source.start();
+}
+
+async function previewPendingAudio() {
+  if (!pendingAudioPath) return;
+  if (projectTransportState === "playing") {
+    setNotice("Preescucha no disponible", "Detén o pausa el transporte antes de escuchar el archivo seleccionado.");
+    return;
+  }
+  elements.importPreview.disabled = true;
+  try {
+    stopPreview();
+    await playPreviewBytes(await platform.audioPreviewFile(pendingAudioPath));
+    setNotice("Preescucha del archivo", "Fragmento Opus de hasta 30 segundos. El archivo aún no se ha importado.");
+  } catch (error) {
+    setNotice("No se pudo preescuchar el archivo", String(error));
+  } finally {
+    elements.importPreview.disabled = !pendingAudioPath;
+  }
+}
+
+elements.importAudio.addEventListener("click", async () => {
+  try {
+    stopPreview();
+    const path = await platform.selectAudioFile();
+    if (!path) return;
+    pendingAudioPath = null;
+    elements.importPreview.disabled = true;
+    elements.importCommit.disabled = true;
+    const metadata = await platform.inspectAudioFile(path);
+    pendingAudioPath = path;
+    const channelOptions = [];
+    if (metadata.channels <= 2) {
+      channelOptions.push({ label: metadata.channels === 1 ? "Canal 1 · mono" : "Canales 1–2 · estéreo", value: Array.from({ length: metadata.channels }, (_, index) => index) });
+    } else {
+      for (let channel = 0; channel < metadata.channels; channel += 1) {
+        channelOptions.push({ label: `Canal ${channel + 1} · mono`, value: [channel] });
+        if (channel + 1 < metadata.channels) channelOptions.push({ label: `Canales ${channel + 1}–${channel + 2} · estéreo`, value: [channel, channel + 1] });
+      }
+    }
+    elements.importChannels.replaceChildren(...channelOptions.map((option) => {
+      const item = document.createElement("option");
+      item.value = option.value.join(",");
+      item.textContent = option.label;
+      return item;
+    }));
+    elements.importChannels.disabled = false;
+    const fileName = path.split(/[\\/]/).at(-1) ?? path;
+    elements.importSelected.textContent = `${fileName} · ${metadata.sampleRateHz.toLocaleString()} Hz · ${metadata.channels} ch · ${metadata.durationSeconds.toFixed(2)} s`;
+    elements.importPreview.disabled = false;
+    elements.importCommit.disabled = !hasProject || !elements.importTrack.value;
+    setNotice("Archivo listo para revisar", "Puedes escuchar un fragmento antes de decidir si lo importas.");
+  } catch (error) {
+    setNotice("No se pudo inspeccionar el archivo", String(error));
+  }
+});
+
+elements.importPreview.addEventListener("click", previewPendingAudio);
+elements.importTrack.addEventListener("change", () => {
+  elements.importCommit.disabled = !pendingAudioPath || !elements.importTrack.value;
+});
+elements.importCommit.addEventListener("click", async () => {
+  const trackId = elements.importTrack.value;
+  if (!pendingAudioPath || !trackId) return;
+  stopPreview();
+  await whileBusy([elements.importCommit], async () => {
+    try {
+      const bar = Math.max(1, Number(elements.importBar.value) || 1);
+      const snapshot = await platform.importAudio({
+        path: pendingAudioPath,
+        trackId,
+        copyIntoProject: elements.importMode.value === "copy",
+        sourceChannelSelection: elements.importChannels.value.split(",").map(Number),
+        startTick: Math.round((bar - 1) * (Number(document.querySelector("#timeline-ruler")?.dataset.beatsPerBar) || 4) * 480),
+      });
+      pendingAudioPath = null;
+      elements.importSelected.textContent = "No hay archivo seleccionado";
+      elements.importPreview.disabled = true;
+      renderSnapshot(snapshot);
+      setNotice("Audio importado", "La fuente y región se registraron; el Arreglo muestra su waveform. La reproducción de sesión sigue pendiente.");
+    } catch (error) {
+      setNotice("No se pudo importar audio", String(error));
+    }
+  });
+});
 
 async function loadWaveform(sourceId, sourceDigest, container) {
   try {
@@ -483,25 +578,6 @@ async function addTrack(kind, button) {
 
 elements.addMidiTrack.addEventListener("click", () => addTrack("midi", elements.addMidiTrack));
 elements.addAudioTrack.addEventListener("click", () => addTrack("audio", elements.addAudioTrack));
-elements.importAudio.addEventListener("click", async () => {
-  const trackId = elements.importTrack.value;
-  if (!trackId) return;
-  await whileBusy([elements.importAudio], async () => {
-    try {
-      const bar = Math.max(1, Number(elements.importBar.value) || 1);
-      const snapshot = await platform.importAudio({
-        trackId,
-        copyIntoProject: elements.importMode.value === "copy",
-        startTick: Math.round((bar - 1) * (Number(document.querySelector("#timeline-ruler")?.dataset.beatsPerBar) || 4) * 480),
-      });
-      if (!snapshot) return;
-      renderSnapshot(snapshot);
-      setNotice("Audio importado", "La fuente y la región quedaron registradas; la forma de onda se calcula fuera del callback. La preescucha y la reproducción siguen pendientes.");
-    } catch (error) {
-      setNotice("No se pudo importar audio", String(error));
-    }
-  });
-});
 elements.showArrangement.addEventListener("click", () => selectSurface("arrangement"));
 elements.showSession.addEventListener("click", () => selectSurface("session"));
 elements.showMixer.addEventListener("click", () => selectSurface("mixer"));

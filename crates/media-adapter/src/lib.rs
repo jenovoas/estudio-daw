@@ -678,6 +678,31 @@ mod tests {
         std::env::temp_dir().join(format!("estudio-daw-{name}-{}", std::process::id()))
     }
 
+    fn write_test_wav(path: &Path) {
+        let frames = 4_410_u32;
+        let data_size = frames * 2;
+        let mut bytes = Vec::with_capacity(44 + data_size as usize);
+        bytes.extend_from_slice(b"RIFF");
+        bytes.extend_from_slice(&(36 + data_size).to_le_bytes());
+        bytes.extend_from_slice(b"WAVEfmt ");
+        bytes.extend_from_slice(&16_u32.to_le_bytes());
+        bytes.extend_from_slice(&1_u16.to_le_bytes());
+        bytes.extend_from_slice(&1_u16.to_le_bytes());
+        bytes.extend_from_slice(&44_100_u32.to_le_bytes());
+        bytes.extend_from_slice(&88_200_u32.to_le_bytes());
+        bytes.extend_from_slice(&2_u16.to_le_bytes());
+        bytes.extend_from_slice(&16_u16.to_le_bytes());
+        bytes.extend_from_slice(b"data");
+        bytes.extend_from_slice(&data_size.to_le_bytes());
+        for frame in 0..frames {
+            let sample = (f32::sin(std::f32::consts::TAU * 440.0 * frame as f32 / 44_100.0)
+                * i16::MAX as f32
+                * 0.5) as i16;
+            bytes.extend_from_slice(&sample.to_le_bytes());
+        }
+        fs::write(path, bytes).unwrap();
+    }
+
     #[test]
     fn reduce_samples_to_bounded_min_max_bins_preserves_extrema() {
         let bins = reduce_samples_to_min_max(&[-0.8, 0.2, -0.1, 0.9, 0.0], 2);
@@ -694,6 +719,43 @@ mod tests {
         assert_eq!(metadata.sample_rate_hz, 44_100);
         assert_eq!(metadata.channels, 2);
         assert_eq!(metadata.duration_samples, 88_200);
+    }
+
+    #[test]
+    fn ffmpeg_media_helpers_inspect_waveform_and_make_bounded_opus_preview() {
+        let probe = Command::new("ffmpeg")
+            .args(["-hide_banner", "-encoders"])
+            .output();
+        let Ok(probe) = probe else { return };
+        let encoders = format!(
+            "{}{}",
+            String::from_utf8_lossy(&probe.stdout),
+            String::from_utf8_lossy(&probe.stderr)
+        );
+        if !encoders.contains("libopus") {
+            return;
+        }
+
+        let root = temporary_root("audio-import-media");
+        fs::create_dir_all(&root).unwrap();
+        let input = root.join("sine.wav");
+        write_test_wav(&input);
+
+        let metadata = inspect_audio_metadata(&input).unwrap();
+        assert_eq!(metadata.sample_rate_hz, 44_100);
+        assert_eq!(metadata.channels, 1);
+        assert_eq!(metadata.duration_samples, 4_410);
+
+        let waveform = audio_waveform(&input, 512).unwrap();
+        assert!(!waveform.is_empty());
+        assert!(waveform.len() <= 512);
+        assert!(waveform.iter().any(|(min, _)| *min < 0.0));
+        assert!(waveform.iter().any(|(_, max)| *max > 0.0));
+
+        let preview = audio_preview_ogg(&input).unwrap();
+        assert!(preview.starts_with(b"OggS"));
+        assert!(preview.len() < 256 * 1024);
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
