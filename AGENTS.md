@@ -241,5 +241,17 @@ Para explorar estructuralmente el código, usa la habilidad instalada `codebase-
   etiquetas obligatorias del formato OpenSpec (`Purpose`, `Requirements`,
   `Requirement`, `Scenario`, `MUST`, `MAY`, `SHALL`), que su analizador requiere.
 - Próximo trabajo del arreglo: 0.2 sigue abierta por requerir cotejo en la
-  aplicación opción por opción; 1.4 está completa. Continuar con las tareas
-  independientes según sus dependencias, sin presentar pendientes como hechos.
+  documentación del fabricante opción por opción; no requiere ejecutar Live en
+  Linux. 1.4 está completa. Continuar con las tareas independientes según sus
+  dependencias, sin presentar pendientes como hechos.
+
+## Handoff para reinicio — 2026-09-27
+
+Leer `docs/HANDOFF_CONTINUACION_2026-09-27.md` antes de continuar. HEAD
+funcional base: `e66b5fe8fe2e71b6d8be399a717f4a338de0f4f2`; consultar `git log`
+para el commit documental que guarda este handoff.
+OpenSpec `workstation-arrangement-surface-v2` sigue en 7/35. Siguiente: cerrar
+el cotejo documental oficial de Live 12.4.6 (0.2) sin exigir ejecutar Live en
+Linux y continuar con el flujo vertical de pista de audio (2.1). Mantener la
+documentación en español, la bitácora de bóveda append-only y todos los límites
+de evidencia descritos en el handoff.
