@@ -7,8 +7,9 @@
 use estudio_daw_midi_engine::MidiTake;
 use estudio_daw_project_model::{
     add_audio_clip, attach_media_source, attach_midi_take, quantize_midi_clip,
-    set_audio_clip_fades, set_audio_clip_gain, trim_audio_clip, MediaSource, Project, ProjectEvent,
-    ProjectHistory, ProjectSnapshot, Track, TrackMixerState, TrackRole,
+    set_audio_clip_fades, set_audio_clip_gain, trim_audio_clip, AudioClip, ClipReference, ClipSlot,
+    MediaSource, Project, ProjectEvent, ProjectHistory, ProjectSnapshot, Scene, Track,
+    TrackMixerState, TrackRole,
 };
 use estudio_daw_session::{Session, SessionCommand, TransportSnapshot, TransportState};
 use serde::{Deserialize, Serialize};
@@ -55,6 +56,12 @@ pub enum ProjectCommand {
         track: Track,
         index: Option<usize>,
     },
+    DuplicateTrack {
+        track_id: String,
+        new_track_id: String,
+        name: String,
+        index: Option<usize>,
+    },
     RenameTrack {
         track_id: String,
         name: String,
@@ -62,6 +69,10 @@ pub enum ProjectCommand {
     MoveTrack {
         track_id: String,
         index: usize,
+    },
+    SetTrackActive {
+        track_id: String,
+        active: bool,
     },
     RemoveTrack {
         track_id: String,
@@ -92,6 +103,31 @@ pub enum ProjectCommand {
         clip_id: String,
         fade_in_samples: u64,
         fade_out_samples: u64,
+    },
+    MoveAudioClip {
+        clip_id: String,
+        start_tick: u64,
+    },
+    AddScene {
+        scene: Scene,
+        index: Option<usize>,
+    },
+    RenameScene {
+        scene_id: String,
+        name: String,
+    },
+    MoveScene {
+        scene_id: String,
+        index: usize,
+    },
+    RemoveScene {
+        scene_id: String,
+    },
+    SetClipSlot {
+        slot: ClipSlot,
+    },
+    RemoveClipSlot {
+        slot_id: String,
     },
     AttachMediaSource {
         track_id: String,
@@ -308,10 +344,173 @@ impl CommandRuntime {
                     let insert_at = index
                         .unwrap_or(project.tracks.len())
                         .min(project.tracks.len());
+                    if track.role == TrackRole::Audio {
+                        project
+                            .audio_playlists
+                            .push(estudio_daw_project_model::AudioPlaylist {
+                                id: format!("playlist-{}", track.id),
+                                track_id: track.id.clone(),
+                                region_ids: Vec::new(),
+                            });
+                    }
                     project.tracks.insert(insert_at, track);
-                    Ok(())
+                    project
+                        .validate_persisted_contracts()
+                        .map_err(|error| error.to_string())
                 })
                 .map_err(|error| CommandError::Project(error.to_string()))?,
+            ProjectCommand::DuplicateTrack {
+                track_id,
+                new_track_id,
+                name,
+                index,
+            } => {
+                self.project_history
+                    .transact("duplicate track", |project| -> Result<(), String> {
+                        let original = project
+                            .tracks
+                            .iter()
+                            .find(|track| track.id == track_id)
+                            .cloned()
+                            .ok_or_else(|| format!("unknown track: {track_id}"))?;
+                        if new_track_id.trim().is_empty()
+                            || project.tracks.iter().any(|track| track.id == new_track_id)
+                        {
+                            return Err(format!("duplicate or empty track id: {new_track_id}"));
+                        }
+                        if name.trim().is_empty() {
+                            return Err(String::from("track name must not be empty"));
+                        }
+                        if original.role == TrackRole::Master {
+                            return Err(String::from("the master track cannot be duplicated"));
+                        }
+
+                        let mut duplicated = original.clone();
+                        duplicated.id = new_track_id.clone();
+                        duplicated.name = name;
+                        duplicated.media_source = None;
+
+                        let mut source_ids = std::collections::HashMap::new();
+                        let mut sources = Vec::new();
+                        for source in project
+                            .audio_sources
+                            .iter()
+                            .filter(|source| source.owner_track_id == track_id)
+                        {
+                            let mut copy = source.clone();
+                            copy.id = format!("{}-copy-{new_track_id}", source.id);
+                            copy.owner_track_id = new_track_id.clone();
+                            if project.audio_sources.iter().any(|item| item.id == copy.id) {
+                                return Err(format!("duplicate audio source id: {}", copy.id));
+                            }
+                            source_ids.insert(source.id.clone(), copy.id.clone());
+                            sources.push(copy);
+                        }
+                        project.audio_sources.extend(sources);
+
+                        let mut midi_clip_ids = std::collections::HashMap::new();
+                        let mut midi_copies = Vec::new();
+                        for clip in project
+                            .midi_clips
+                            .iter()
+                            .filter(|clip| clip.track_id == track_id)
+                        {
+                            let mut copy = clip.clone();
+                            copy.id = format!("{}-copy-{new_track_id}", clip.id);
+                            if project.midi_clips.iter().any(|item| item.id == copy.id) {
+                                return Err(format!("duplicate MIDI clip id: {}", copy.id));
+                            }
+                            midi_clip_ids.insert(clip.id.clone(), copy.id.clone());
+                            copy.track_id = new_track_id.clone();
+                            midi_copies.push(copy);
+                        }
+                        project.midi_clips.extend(midi_copies);
+
+                        let mut audio_clip_ids = std::collections::HashMap::new();
+                        let mut audio_copies: Vec<AudioClip> = Vec::new();
+                        for clip in project
+                            .audio_clips
+                            .iter()
+                            .filter(|clip| clip.track_id == track_id)
+                        {
+                            let mut copy = clip.clone();
+                            copy.id = format!("{}-copy-{new_track_id}", clip.id);
+                            if project.audio_clips.iter().any(|item| item.id == copy.id) {
+                                return Err(format!("duplicate audio clip id: {}", copy.id));
+                            }
+                            audio_clip_ids.insert(clip.id.clone(), copy.id.clone());
+                            copy.track_id = new_track_id.clone();
+                            copy.source_id = match copy.source_id.as_ref() {
+                                Some(id) => Some(source_ids.get(id).cloned().ok_or_else(|| {
+                                    String::from("audio source was not duplicated")
+                                })?),
+                                None => None,
+                            };
+                            audio_copies.push(copy);
+                        }
+                        project.audio_clips.extend(audio_copies);
+
+                        if let Some(playlist) = project
+                            .audio_playlists
+                            .iter()
+                            .find(|item| item.track_id == track_id)
+                            .cloned()
+                        {
+                            let mut copy = playlist;
+                            copy.id = format!("playlist-{new_track_id}");
+                            copy.track_id = new_track_id.clone();
+                            copy.region_ids = copy
+                                .region_ids
+                                .iter()
+                                .filter_map(|id| audio_clip_ids.get(id).cloned())
+                                .collect();
+                            project.audio_playlists.push(copy);
+                        } else if original.role == TrackRole::Audio {
+                            project.audio_playlists.push(
+                                estudio_daw_project_model::AudioPlaylist {
+                                    id: format!("playlist-{new_track_id}"),
+                                    track_id: new_track_id.clone(),
+                                    region_ids: Vec::new(),
+                                },
+                            );
+                        }
+
+                        let mut slot_copies = Vec::new();
+                        for slot in project
+                            .clip_slots
+                            .iter()
+                            .filter(|slot| slot.track_id == track_id)
+                        {
+                            let mut copy = slot.clone();
+                            copy.id = format!("{}-copy-{new_track_id}", slot.id);
+                            copy.track_id = new_track_id.clone();
+                            copy.clip = match copy.clip {
+                                Some(ClipReference::Midi(id)) => Some(ClipReference::Midi(
+                                    midi_clip_ids.get(&id).cloned().ok_or_else(|| {
+                                        String::from("slot MIDI clip was not duplicated")
+                                    })?,
+                                )),
+                                Some(ClipReference::Audio(id)) => Some(ClipReference::Audio(
+                                    audio_clip_ids.get(&id).cloned().ok_or_else(|| {
+                                        String::from("slot audio clip was not duplicated")
+                                    })?,
+                                )),
+                                None => None,
+                            };
+                            slot_copies.push(copy);
+                        }
+                        project.clip_slots.extend(slot_copies);
+
+                        let insert_at = index
+                            .unwrap_or(project.tracks.len())
+                            .min(project.tracks.len());
+                        project.tracks.insert(insert_at, duplicated);
+                        project
+                            .validate_persisted_contracts()
+                            .map_err(|error| error.to_string())
+                    })
+                    .map_err(|error| CommandError::Project(error.to_string()))?
+            }
             ProjectCommand::RenameTrack { track_id, name } => self
                 .project_history
                 .transact("rename track", |project| -> Result<(), String> {
@@ -339,7 +538,23 @@ impl CommandRuntime {
                     project
                         .tracks
                         .insert(index.min(project.tracks.len()), track);
-                    Ok(())
+                    project
+                        .validate_persisted_contracts()
+                        .map_err(|error| error.to_string())
+                })
+                .map_err(|error| CommandError::Project(error.to_string()))?,
+            ProjectCommand::SetTrackActive { track_id, active } => self
+                .project_history
+                .transact("set track active", |project| -> Result<(), String> {
+                    let track = project
+                        .tracks
+                        .iter_mut()
+                        .find(|track| track.id == track_id)
+                        .ok_or_else(|| format!("unknown track: {track_id}"))?;
+                    track.mixer.active = active;
+                    project
+                        .validate_persisted_contracts()
+                        .map_err(|error| error.to_string())
                 })
                 .map_err(|error| CommandError::Project(error.to_string()))?,
             ProjectCommand::RemoveTrack { track_id } => self
@@ -353,7 +568,16 @@ impl CommandRuntime {
                     // Clips are project-owned; deleting a track removes its regions, never source files.
                     project.midi_clips.retain(|clip| clip.track_id != track_id);
                     project.audio_clips.retain(|clip| clip.track_id != track_id);
-                    Ok(())
+                    project
+                        .audio_sources
+                        .retain(|source| source.owner_track_id != track_id);
+                    project
+                        .audio_playlists
+                        .retain(|playlist| playlist.track_id != track_id);
+                    project.clip_slots.retain(|slot| slot.track_id != track_id);
+                    project
+                        .validate_persisted_contracts()
+                        .map_err(|error| error.to_string())
                 })
                 .map_err(|error| CommandError::Project(error.to_string()))?,
             ProjectCommand::SetTrackMixer { track_id, mixer } => self
@@ -422,6 +646,129 @@ impl CommandRuntime {
                 .project_history
                 .transact("set audio clip fades", |project| {
                     set_audio_clip_fades(project, &clip_id, fade_in_samples, fade_out_samples)
+                })
+                .map_err(|error| CommandError::Project(error.to_string()))?,
+            ProjectCommand::MoveAudioClip {
+                clip_id,
+                start_tick,
+            } => self
+                .project_history
+                .transact("move audio clip", |project| -> Result<(), String> {
+                    let clip = project
+                        .audio_clips
+                        .iter_mut()
+                        .find(|clip| clip.id == clip_id)
+                        .ok_or_else(|| format!("unknown audio clip: {clip_id}"))?;
+                    clip.start_tick = start_tick;
+                    project
+                        .validate_persisted_contracts()
+                        .map_err(|error| error.to_string())
+                })
+                .map_err(|error| CommandError::Project(error.to_string()))?,
+            ProjectCommand::AddScene { scene, index } => self
+                .project_history
+                .transact("add scene", |project| -> Result<(), String> {
+                    if scene.id.trim().is_empty() || scene.name.trim().is_empty() {
+                        return Err(String::from("scene id and name must not be empty"));
+                    }
+                    if project.scenes.iter().any(|item| item.id == scene.id) {
+                        return Err(format!("scene id already exists: {}", scene.id));
+                    }
+                    let insert_at = index
+                        .unwrap_or(project.scenes.len())
+                        .min(project.scenes.len());
+                    project.scenes.insert(insert_at, scene);
+                    project
+                        .validate_persisted_contracts()
+                        .map_err(|error| error.to_string())
+                })
+                .map_err(|error| CommandError::Project(error.to_string()))?,
+            ProjectCommand::RenameScene { scene_id, name } => self
+                .project_history
+                .transact("rename scene", |project| -> Result<(), String> {
+                    if name.trim().is_empty() {
+                        return Err(String::from("scene name must not be empty"));
+                    }
+                    let scene = project
+                        .scenes
+                        .iter_mut()
+                        .find(|scene| scene.id == scene_id)
+                        .ok_or_else(|| format!("unknown scene: {scene_id}"))?;
+                    scene.name = name;
+                    project
+                        .validate_persisted_contracts()
+                        .map_err(|error| error.to_string())
+                })
+                .map_err(|error| CommandError::Project(error.to_string()))?,
+            ProjectCommand::MoveScene { scene_id, index } => self
+                .project_history
+                .transact("move scene", |project| -> Result<(), String> {
+                    let from = project
+                        .scenes
+                        .iter()
+                        .position(|scene| scene.id == scene_id)
+                        .ok_or_else(|| format!("unknown scene: {scene_id}"))?;
+                    let scene = project.scenes.remove(from);
+                    project
+                        .scenes
+                        .insert(index.min(project.scenes.len()), scene);
+                    project
+                        .validate_persisted_contracts()
+                        .map_err(|error| error.to_string())
+                })
+                .map_err(|error| CommandError::Project(error.to_string()))?,
+            ProjectCommand::RemoveScene { scene_id } => self
+                .project_history
+                .transact("remove scene", |project| -> Result<(), String> {
+                    let before = project.scenes.len();
+                    project.scenes.retain(|scene| scene.id != scene_id);
+                    if project.scenes.len() == before {
+                        return Err(format!("unknown scene: {scene_id}"));
+                    }
+                    project.clip_slots.retain(|slot| slot.scene_id != scene_id);
+                    project
+                        .validate_persisted_contracts()
+                        .map_err(|error| error.to_string())
+                })
+                .map_err(|error| CommandError::Project(error.to_string()))?,
+            ProjectCommand::SetClipSlot { slot } => self
+                .project_history
+                .transact("set clip slot", |project| -> Result<(), String> {
+                    if let Some(existing) = project.clip_slots.iter().find(|existing| {
+                        existing.scene_id == slot.scene_id
+                            && existing.track_id == slot.track_id
+                            && existing.id != slot.id
+                    }) {
+                        return Err(format!(
+                            "scene/track slot already has another identity: {}",
+                            existing.id
+                        ));
+                    }
+                    if let Some(existing) = project
+                        .clip_slots
+                        .iter_mut()
+                        .find(|existing| existing.id == slot.id)
+                    {
+                        *existing = slot;
+                    } else {
+                        project.clip_slots.push(slot);
+                    }
+                    project
+                        .validate_persisted_contracts()
+                        .map_err(|error| error.to_string())
+                })
+                .map_err(|error| CommandError::Project(error.to_string()))?,
+            ProjectCommand::RemoveClipSlot { slot_id } => self
+                .project_history
+                .transact("remove clip slot", |project| -> Result<(), String> {
+                    let before = project.clip_slots.len();
+                    project.clip_slots.retain(|slot| slot.id != slot_id);
+                    if project.clip_slots.len() == before {
+                        return Err(format!("unknown clip slot: {slot_id}"));
+                    }
+                    project
+                        .validate_persisted_contracts()
+                        .map_err(|error| error.to_string())
                 })
                 .map_err(|error| CommandError::Project(error.to_string()))?,
             ProjectCommand::AttachMediaSource { track_id, source } => self
@@ -565,7 +912,11 @@ mod tests {
                 },
             ],
             audio_sources: Vec::new(),
-            audio_playlists: Vec::new(),
+            audio_playlists: vec![estudio_daw_project_model::AudioPlaylist {
+                id: "playlist-track-audio".into(),
+                track_id: "track-audio".into(),
+                region_ids: vec!["clip-1".into()],
+            }],
             scenes: Vec::new(),
             clip_slots: Vec::new(),
             midi_clips: vec![MidiClip {
@@ -755,6 +1106,351 @@ mod tests {
             ))
             .unwrap();
         assert_eq!(runtime.snapshot().project.project.audio_clips.len(), 1);
+        let restored = runtime.snapshot().project.project;
+        assert_eq!(restored.audio_playlists.len(), 2);
+        assert!(restored.audio_playlists.iter().any(|playlist| {
+            playlist.track_id == "track-audio" && playlist.region_ids == ["clip-1"]
+        }));
+    }
+
+    #[test]
+    fn duplicate_track_copies_owned_clips_and_slots_as_one_reversible_edit() {
+        let mut initial = project();
+        initial.scenes.push(Scene {
+            id: "scene-1".into(),
+            name: "Verso".into(),
+        });
+        initial.clip_slots.push(ClipSlot {
+            id: "slot-1".into(),
+            scene_id: "scene-1".into(),
+            track_id: "track-midi".into(),
+            clip: Some(ClipReference::Midi("midi-clip-1".into())),
+        });
+        let mut runtime = CommandRuntime::new(initial.clone());
+        let outcome = runtime.apply(envelope(
+            "duplicate-midi",
+            DomainCommand::Project(ProjectCommand::DuplicateTrack {
+                track_id: "track-midi".into(),
+                new_track_id: "midi-copy".into(),
+                name: "MIDI copia".into(),
+                index: Some(1),
+            }),
+        ));
+        assert!(outcome.is_ok(), "duplicar pista MIDI: {outcome:?}");
+        let copied = runtime.snapshot().project.project;
+        assert_eq!(copied.tracks[1].id, "midi-copy");
+        let clip = copied
+            .midi_clips
+            .iter()
+            .find(|clip| clip.track_id == "midi-copy")
+            .unwrap();
+        assert_ne!(clip.id, "midi-clip-1");
+        assert_eq!(clip.take, initial.midi_clips[0].take);
+        let slot = copied
+            .clip_slots
+            .iter()
+            .find(|slot| slot.track_id == "midi-copy")
+            .unwrap();
+        assert_eq!(slot.clip, Some(ClipReference::Midi(clip.id.clone())));
+        runtime
+            .apply(envelope(
+                "undo-duplicate",
+                DomainCommand::Project(ProjectCommand::Undo),
+            ))
+            .unwrap();
+        assert_eq!(runtime.snapshot().project.project, initial);
+        runtime
+            .apply(envelope(
+                "redo-duplicate",
+                DomainCommand::Project(ProjectCommand::Redo),
+            ))
+            .unwrap();
+        assert!(runtime
+            .snapshot()
+            .project
+            .project
+            .tracks
+            .iter()
+            .any(|track| track.id == "midi-copy"));
+    }
+
+    #[test]
+    fn scene_slot_track_state_and_audio_position_are_reversible_and_validated() {
+        let mut runtime = CommandRuntime::new(project());
+        runtime
+            .apply(envelope(
+                "add-scene",
+                DomainCommand::Project(ProjectCommand::AddScene {
+                    scene: Scene {
+                        id: "scene-1".into(),
+                        name: "Verso".into(),
+                    },
+                    index: None,
+                }),
+            ))
+            .unwrap();
+        runtime
+            .apply(envelope(
+                "set-slot",
+                DomainCommand::Project(ProjectCommand::SetClipSlot {
+                    slot: ClipSlot {
+                        id: "slot-1".into(),
+                        scene_id: "scene-1".into(),
+                        track_id: "track-midi".into(),
+                        clip: Some(ClipReference::Midi("midi-clip-1".into())),
+                    },
+                }),
+            ))
+            .unwrap();
+        let original_clip = runtime.snapshot().project.project.audio_clips[0].clone();
+        runtime
+            .apply(envelope(
+                "move-audio",
+                DomainCommand::Project(ProjectCommand::MoveAudioClip {
+                    clip_id: "clip-1".into(),
+                    start_tick: 960,
+                }),
+            ))
+            .unwrap();
+        runtime
+            .apply(envelope(
+                "deactivate",
+                DomainCommand::Project(ProjectCommand::SetTrackActive {
+                    track_id: "track-audio".into(),
+                    active: false,
+                }),
+            ))
+            .unwrap();
+        let changed = runtime.snapshot().project.project;
+        assert_eq!(changed.audio_clips[0].start_tick, 960);
+        assert_eq!(
+            changed.audio_clips[0].source_start_samples,
+            original_clip.source_start_samples
+        );
+        assert_eq!(
+            changed.audio_clips[0].duration_samples,
+            original_clip.duration_samples
+        );
+        assert!(
+            !changed
+                .tracks
+                .iter()
+                .find(|track| track.id == "track-audio")
+                .unwrap()
+                .mixer
+                .active
+        );
+        assert!(runtime
+            .apply(envelope(
+                "wrong-slot-type",
+                DomainCommand::Project(ProjectCommand::SetClipSlot {
+                    slot: ClipSlot {
+                        id: "slot-wrong".into(),
+                        scene_id: "scene-1".into(),
+                        track_id: "track-audio".into(),
+                        clip: Some(ClipReference::Midi("midi-clip-1".into()))
+                    },
+                })
+            ))
+            .is_err());
+        for id in ["undo-active", "undo-move", "undo-slot", "undo-scene"] {
+            runtime
+                .apply(envelope(id, DomainCommand::Project(ProjectCommand::Undo)))
+                .unwrap();
+        }
+        let restored = runtime.snapshot().project.project;
+        assert!(restored.scenes.is_empty());
+        assert!(restored.clip_slots.is_empty());
+        assert_eq!(restored.audio_clips[0], original_clip);
+        assert!(
+            restored
+                .tracks
+                .iter()
+                .find(|track| track.id == "track-audio")
+                .unwrap()
+                .mixer
+                .active
+        );
+    }
+
+    #[test]
+    fn audio_region_commands_add_trim_gain_and_fades_undo_without_changing_source() {
+        let mut runtime = CommandRuntime::new(project());
+        let source = MediaSource {
+            original_path: "/music/original.wav".into(),
+            original_signature: "size:96000;mtime:2".into(),
+            original_hash: "sha256:original".into(),
+            proxy: None,
+        };
+        runtime
+            .apply(envelope(
+                "attach-source",
+                DomainCommand::Project(ProjectCommand::AttachMediaSource {
+                    track_id: "track-audio".into(),
+                    source: source.clone(),
+                }),
+            ))
+            .unwrap();
+        runtime
+            .apply(envelope(
+                "add-region",
+                DomainCommand::Project(ProjectCommand::AddAudioClip {
+                    track_id: "track-audio".into(),
+                    name: "Puente".into(),
+                    start_tick: 240,
+                    source_start_samples: 0,
+                    duration_samples: 48_000,
+                    sample_rate: 48_000,
+                    channels: 2,
+                }),
+            ))
+            .unwrap();
+        runtime
+            .apply(envelope(
+                "trim-region",
+                DomainCommand::Project(ProjectCommand::TrimAudioClip {
+                    clip_id: "audio-clip-2".into(),
+                    source_start_samples: 4_800,
+                    duration_samples: 24_000,
+                }),
+            ))
+            .unwrap();
+        runtime
+            .apply(envelope(
+                "gain-region",
+                DomainCommand::Project(ProjectCommand::SetAudioClipGain {
+                    clip_id: "audio-clip-2".into(),
+                    gain_db: -6.0,
+                }),
+            ))
+            .unwrap();
+        runtime
+            .apply(envelope(
+                "fade-region",
+                DomainCommand::Project(ProjectCommand::SetAudioClipFades {
+                    clip_id: "audio-clip-2".into(),
+                    fade_in_samples: 2_400,
+                    fade_out_samples: 1_200,
+                }),
+            ))
+            .unwrap();
+
+        let edited = runtime.snapshot().project.project;
+        let region = edited
+            .audio_clips
+            .iter()
+            .find(|clip| clip.id == "audio-clip-2")
+            .unwrap();
+        assert_eq!(
+            (
+                region.start_tick,
+                region.source_start_samples,
+                region.duration_samples
+            ),
+            (240, 4_800, 24_000)
+        );
+        assert_eq!(
+            (
+                region.gain_db,
+                region.fade_in_samples,
+                region.fade_out_samples
+            ),
+            (-6.0, 2_400, 1_200)
+        );
+        assert_eq!(edited.audio_sources[0].media, source);
+        for id in ["undo-fades", "undo-gain", "undo-trim", "undo-add"] {
+            runtime
+                .apply(envelope(id, DomainCommand::Project(ProjectCommand::Undo)))
+                .unwrap();
+        }
+        let restored = runtime.snapshot().project.project;
+        assert_eq!(restored.audio_clips.len(), 1);
+        assert_eq!(restored.audio_playlists[0].region_ids, ["clip-1"]);
+        assert_eq!(restored.audio_sources[0].media, source);
+    }
+
+    #[test]
+    fn scenes_and_slots_can_be_edited_removed_and_restored_without_deleting_clips() {
+        let mut initial = project();
+        initial.scenes = vec![
+            Scene {
+                id: "scene-a".into(),
+                name: "A".into(),
+            },
+            Scene {
+                id: "scene-b".into(),
+                name: "B".into(),
+            },
+        ];
+        initial.clip_slots.push(ClipSlot {
+            id: "slot-a".into(),
+            scene_id: "scene-a".into(),
+            track_id: "track-midi".into(),
+            clip: Some(ClipReference::Midi("midi-clip-1".into())),
+        });
+        let mut runtime = CommandRuntime::new(initial);
+        runtime
+            .apply(envelope(
+                "rename-scene",
+                DomainCommand::Project(ProjectCommand::RenameScene {
+                    scene_id: "scene-a".into(),
+                    name: "Intro".into(),
+                }),
+            ))
+            .unwrap();
+        runtime
+            .apply(envelope(
+                "move-scene",
+                DomainCommand::Project(ProjectCommand::MoveScene {
+                    scene_id: "scene-a".into(),
+                    index: 1,
+                }),
+            ))
+            .unwrap();
+        runtime
+            .apply(envelope(
+                "remove-slot",
+                DomainCommand::Project(ProjectCommand::RemoveClipSlot {
+                    slot_id: "slot-a".into(),
+                }),
+            ))
+            .unwrap();
+        runtime
+            .apply(envelope(
+                "remove-scene",
+                DomainCommand::Project(ProjectCommand::RemoveScene {
+                    scene_id: "scene-a".into(),
+                }),
+            ))
+            .unwrap();
+        let changed = runtime.snapshot().project.project;
+        assert_eq!(
+            changed.scenes,
+            [Scene {
+                id: "scene-b".into(),
+                name: "B".into()
+            }]
+        );
+        assert!(changed.clip_slots.is_empty());
+        assert_eq!(changed.midi_clips.len(), 1);
+        for id in [
+            "undo-scene-delete",
+            "undo-slot-delete",
+            "undo-scene-move",
+            "undo-scene-rename",
+        ] {
+            runtime
+                .apply(envelope(id, DomainCommand::Project(ProjectCommand::Undo)))
+                .unwrap();
+        }
+        let restored = runtime.snapshot().project.project;
+        assert_eq!(restored.scenes[0].name, "A");
+        assert_eq!(restored.scenes[0].id, "scene-a");
+        assert_eq!(
+            restored.clip_slots[0].clip,
+            Some(ClipReference::Midi("midi-clip-1".into()))
+        );
+        assert_eq!(restored.midi_clips.len(), 1);
     }
 
     #[test]

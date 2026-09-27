@@ -32,10 +32,10 @@ estructurado y deja el snapshot intacto.
 - El reemplazo escribe un temporal único junto al destino, sincroniza sus bytes y
   lo renombra al destino; un fallo previo al renombrado conserva el archivo
   anterior.
-- El JSON conserva el estado musical actual, no el stack de undo/redo. Undo/redo
-  opera durante la sesión abierta; después de guardar y reabrir, el último estado
+- El JSON conserva el estado musical actual, no la pila del historial. Deshacer
+  y rehacer opera durante la sesión abierta; después de guardar y reabrir, el último estado
   guardado es la nueva base del historial.
-- `history_state()` permite que la UI habilite sus acciones Undo/Redo sin acceder
+- `history_state()` permite que la interfaz habilite sus acciones Deshacer/Rehacer sin acceder
   al `ProjectHistory` interno.
 
 ## Verificación

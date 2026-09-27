@@ -36,25 +36,26 @@ colas bounded y contratos locales.
 
 ## 2. Límites obligatorios
 
-### Portable Domain
+### Dominio portable
 
-Rust puro, sin PipeWire, ALSA, GPU, GUI, Python ni LLM. Contiene:
+Rust puro, sin PipeWire, ALSA, GPU, interfaz gráfica, Python ni modelos de lenguaje. Contiene:
 
 - proyecto y migraciones;
 - pistas, clips, takes y escenas;
-- notas scale-aware, acordes y tonalidad;
+- notas que reconocen la escala, acordes y tonalidad;
 - transporte abstracto;
-- comandos, eventos y undo/redo;
+- comandos, eventos y operaciones para deshacer/rehacer;
 - manifiestos de análisis;
-- serialización y DAWproject adapter.
+- serialización y adaptador DAWproject.
 
-### Audio Engine
+### Motor de audio
 
-Sólo recibe snapshots y comandos pre-validados. Su callback no conoce JSON,
-disco, red, workers ni UI. Compila un `RenderPlan` fuera del callback y ejecuta
-buffers preasignados en orden topológico.
+Sólo recibe instantáneas y comandos previamente validados. Su llamada de
+retorno no conoce JSON, disco, red, procesos auxiliares ni interfaz gráfica.
+Compila un `RenderPlan` fuera de esa llamada y ejecuta búferes preasignados en
+orden topológico.
 
-### Platform
+### Plataforma
 
 Contiene PipeWire, JACK, ALSA MIDI, descubrimiento de dispositivos y permisos.
 Ningún tipo concreto de una plataforma debe filtrarse al Portable Domain.

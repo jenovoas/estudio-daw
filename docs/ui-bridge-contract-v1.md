@@ -22,7 +22,7 @@ versionado y ausencia de muestras/rutas locales en los contratos de vista.
 ## Snapshot de proyecto
 
 `project_snapshot` devuelve `ui-snapshot.v1`: revisión, estado de transporte,
-tempo, conteos, lista compacta de pistas y capacidades de undo/redo. No incluye
+tempo, conteos, lista compacta de pistas y capacidades para deshacer/rehacer. No incluye
 el modelo serializado completo ni rutas de medios como permiso de acceso. La
 ruta visible existente es sólo una etiqueta informativa; las operaciones sobre
 medios deben usar sus comandos e IDs backend, nunca esa cadena.

@@ -1,7 +1,7 @@
 # Bus de comandos del dominio
 
 `estudio-daw-command-bus` coordina las mutaciones del proyecto y del transporte
-desde una frontera portable. La UI, CLI, MIDI, scripting y agentes pueden emitir
+desde una frontera portable. La interfaz, la CLI, MIDI, los guiones y los agentes pueden emitir
 el mismo `CommandEnvelope`; no necesitan conocer los detalles internos de
 `ProjectHistory` ni de `Session`.
 
@@ -9,17 +9,17 @@ el mismo `CommandEnvelope`; no necesitan conocer los detalles internos de
 
 ```text
 CommandEnvelope
-  → DomainCommandBus bounded
+  → DomainCommandBus de capacidad acotada
   → validar id, versión y precondiciones
   → aplicar a Session o ProjectHistory
   → DomainEvent atribuido al autor
-  → snapshot consultable por la UI
+  → instantánea consultable por la interfaz
 ```
 
 El productor usa `try_send`; una cola llena devuelve un error en vez de bloquear.
-El consumidor drena comandos fuera del callback de audio. Este bus de dominio es
-distinto de `estudio_daw_session::CommandBus`, que sigue siendo la cola live
-pequeña para el transporte MIDI.
+El consumidor drena comandos fuera de la llamada de retorno de audio. Este bus
+de dominio es distinto de `estudio_daw_session::CommandBus`, que sigue siendo la
+cola pequeña de ejecución en vivo para el transporte MIDI.
 
 ## Contrato del comando
 
@@ -37,33 +37,43 @@ mutación.
 
 ## Operaciones disponibles
 
-- transporte: los `SessionCommand` existentes;
-- audio: agregar, recortar, ajustar ganancia y fades de clips;
+- transporte: los comandos `SessionCommand` existentes;
+- pistas: agregar, duplicar, renombrar, reordenar, activar y quitar; ajustar
+  silencio, solo, ganancia y panorama;
+- escenas/casillas: crear, renombrar, reordenar y quitar escenas; asignar o
+  quitar casillas que referencian clips existentes sin copiarlos;
+- audio: agregar, recortar, mover, ajustar ganancia y desvanecimientos de clips;
 - medios: asociar una fuente original/proxy a una pista de audio;
-- MIDI: adjuntar una toma y cuantizar Note On/Off de un clip;
-- historial: undo y redo de transacciones del proyecto.
+- MIDI: adjuntar una toma y cuantizar eventos de activación/desactivación de nota de un clip;
+- historial: deshacer y rehacer transacciones del proyecto.
 
-Las operaciones MIDI reutilizan las funciones del modelo. Cuantizar mantiene
-intactos los controladores y queda cubierto por el mismo historial reversible.
-Las mutaciones del proyecto generan `ProjectEvent` dentro de un
-`DomainEventPayload::ProjectChanged`.
+Las operaciones se validan contra las relaciones del proyecto antes de
+confirmarse. Por ejemplo, una casilla no puede enlazar un clip MIDI a una pista
+de audio. Duplicar una pista crea identidades nuevas para sus clips, fuentes,
+lista de reproducción y casillas; no copia los archivos fuente. Mover una región
+de audio cambia su posición musical y conserva el desplazamiento/duración de la
+fuente. Cuantizar mantiene intactos los controladores. Estas modificaciones
+quedan cubiertas por el mismo historial reversible. Las mutaciones del proyecto
+generan `ProjectEvent` dentro de `DomainEventPayload::ProjectChanged`.
 
 ## Límites actuales
 
-- El crate tiene el runtime de dominio y una cola bounded en memoria; todavía no
-  es un log durable de comandos.
+- El módulo contiene el motor de ejecución del dominio y una cola acotada en
+  memoria; todavía no constituye un registro persistente de comandos.
 - `estudio-daw-application` es la fachada de ciclo de vida: mantiene vivo el
-  runtime para que una sesión UI pueda encadenar comandos y undo/redo, y publica
-  eventos/snapshots junto con abrir/guardar proyecto. La persistencia guarda el
-  estado resultante, no serializa el stack de undo entre cierres.
-- La CLI está aislada en `estudio-daw-cli`, por fuera del modelo portable. Sus
+  motor para que una sesión de interfaz pueda encadenar comandos y deshacer o
+  rehacer, y publica eventos e instantáneas al abrir o guardar un proyecto. La
+  persistencia guarda el estado resultante, no serializa la pila del historial
+  entre cierres.
+- La interfaz de línea de comandos está aislada en `estudio-daw-cli`, por fuera del modelo portable. Sus
   comandos `attach-take`, `quantize`, `attach-media` y `add-audio-clip` delegan
   ahora en la misma API de aplicación; import/export, generación de proxies y
   operaciones de dispositivos siguen siendo adaptadores directos porque también
   coordinan formatos, archivos o servicios del sistema.
 - La API de comandos se ampliará según las tareas aprobadas; no implica que toda
   mutación existente ya esté migrada.
-- El callback RT no envía comandos a esta cola ni ejecuta `drain_into`.
+- La llamada de retorno de tiempo real no envía comandos a esta cola ni ejecuta
+  `drain_into`.
 
 ## Verificación
 
@@ -72,6 +82,8 @@ cargo test -p estudio-daw-command-bus
 ```
 
 Las pruebas cubren coordinación de sesión/proyecto, precondiciones obsoletas,
-serialización, atribución de eventos, cuantización que conserva controladores y
-undo de mutaciones MIDI y medios, además del rechazo de fuentes dirigidas a
-pistas MIDI.
+serialización, atribución de eventos, cuantización que conserva controladores,
+duplicación reversible de pistas MIDI con sus clips/casillas, cambios
+reversibles de escenas, casillas, estado de pista y posición de audio,
+preservación de la fuente al mover regiones y rechazo de casillas con tipos de
+pista/clip incompatibles y de fuentes dirigidas a pistas MIDI.

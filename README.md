@@ -494,7 +494,8 @@ song "demo" {
 }
 ```
 
-Todo cambio musical debe quedar registrado para soportar undo/redo, revisión, aprendizaje y reproducción determinista.
+Todo cambio musical debe quedar registrado para permitir deshacerlo y rehacerlo,
+revisarlo, aprender de él y reproducirlo de manera determinista.
 
 ## Arquitectura técnica
 

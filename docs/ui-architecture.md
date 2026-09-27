@@ -1,42 +1,43 @@
-# Frontera entre core y UI
+# Frontera entre el núcleo y la interfaz
 
 Durante la fase inicial usamos la CLI para ejercitar el dominio con entradas
-reproducibles y poder depurar sin una interfaz gráfica incompleta. La CLI no es
+reproducibles y poder depurar sin una interfaz gráfica incompleta. La interfaz
+de línea de comandos no es
 el destino del producto: funciona como adaptador temporal sobre las mismas
-operaciones que usará la UI.
+operaciones que usará la interfaz.
 
 ```text
-UI nativa / WASM / CLI / scripting
+interfaz nativa / WASM / CLI / guiones
               ↓
   `estudio-daw-application`
               ↓
-  CommandBus → Project + Session models
+  CommandBus → modelos Project + Session
               ↓
-      Platform adapters (PipeWire, MIDI, ffmpeg)
+      adaptadores de plataforma (PipeWire, MIDI, ffmpeg)
 ```
 
 Reglas de diseño:
 
-- El core no importa widgets, eventos de ventana ni formatos de UI.
-- La UI envía comandos tipados y recibe snapshots/eventos observables.
-- Las operaciones mutables deben ser agrupables para undo/redo.
-- La CLI puede mantenerse como herramienta de diagnóstico y automatización.
+- El núcleo no importa controles gráficos, eventos de ventana ni formatos de interfaz.
+- La interfaz envía comandos tipados y recibe instantáneas y eventos observables.
+- Las operaciones mutables deben poder agruparse para deshacerlas y rehacerlas.
+- La interfaz de línea de comandos puede mantenerse como herramienta de diagnóstico y automatización.
 - El futuro adaptador WASM usará el mismo dominio, sustituyendo sólo los
-  servicios de filesystem, audio y procesos externos.
+  servicios del sistema de archivos, audio y procesos externos.
 
 Las funciones actuales como `attach_media_source`, `add_audio_clip`,
 `trim_audio_clip` y `ensure_track_audio_proxy` son los primeros comandos del
 dominio. `ProjectHistory::transact()` ya las puede envolver en un
-`ChangeSet` transaccional y ofrece `undo()`/`redo()` para que la UI sólo tenga
-que refrescar su snapshot. `ProjectSnapshot` incluye una revisión monotónica y
-`drain_events()` entrega eventos de commit, undo y redo para actualizar sólo
-los paneles afectados.
+`ChangeSet` transaccional y ofrece `undo()`/`redo()` para que la interfaz sólo
+tenga que actualizar su instantánea. `ProjectSnapshot` incluye una revisión
+monotónica y `drain_events()` entrega eventos de confirmación, deshacer y
+rehacer para actualizar sólo los paneles afectados.
 
-La crate `estudio-daw-application` concreta la frontera superior: conserva
+El módulo `estudio-daw-application` concreta la frontera superior: conserva
 `CommandRuntime` y su historial mientras el proyecto permanece abierto, valida y
 despacha envelopes, y expone eventos y snapshots sin hacer visible
 `ProjectHistory`. También centraliza `open`, `save`, `save_as` y el reemplazo
-atómico del JSON. Una UI debe conservar una instancia de `ProjectApplication`
+atómico del JSON. La interfaz debe conservar una instancia de `ProjectApplication`
 durante toda la sesión; volver a abrir el archivo inicia un historial nuevo desde
 el último estado guardado.
 
@@ -49,13 +50,15 @@ adaptador web independiente en el futuro.
 
 La comunicación tiene dos planos con límites distintos:
 
-- **Control y estado:** comandos tipados, snapshots de proyecto, diagnósticos,
-  progreso de jobs y telemetría compacta pueden cruzar el IPC serializado de
+- **Control y estado:** comandos tipados, instantáneas de proyecto, diagnósticos,
+  progreso de tareas y telemetría compacta pueden cruzar la comunicación entre
+  procesos serializada de
   Tauri. Los medidores envían agregados (pico/RMS por bloque o ventana), nunca
   muestras individuales.
-- **Audio:** PCM, streams de captura/reproducción y buffers de DSP permanecen en
-  el runtime Rust. El callback RT sigue usando buffers preasignados y colas
-  bounded; no llama al WebView ni espera mensajes IPC.
+- **Audio:** PCM, flujos de captura/reproducción y búferes de DSP permanecen en
+  el entorno de ejecución Rust. La llamada de retorno de tiempo real sigue
+  usando búferes preasignados y colas acotadas; no llama a WebView ni espera
+  mensajes entre procesos.
 
 Los proyectos serializan la estructura musical y referencias a medios; WAV, FLAC,
 proxies y renders son artefactos externos al JSON. La UI identifica medios mediante
