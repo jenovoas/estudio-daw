@@ -99,6 +99,11 @@ buses encadenados) antes de publicar el plan y usa buffers por pista reservados
 antes del callback. Esto no selecciona puertos físicos de audio ni implementa
 entradas, envíos, retornos o procesadores.
 
+Las pistas editables tienen una acción de quitar en Arreglo, Session y Mezclador.
+El comando elimina sus clips, regiones y referencias de medios del proyecto,
+reasigna las pistas que apuntaban a ella y se puede deshacer desde el historial;
+no borra los archivos fuente del disco. El canal Master queda protegido en la UI.
+
 En modo navegador el dominio portable podrá compartir modelos y comandos, pero el
 backend de audio/compute será otro adaptador (por ejemplo Web Audio/AudioWorklet y
 WebGPU cuando estén disponibles). No se presupone intercambio zero-copy con el

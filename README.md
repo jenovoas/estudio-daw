@@ -689,6 +689,9 @@ pista puede enrutar su salida a otra pista de audio, un bus o Master; los buses
 suman sus entradas y pueden continuar hacia otro destino. El cambio es reversible
 y las rutas cíclicas se rechazan. El plan compila este recorrido antes del stream
 y procesa buffers por pista sin asignar ni resolver conexiones en el callback.
+Las pistas que no sean Master se pueden quitar desde Arreglo, Session o Mezclador;
+la acción también es reversible y elimina clips/regiones del proyecto sin borrar
+los archivos fuente del disco.
 Arreglo, Session y Mezclador muestran las pistas desde la misma instantánea.
 Session muestra encabezados/casillas vacías y controles compartidos de mezcla;
 Arrangement y Mezclador exponen ACT/M/S y ganancia/panorama para pistas no master.

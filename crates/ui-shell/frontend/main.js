@@ -318,6 +318,38 @@ function createTrackSelectionControl(track) {
   return label;
 }
 
+function createTrackRemovalButton(track) {
+  if (track.virtualMaster || track.role === "master") return null;
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "track-remove-button";
+  button.textContent = "×";
+  button.title = `Quitar ${track.name}; se puede deshacer`;
+  button.setAttribute("aria-label", `Quitar pista ${track.name}`);
+  button.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    removeTrackFromProject(track, button);
+  });
+  return button;
+}
+
+async function removeTrackFromProject(track, button) {
+  await whileBusy([button], async () => {
+    try {
+      const snapshot = await platform.removeTrack(track.id);
+      selectedTrackIds.delete(track.id);
+      renderSnapshot(snapshot);
+      setNotice(
+        "Pista quitada",
+        "Se quitaron la pista y sus clips del proyecto. Puedes deshacerlo; los archivos de medios no se borraron.",
+      );
+    } catch (error) {
+      setNotice("No se pudo quitar la pista", String(error));
+    }
+  });
+}
+
 function createTrackGroupToolbar() {
   const toolbar = document.createElement("div");
   toolbar.className = "track-group-toolbar";
@@ -396,7 +428,12 @@ function renderSessionSurface(tracks) {
     const emptySlot = document.createElement("div");
     emptySlot.className = "session-empty-slot";
     emptySlot.textContent = "Sin escena";
-    column.append(createTrackSelectionControl(track), name, type, channels, emptySlot);
+    const headingRow = document.createElement("div");
+    headingRow.className = "session-track-heading";
+    headingRow.append(name);
+    const removeButton = createTrackRemovalButton(track);
+    if (removeButton) headingRow.append(removeButton);
+    column.append(createTrackSelectionControl(track), headingRow, type, channels, emptySlot);
     const meter = createTrackMeter(track);
     if (meter) column.append(meter);
     const controls = createTrackMixerControls(track, true);
@@ -459,8 +496,14 @@ function renderMixerSurface(tracks) {
         : `${Number(track.gainDb).toFixed(1)} dB · Pan ${Number(track.pan).toFixed(2)}${track.mute ? " · Silencio" : ""}${track.solo ? " · Solo" : ""}${track.active ? "" : " · Inactiva"}`;
     if (track.groupName) role.textContent += ` · ${track.groupName}`;
     const selection = createTrackSelectionControl(track);
+    const removeButton = createTrackRemovalButton(track);
     const outputControl = createTrackOutputControl(track, tracks);
-    channel.append(...(selection ? [selection] : []), title, role, routing, mix);
+    const channelHeading = document.createElement("div");
+    channelHeading.className = "mixer-channel-heading";
+    if (selection) channelHeading.append(selection);
+    channelHeading.append(title);
+    if (removeButton) channelHeading.append(removeButton);
+    channel.append(channelHeading, role, routing, mix);
     if (outputControl) channel.append(outputControl);
     const meter = createTrackMeter(track);
     if (meter) channel.append(meter);
@@ -585,7 +628,12 @@ function renderSnapshot(snapshot) {
     const name = document.createElement("div");
     name.className = "track-name";
     name.append(createTrackSelectionControl(track), icon, label);
-    row.append(name, details);
+    const headingRow = document.createElement("div");
+    headingRow.className = "track-row-heading";
+    headingRow.append(name);
+    const removeButton = createTrackRemovalButton(track);
+    if (removeButton) headingRow.append(removeButton);
+    row.append(headingRow, details);
     const meter = createTrackMeter(track);
     if (meter) row.append(meter);
     const mixerControls = createTrackMixerControls(track, true);
