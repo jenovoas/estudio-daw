@@ -1,5 +1,13 @@
 # Handoff de continuación — 2026-09-27
 
+## Punto de reanudación actual — UI Tauri (2026-09-27)
+
+- HEAD publicado de Estudio DAW: `91e0800b179c9700300259f9360bd5cacbfd3037`. Los commits desde el estado inicial `9ca4467` conectan la matriz Session (crear/renombrar/ordenar/quitar escenas y asignar casillas), la navegación de superficies, la edición de posición/ganancia/fades/movimiento/recorte de regiones de audio, la rejilla y la búsqueda/preescucha de regiones importadas. Los atajos Ctrl+1/2/3, Ctrl+S, Ctrl+Mayús+S, Ctrl+Z y Ctrl+Mayús+Z llaman los mismos botones existentes.
+- La especificación OpenSpec pasa ahora `openspec validate workstation-arrangement-surface-v2 --strict`; se añadieron los tokens normativos `MUST` junto al español DEBE/DEBEN para satisfacer al analizador. El cambio sigue 9/35 tareas completas porque los cortes UI grandes 3.x/5.x aún no están terminados.
+- Validación de implementación hasta aquí: `cargo fmt --all`, `cargo check --workspace`, ambos `node --check` y `git diff --check` han pasado en cortes sucesivos. **No ejecutar pruebas todavía**: el usuario pidió reservarlas para el final. Tampoco se ha hecho QA visual de esta iteración. Árbol publicado limpio.
+- Parciales actuales: 3.2 matriz editable sin lanzamiento (depende de 4.4); 3.3 edición de audio y reglas sin edición MIDI/división/duplicado; 3.5 inspector numérico de audio sin piano roll ni dispositivo contextual; 3.6 búsqueda/preescucha de regiones de audio del proyecto sin bibliotecas/historial/favoritos/drag-drop; 5.7 zoom y atajos iniciales, faltan QA y menús.
+- Continuar con las especificaciones UI no bloqueadas, especialmente registro/menús contextuales de acciones y completar los paneles de edición/navegador. Mantener el scheduler 4.4 como dependencia explícita y no habilitar lanzamientos falsos. Ejecutar la suite y QA visual sólo al cierre, como indicó el usuario. Bitácora de bóveda: `/home/jnovoas/proyectos/personalvault/docs/estudio-daw/BITACORA_AGENTES.md`.
+
 ## Actualización — grabación de audio Tauri (avance OpenSpec 2.5)
 
 - Continuación local desde `acad816` (entrada PipeWire por pista). El Mezclador
