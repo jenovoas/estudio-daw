@@ -3,6 +3,10 @@ const platform = window.estudioPlatform;
 const elements = {
   open: document.querySelector("#open-project"),
   browserOpen: document.querySelector("#browser-open"),
+  importAudio: document.querySelector("#browser-import-audio"),
+  importTrack: document.querySelector("#audio-import-track"),
+  importBar: document.querySelector("#audio-import-bar"),
+  importMode: document.querySelector("#audio-import-mode"),
   browserDemo: document.querySelector("#browser-demo"),
   newProject: document.querySelector("#new-project"),
   demoProject: document.querySelector("#demo-project"),
@@ -52,6 +56,7 @@ const elements = {
 
 let hasProject = false;
 let audioSettings = null;
+const waveformCache = new Map();
 
 function selectedAudioProfile() {
   return audioSettings?.[elements.audioProfile.value];
@@ -120,6 +125,9 @@ function setProjectEnabled(enabled) {
   for (const button of [elements.save, elements.saveAs, elements.play, elements.pause, elements.stop, elements.addMidiTrack, elements.addAudioTrack]) {
     button.disabled = !enabled;
     if (!enabled) button.title = `${button.getAttribute("aria-label") ?? "Acción"}: abre o crea un proyecto primero`;
+  }
+  for (const control of [elements.importAudio, elements.importTrack, elements.importBar, elements.importMode]) {
+    control.disabled = !enabled;
   }
 }
 
@@ -247,6 +255,18 @@ function renderSnapshot(snapshot) {
   elements.redo.disabled = !snapshot.canRedo;
   renderSessionSurface(snapshot.tracks);
   renderMixerSurface(snapshot.tracks);
+  const previousTrack = elements.importTrack.value;
+  elements.importTrack.replaceChildren();
+  const audioTracks = snapshot.tracks.filter((track) => track.role === "audio");
+  for (const track of audioTracks) {
+    const option = document.createElement("option");
+    option.value = track.id;
+    option.textContent = track.name;
+    elements.importTrack.append(option);
+  }
+  elements.importTrack.disabled = audioTracks.length === 0;
+  elements.importAudio.disabled = audioTracks.length === 0;
+  if (audioTracks.some((track) => track.id === previousTrack)) elements.importTrack.value = previousTrack;
 
   elements.tracks.replaceChildren();
   elements.lanes.replaceChildren();
@@ -315,13 +335,59 @@ function renderSnapshot(snapshot) {
       block.append(noteLayer);
       lane.append(block);
     }
-    if (clips.length === 0) {
+    const audioClips = (snapshot.audioClips ?? []).filter((clip) => clip.trackId === track.id);
+    for (const clip of audioClips) {
+      const block = document.createElement("div");
+      block.className = "audio-clip";
+      block.title = `${clip.name} · ${clip.sourceName ?? "fuente"} · ${clip.sampleRateHz} Hz · ${clip.channels} canales · ${clip.durationBeats.toFixed(2)} pulsos`;
+      const left = Math.max(0, Number(clip.startBeats) || 0);
+      const width = Math.max(0.25, Number(clip.durationBeats) || 0.25);
+      block.style.left = `${left / (snapshot.beatsPerBar * 16) * 100}%`;
+      block.style.width = `${Math.min(width / (snapshot.beatsPerBar * 16) * 100, 100)}%`;
+      const label = document.createElement("span");
+      label.className = "clip-label";
+      label.textContent = clip.name;
+      const wave = document.createElement("div");
+      wave.className = "audio-waveform";
+      block.append(label, wave);
+      lane.append(block);
+      if (clip.sourceId) loadWaveform(clip.sourceId, clip.sourceDigest, wave);
+    }
+    if (clips.length === 0 && audioClips.length === 0) {
       const empty = document.createElement("span");
       empty.className = "lane-empty-label";
       empty.textContent = "Sin clips";
       lane.append(empty);
     }
     elements.lanes.append(lane);
+  }
+}
+
+async function loadWaveform(sourceId, sourceDigest, container) {
+  try {
+    const cacheKey = sourceDigest ?? sourceId;
+    let bins = waveformCache.get(cacheKey);
+    if (!bins) {
+      bins = platform.audioWaveform(sourceId);
+      waveformCache.set(cacheKey, bins);
+    }
+    bins = await bins;
+    const points = bins.map(([min, max], index) => {
+      const x = bins.length <= 1 ? 0 : index * 512 / (bins.length - 1);
+      return [x, Math.max(0, Math.min(100, 50 * (1 - max))), Math.max(0, Math.min(100, 50 * (1 - min)))];
+    });
+    const top = points.map(([x, y]) => `${x},${y}`).join(" ");
+    const bottom = [...points].reverse().map(([x, , y]) => `${x},${y}`).join(" ");
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("viewBox", "0 0 512 100");
+    svg.setAttribute("preserveAspectRatio", "none");
+    const shape = document.createElementNS("http://www.w3.org/2000/svg", "polygon");
+    shape.setAttribute("points", `${top} ${bottom}`);
+    svg.append(shape);
+    container.replaceChildren(svg);
+  } catch (error) {
+    waveformCache.delete(sourceDigest ?? sourceId);
+    container.title = `No se pudo calcular la forma de onda: ${String(error)}`;
   }
 }
 
@@ -370,6 +436,25 @@ async function addTrack(kind, button) {
 
 elements.addMidiTrack.addEventListener("click", () => addTrack("midi", elements.addMidiTrack));
 elements.addAudioTrack.addEventListener("click", () => addTrack("audio", elements.addAudioTrack));
+elements.importAudio.addEventListener("click", async () => {
+  const trackId = elements.importTrack.value;
+  if (!trackId) return;
+  await whileBusy([elements.importAudio], async () => {
+    try {
+      const bar = Math.max(1, Number(elements.importBar.value) || 1);
+      const snapshot = await platform.importAudio({
+        trackId,
+        copyIntoProject: elements.importMode.value === "copy",
+        startTick: Math.round((bar - 1) * (Number(document.querySelector("#timeline-ruler")?.dataset.beatsPerBar) || 4) * 480),
+      });
+      if (!snapshot) return;
+      renderSnapshot(snapshot);
+      setNotice("Audio importado", "La fuente y la región quedaron registradas; la forma de onda se calcula fuera del callback. La preescucha y la reproducción siguen pendientes.");
+    } catch (error) {
+      setNotice("No se pudo importar audio", String(error));
+    }
+  });
+});
 elements.showArrangement.addEventListener("click", () => selectSurface("arrangement"));
 elements.showSession.addEventListener("click", () => selectSurface("session"));
 elements.showMixer.addEventListener("click", () => selectSurface("mixer"));

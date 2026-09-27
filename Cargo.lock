@@ -1176,6 +1176,7 @@ dependencies = [
  "estudio-daw-application",
  "estudio-daw-audio-engine",
  "estudio-daw-audio-platform",
+ "estudio-daw-media-adapter",
  "estudio-daw-midi-engine",
  "estudio-daw-project-model",
  "estudio-daw-runtime-diagnostics",

@@ -18,6 +18,7 @@ estudio-daw-application = { path = "../application" }
 estudio-daw-audio-engine = { path = "../audio-engine" }
 estudio-daw-audio-platform = { path = "../audio-platform" }
 estudio-daw-midi-engine = { path = "../midi-engine" }
+estudio-daw-media-adapter = { path = "../media-adapter" }
 estudio-daw-project-model = { path = "../project-model" }
 estudio-daw-runtime-diagnostics = { path = "../runtime-diagnostics" }
 estudio-daw-synth = { path = "../synth" }

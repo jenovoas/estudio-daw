@@ -162,6 +162,16 @@ de formatos como OpenSpec; no se usan como excusa para añadir prosa en inglés.
 Para explorar estructuralmente el código, usa la habilidad instalada `codebase-memory`.
 <!-- codebase-memory-mcp:end -->
 
+## Continuación activa — 2.2 (2026-09-27)
+
+El commit publicado `f1fdf43` cerró 2.1. La implementación parcial local de
+2.2 importa archivos mediante Tauri con copia/vínculo, metadatos `ffprobe`,
+ubicación inicial por compás, fuente+región en una transacción y waveform min/max
+real (`ffmpeg`, hasta 10 minutos). La tarea permanece abierta: faltan preescucha,
+selección/mapeo de canales, edición visual de región/cursor y QA visual en
+ejecución. Ver `docs/audio-import.md`, `docs/HANDOFF_CONTINUACION_2026-09-27.md`
+y el avance no marcado como completo en `tasks.md`.
+
 ## Corrección de auditoría — 2026-09-27
 
 - HEAD publicado al iniciar la corrección: `31ef702`; implementación local:

@@ -61,6 +61,21 @@ struct MidiClipSummary {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+struct AudioClipSummary {
+    id: String,
+    name: String,
+    track_id: String,
+    source_id: Option<String>,
+    start_beats: f64,
+    duration_beats: f64,
+    sample_rate_hz: u32,
+    channels: u16,
+    source_name: Option<String>,
+    source_digest: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 struct MidiNoteSummary {
     start_beats: f64,
     duration_beats: f64,
@@ -83,6 +98,7 @@ struct UiSnapshot {
     beats_per_bar: f64,
     tracks: Vec<TrackSummary>,
     midi_clips: Vec<MidiClipSummary>,
+    audio_clips: Vec<AudioClipSummary>,
     can_undo: bool,
     can_redo: bool,
     audio_engine_connected: bool,
@@ -226,6 +242,32 @@ fn summarize(application: &ProjectApplication, audio_engine_connected: bool) -> 
             }
         })
         .collect();
+    let audio_clips = project
+        .audio_clips
+        .iter()
+        .map(|clip| {
+            let source = clip
+                .source_id
+                .as_ref()
+                .and_then(|id| project.audio_sources.iter().find(|source| &source.id == id));
+            AudioClipSummary {
+                id: clip.id.clone(),
+                name: clip.name.clone(),
+                track_id: clip.track_id.clone(),
+                source_id: clip.source_id.clone(),
+                start_beats: clip.start_tick as f64 / 480.0,
+                duration_beats: clip.duration_samples as f64 / f64::from(clip.sample_rate.max(1))
+                    * project.transport.tempo_bpm
+                    / 60.0,
+                sample_rate_hz: clip.sample_rate,
+                channels: clip.channels,
+                source_name: source
+                    .and_then(|source| source.media.original_path.file_name())
+                    .map(|name| name.to_string_lossy().into_owned()),
+                source_digest: source.map(|source| source.media.original_hash.clone()),
+            }
+        })
+        .collect();
 
     UiSnapshot {
         schema_version: "ui-snapshot.v1",
@@ -246,6 +288,7 @@ fn summarize(application: &ProjectApplication, audio_engine_connected: bool) -> 
         beats_per_bar,
         tracks,
         midi_clips,
+        audio_clips,
         can_undo,
         can_redo,
         audio_engine_connected,
@@ -353,6 +396,124 @@ fn add_track(kind: String, state: State<'_, DesktopState>) -> Result<UiSnapshot,
         .map_err(|_| "el estado del motor de audio quedó bloqueado".to_owned())?
         .is_connected();
     Ok(summarize(application, connected))
+}
+
+#[tauri::command]
+fn import_audio(
+    path: String,
+    track_id: String,
+    copy_into_project: bool,
+    start_tick: u64,
+    state: State<'_, DesktopState>,
+) -> Result<UiSnapshot, String> {
+    let original_path = PathBuf::from(path);
+    let mut application = state
+        .application
+        .lock()
+        .map_err(|_| "el estado de la aplicación quedó bloqueado".to_owned())?;
+    let application = application
+        .as_mut()
+        .ok_or_else(|| "primero crea o abre un proyecto".to_owned())?;
+    let project = application.snapshot().project.project;
+    let track = project
+        .tracks
+        .iter()
+        .find(|track| track.id == track_id && track.role == TrackRole::Audio)
+        .ok_or_else(|| "elige una pista de audio existente".to_owned())?;
+    let metadata = estudio_daw_media_adapter::inspect_audio_metadata(&original_path)
+        .map_err(|error| error.to_string())?;
+    let inspected_source = estudio_daw_media_adapter::inspect_media_source(&original_path)
+        .map_err(|error| error.to_string())?;
+    if project.audio_sources.iter().any(|source| {
+        source.owner_track_id == track_id
+            && source.media.original_hash == inspected_source.original_hash
+    }) {
+        return Err("este archivo ya está importado en la pista elegida".to_owned());
+    }
+    if metadata.channels > u16::try_from(track.channel_config.output_channels).unwrap_or(2) {
+        return Err(format!(
+            "el archivo tiene {} canales y la pista admite {}; la asignación de canales aún no está disponible",
+            metadata.channels, track.channel_config.output_channels
+        ));
+    }
+    let source_path = if copy_into_project {
+        let project_path = application
+            .project_path()
+            .ok_or_else(|| "guarda el proyecto antes de copiar medios a su carpeta".to_owned())?;
+        let media_dir = project_path
+            .parent()
+            .unwrap_or_else(|| std::path::Path::new("."))
+            .join("media");
+        std::fs::create_dir_all(&media_dir).map_err(|error| error.to_string())?;
+        let file_name = original_path
+            .file_name()
+            .ok_or_else(|| "la ruta seleccionada no tiene nombre de archivo".to_owned())?;
+        let short_hash = inspected_source
+            .original_hash
+            .strip_prefix("sha256:")
+            .unwrap_or(&inspected_source.original_hash);
+        let destination = media_dir.join(format!(
+            "{}-{}",
+            &short_hash[..short_hash.len().min(12)],
+            file_name.to_string_lossy()
+        ));
+        if !destination.exists() {
+            std::fs::copy(&original_path, &destination).map_err(|error| error.to_string())?;
+        }
+        destination
+    } else {
+        original_path.clone()
+    };
+    let source = if copy_into_project {
+        estudio_daw_media_adapter::inspect_media_source(&source_path)
+            .map_err(|error| error.to_string())?
+    } else {
+        inspected_source
+    };
+    let name = source_path
+        .file_stem()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "Audio".into());
+    application
+        .execute_project(ProjectCommand::ImportAudio {
+            track_id,
+            name,
+            source,
+            start_tick,
+            duration_samples: metadata.duration_samples,
+            sample_rate: metadata.sample_rate_hz,
+            channels: metadata.channels,
+        })
+        .map_err(|error| error.to_string())?;
+    let connected = state
+        .audio
+        .lock()
+        .map_err(|_| "el estado del motor de audio quedó bloqueado".to_owned())?
+        .is_connected();
+    Ok(summarize(application, connected))
+}
+
+#[tauri::command]
+fn audio_waveform(
+    source_id: String,
+    state: State<'_, DesktopState>,
+) -> Result<Vec<[f32; 2]>, String> {
+    let application = state
+        .application
+        .lock()
+        .map_err(|_| "el estado de la aplicación quedó bloqueado".to_owned())?;
+    let application = application
+        .as_ref()
+        .ok_or_else(|| "primero crea o abre un proyecto".to_owned())?;
+    let project = application.snapshot().project.project;
+    let source = project
+        .audio_sources
+        .iter()
+        .find(|source| source.id == source_id)
+        .ok_or_else(|| "la fuente de audio ya no está en el proyecto".to_owned())?;
+    let bins = estudio_daw_media_adapter::audio_waveform(&source.media.original_path, 512)
+        .map_err(|error| error.to_string())?;
+    Ok(bins.into_iter().map(|(min, max)| [min, max]).collect())
 }
 
 #[tauri::command]
@@ -669,6 +830,8 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             new_project,
             add_track,
+            import_audio,
+            audio_waveform,
             demo_midi_project,
             open_project,
             project_snapshot,

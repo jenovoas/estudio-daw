@@ -6,10 +6,11 @@
 
 use estudio_daw_midi_types::MidiTake;
 use estudio_daw_project_model::{
-    add_audio_clip, attach_media_source, attach_midi_take, quantize_midi_clip,
-    set_audio_clip_fades, set_audio_clip_gain, trim_audio_clip, AudioClip, ClipReference, ClipSlot,
-    MediaSource, Project, ProjectEvent, ProjectHistory, ProjectSnapshot, ProxyAsset, Scene, Track,
-    TrackKind, TrackMixerState, TrackRole,
+    add_audio_clip, add_audio_clip_for_source, append_media_source, attach_media_source,
+    attach_midi_take, quantize_midi_clip, set_audio_clip_fades, set_audio_clip_gain,
+    trim_audio_clip, AudioClip, ClipReference, ClipSlot, MediaSource, Project, ProjectEvent,
+    ProjectHistory, ProjectSnapshot, ProxyAsset, Scene, Track, TrackKind, TrackMixerState,
+    TrackRole,
 };
 use estudio_daw_session::{Session, SessionCommand, TransportSnapshot, TransportState};
 use serde::{Deserialize, Serialize};
@@ -86,6 +87,15 @@ pub enum ProjectCommand {
         name: String,
         start_tick: u64,
         source_start_samples: u64,
+        duration_samples: u64,
+        sample_rate: u32,
+        channels: u16,
+    },
+    ImportAudio {
+        track_id: String,
+        name: String,
+        source: MediaSource,
+        start_tick: u64,
         duration_samples: u64,
         sample_rate: u32,
         channels: u16,
@@ -659,6 +669,40 @@ impl CommandRuntime {
                         channels,
                     )
                     .map(|_| ())
+                })
+                .map_err(|error| CommandError::Project(error.to_string()))?,
+            ProjectCommand::ImportAudio {
+                track_id,
+                name,
+                source,
+                start_tick,
+                duration_samples,
+                sample_rate,
+                channels,
+            } => self
+                .project_history
+                .transact("import audio", |project| {
+                    if project.audio_sources.iter().any(|item| {
+                        item.owner_track_id == track_id
+                            && item.media.original_hash == source.original_hash
+                    }) {
+                        return Err(String::from("esta fuente ya está importada en la pista"));
+                    }
+                    let source_id = append_media_source(project, &track_id, source)
+                        .map_err(|error| error.to_string())?;
+                    add_audio_clip_for_source(
+                        project,
+                        &track_id,
+                        &source_id,
+                        name,
+                        start_tick,
+                        0,
+                        duration_samples,
+                        sample_rate,
+                        channels,
+                    )
+                    .map(|_| ())
+                    .map_err(|error| error.to_string())
                 })
                 .map_err(|error| CommandError::Project(error.to_string()))?,
             ProjectCommand::TrimAudioClip {
@@ -1786,5 +1830,50 @@ mod tests {
             runtime.snapshot().project.project.tracks[0].media_source,
             None
         );
+    }
+
+    #[test]
+    fn import_audio_adds_source_and_region_atomically_and_undoes_both() {
+        let mut runtime = CommandRuntime::new(project());
+        let source = MediaSource {
+            original_path: "/project/media/voice.wav".into(),
+            original_signature: "size:96000;mtime:3".into(),
+            original_hash: "sha256:voice".into(),
+            proxy: None,
+        };
+        runtime
+            .apply(envelope(
+                "import-audio",
+                DomainCommand::Project(ProjectCommand::ImportAudio {
+                    track_id: "track-audio".into(),
+                    name: "voice".into(),
+                    source: source.clone(),
+                    start_tick: 960,
+                    duration_samples: 48_000,
+                    sample_rate: 48_000,
+                    channels: 2,
+                }),
+            ))
+            .unwrap();
+        let imported = runtime.snapshot().project.project;
+        assert_eq!(imported.audio_sources.len(), 1);
+        assert_eq!(imported.audio_clips.len(), 2);
+        assert_eq!(imported.audio_clips[1].name, "voice");
+        assert_eq!(imported.audio_clips[1].start_tick, 960);
+        assert_eq!(
+            imported.audio_clips[1].source_id.as_deref(),
+            Some("source-track-audio-1")
+        );
+        assert_eq!(imported.audio_sources[0].media, source);
+
+        runtime
+            .apply(envelope(
+                "undo-import-audio",
+                DomainCommand::Project(ProjectCommand::Undo),
+            ))
+            .unwrap();
+        let restored = runtime.snapshot().project.project;
+        assert!(restored.audio_sources.is_empty());
+        assert_eq!(restored.audio_clips.len(), 1);
     }
 }

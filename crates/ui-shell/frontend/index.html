@@ -46,6 +46,11 @@
         <div class="browser-section-label browser-section-spaced">ACCIONES RÁPIDAS</div>
         <button id="browser-demo" class="browser-action"><span class="action-glyph action-orange">♫</span><span><strong>Demo MIDI</strong><small>Escuchar una sesión de prueba</small></span><span class="action-arrow">›</span></button>
         <button id="browser-open" class="browser-action"><span class="action-glyph">▱</span><span><strong>Abrir proyecto</strong><small>Cargar una sesión existente</small></span><span class="action-arrow">›</span></button>
+        <div class="browser-section-label browser-section-spaced">MEDIOS DE USUARIO</div>
+        <label class="media-import-field">Pista de destino<select id="audio-import-track" disabled><option value="">Crea una pista de audio</option></select></label>
+        <label class="media-import-field">Ubicación inicial (compás)<input id="audio-import-bar" type="number" min="1" step="1" value="1" disabled /></label>
+        <label class="media-import-field">Procedencia<select id="audio-import-mode" disabled><option value="copy">Copiar a la carpeta del proyecto</option><option value="link">Vincular archivo original</option></select></label>
+        <button id="browser-import-audio" class="browser-action" disabled><span class="action-glyph">♫</span><span><strong>Importar audio</strong><small>Crear región en la pista elegida</small></span><span class="action-arrow">›</span></button>
         <div class="browser-bottom-note"><span class="note-mark">i</span><span>La sesión Demo reproduce una secuencia SineSynth lista para probar el transporte.</span></div>
       </aside>
 

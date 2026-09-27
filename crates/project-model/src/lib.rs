@@ -1282,8 +1282,41 @@ pub fn attach_media_source(
     }
     let source_id = format!("source-{track_id}");
     project.audio_sources.retain(|item| item.id != source_id);
+    append_media_source_with_id(project, track_id, source_id, source).map(|_| ())
+}
+
+/// Añade una fuente adicional sin sustituir las fuentes existentes de la pista.
+pub fn append_media_source(
+    project: &mut Project,
+    track_id: &str,
+    source: MediaSource,
+) -> Result<String, MediaAttachError> {
+    let track = project
+        .tracks
+        .iter()
+        .find(|track| track.id == track_id)
+        .ok_or_else(|| MediaAttachError::TrackNotFound(track_id.into()))?;
+    if track.kind != TrackKind::Audio {
+        return Err(MediaAttachError::NotAudioTrack(track_id.into()));
+    }
+    let source_index = project
+        .audio_sources
+        .iter()
+        .filter(|item| item.owner_track_id == track_id)
+        .count()
+        + 1;
+    let source_id = format!("source-{track_id}-{source_index}");
+    append_media_source_with_id(project, track_id, source_id, source)
+}
+
+fn append_media_source_with_id(
+    project: &mut Project,
+    track_id: &str,
+    source_id: String,
+    source: MediaSource,
+) -> Result<String, MediaAttachError> {
     project.audio_sources.push(AudioSource {
-        id: source_id,
+        id: source_id.clone(),
         owner_track_id: track_id.to_owned(),
         media: source,
         sample_rate_hz: None,
@@ -1305,7 +1338,7 @@ pub fn attach_media_source(
                 .collect(),
         });
     }
-    Ok(())
+    Ok(source_id)
 }
 
 /// Añade una región que referencia la fuente de su pista sin copiar ni cortar
@@ -1332,6 +1365,45 @@ pub fn add_audio_clip(
         .audio_sources
         .iter()
         .find(|source| source.owner_track_id == track_id)
+        .map(|source| source.id.clone())
+        .ok_or_else(|| AudioClipError::MissingSource(track_id.into()))?;
+    add_audio_clip_for_source(
+        project,
+        track_id,
+        &source_id,
+        name,
+        start_tick,
+        source_start_samples,
+        duration_samples,
+        sample_rate,
+        channels,
+    )
+}
+
+/// Añade una región eligiendo explícitamente una fuente entre las de la pista.
+pub fn add_audio_clip_for_source(
+    project: &mut Project,
+    track_id: &str,
+    requested_source_id: &str,
+    name: impl Into<String>,
+    start_tick: u64,
+    source_start_samples: u64,
+    duration_samples: u64,
+    sample_rate: u32,
+    channels: u16,
+) -> Result<String, AudioClipError> {
+    let track = project
+        .tracks
+        .iter()
+        .find(|track| track.id == track_id)
+        .ok_or_else(|| AudioClipError::TrackNotFound(track_id.into()))?;
+    if track.kind != TrackKind::Audio {
+        return Err(AudioClipError::NotAudioTrack(track_id.into()));
+    }
+    let source_id = project
+        .audio_sources
+        .iter()
+        .find(|source| source.id == requested_source_id && source.owner_track_id == track_id)
         .map(|source| source.id.clone())
         .ok_or_else(|| AudioClipError::MissingSource(track_id.into()))?;
     if duration_samples == 0 {

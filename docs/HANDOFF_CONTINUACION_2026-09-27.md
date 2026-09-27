@@ -1,5 +1,13 @@
 # Handoff de continuación — 2026-09-27
 
+## Reanudación actualizada — flujo parcial de importación 2.2
+
+- Publicación anterior: commit `f1fdf43` (`feat: crea pistas de audio con destino master`) en `main`, sincronizado con `origin/main`. El trabajo siguiente en 2.2 está en curso; consultar `git status` para el diff local y su SHA inicial/final en Git.
+- Progreso OpenSpec: 9/35. 2.2 sigue abierta. Ya hay diálogo de selección de audio, opción de copiar a `media/` junto al proyecto o vincular, metadatos técnicos por `ffprobe`, posición por compás, una transacción reversible que registra fuente/región y waveform min/max vía `ffmpeg` (hasta 10 minutos y 512 bins solicitados por la UI).
+- Límites: no existe preescucha ni reproducción de regiones; la asignación es por cantidad compatible con la pista, sin mapeo/downmix; no hay cursor de edición ni controles visuales para mover/recortar/eliminar regiones; falta inspección visual de la app en ejecución. No marcar 2.2 completa.
+- Documento específico: `docs/audio-import.md`. En el workspace pasaron la suite completa, check, fmt, sintaxis de JS, diff check y validación OpenSpec normal (ocho avisos normativos de idioma ya conocidos). Repetir luego de cualquier cambio antes de publicar.
+- Siguiente: terminar 2.2 empezando por un diseño de preescucha acotada y fuera del transporte, luego mapeo de canales y edición visual de región; revisar seguridad/rendimiento del comando de waveform síncrono antes de pulir UI. No volver a alterar los artefactos generados de `.codebase-memory/` en commits de producto.
+
 ## Punto exacto de reanudación
 
 - Repositorio: `/home/jnovoas/proyectos/estudio-daw`.

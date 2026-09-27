@@ -7,6 +7,17 @@ window.estudioPlatform = {
   newProject: () => invoke("new_project"),
   demoMidiProject: () => invoke("demo_midi_project"),
   addTrack: (kind) => invoke("add_track", { kind }),
+  async importAudio({ trackId, copyIntoProject, startTick }) {
+    const path = await open({
+      multiple: false,
+      directory: false,
+      title: "Importar archivo de audio",
+      filters: [{ name: "Audio", extensions: ["wav", "aiff", "aif", "flac", "ogg", "opus", "mp3", "m4a"] }],
+    });
+    if (typeof path !== "string") return null;
+    return invoke("import_audio", { path, trackId, copyIntoProject, startTick });
+  },
+  audioWaveform: (sourceId) => invoke("audio_waveform", { sourceId }),
   async openProject() {
     const path = await open({
       multiple: false,

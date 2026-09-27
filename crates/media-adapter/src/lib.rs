@@ -49,6 +49,129 @@ pub struct AudioProxyProfile {
     pub bitrate_kbps: u32,
 }
 
+/// Metadatos del primer flujo de audio decodificable del archivo.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AudioFileMetadata {
+    pub sample_rate_hz: u32,
+    pub channels: u16,
+    pub duration_samples: u64,
+}
+
+/// Consulta metadatos técnicos sin cargar el PCM al proceso de interfaz.
+pub fn inspect_audio_metadata(path: impl AsRef<Path>) -> Result<AudioFileMetadata, ProxyJobError> {
+    let output = Command::new("ffprobe")
+        .args([
+            "-v",
+            "error",
+            "-select_streams",
+            "a:0",
+            "-show_entries",
+            "stream=sample_rate,channels,duration:format=duration",
+            "-of",
+            "json",
+        ])
+        .arg(path.as_ref())
+        .output()?;
+    if !output.status.success() {
+        return Err(ProxyJobError::InvalidAudioOutput(
+            String::from_utf8_lossy(&output.stderr).trim().to_string(),
+        ));
+    }
+    parse_audio_metadata_json(&output.stdout)
+}
+
+fn parse_audio_metadata_json(bytes: &[u8]) -> Result<AudioFileMetadata, ProxyJobError> {
+    let document: serde_json::Value = serde_json::from_slice(bytes)
+        .map_err(|error| ProxyJobError::InvalidAudioOutput(error.to_string()))?;
+    let stream = document
+        .get("streams")
+        .and_then(serde_json::Value::as_array)
+        .and_then(|streams| streams.first())
+        .ok_or_else(|| {
+            ProxyJobError::InvalidAudioOutput("ffprobe no encontró un flujo de audio".into())
+        })?;
+    let sample_rate_hz = stream
+        .get("sample_rate")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or_default()
+        .parse::<u32>()
+        .ok()
+        .filter(|value| *value > 0)
+        .ok_or_else(|| {
+            ProxyJobError::InvalidAudioOutput("frecuencia de muestreo inválida".into())
+        })?;
+    let channels = stream
+        .get("channels")
+        .and_then(serde_json::Value::as_u64)
+        .and_then(|value| u16::try_from(value).ok())
+        .filter(|value| (1..=32).contains(value))
+        .ok_or_else(|| ProxyJobError::InvalidAudioOutput("cantidad de canales inválida".into()))?;
+    let duration_seconds = stream
+        .get("duration")
+        .and_then(serde_json::Value::as_str)
+        .and_then(|value| value.parse::<f64>().ok())
+        .or_else(|| {
+            document
+                .get("format")
+                .and_then(|format| format.get("duration"))
+                .and_then(serde_json::Value::as_str)
+                .and_then(|value| value.parse::<f64>().ok())
+        })
+        .filter(|value| value.is_finite() && *value > 0.0)
+        .ok_or_else(|| ProxyJobError::InvalidAudioOutput("duración de audio inválida".into()))?;
+    Ok(AudioFileMetadata {
+        sample_rate_hz,
+        channels,
+        duration_samples: (duration_seconds * f64::from(sample_rate_hz)).round() as u64,
+    })
+}
+
+/// Crea un resumen min/max de tamaño fijo para mostrar la forma de onda.
+/// Sólo decodifica una señal mono remuestreada y limita la lectura a diez minutos.
+pub fn audio_waveform(
+    path: impl AsRef<Path>,
+    bins: usize,
+) -> Result<Vec<(f32, f32)>, ProxyJobError> {
+    let bins = bins.clamp(1, 4096);
+    let output = Command::new("ffmpeg")
+        .args(["-v", "error", "-i"])
+        .arg(path.as_ref())
+        .args([
+            "-t", "600", "-vn", "-ac", "1", "-ar", "1000", "-f", "f32le", "pipe:1",
+        ])
+        .output()?;
+    if !output.status.success() {
+        return Err(ProxyJobError::TranscoderFailed(
+            String::from_utf8_lossy(&output.stderr).trim().to_string(),
+        ));
+    }
+    let samples: Vec<f32> = output
+        .stdout
+        .chunks_exact(4)
+        .map(|chunk| f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
+        .filter(|sample| sample.is_finite())
+        .collect();
+    if samples.is_empty() {
+        return Err(ProxyJobError::EmptyOutput);
+    }
+    Ok(reduce_samples_to_min_max(&samples, bins))
+}
+
+fn reduce_samples_to_min_max(samples: &[f32], bins: usize) -> Vec<(f32, f32)> {
+    let count = bins.clamp(1, 4096).min(samples.len());
+    (0..count)
+        .map(|index| {
+            let start = index * samples.len() / count;
+            let end = ((index + 1) * samples.len() / count).max(start + 1);
+            samples[start..end.min(samples.len())]
+                .iter()
+                .fold((1.0_f32, -1.0_f32), |(min, max), sample| {
+                    (min.min(*sample), max.max(*sample))
+                })
+        })
+        .collect()
+}
+
 impl AudioProxyProfile {
     pub fn opus_preview() -> Self {
         Self {
@@ -532,6 +655,24 @@ mod tests {
 
     fn temporary_root(name: &str) -> PathBuf {
         std::env::temp_dir().join(format!("estudio-daw-{name}-{}", std::process::id()))
+    }
+
+    #[test]
+    fn reduce_samples_to_bounded_min_max_bins_preserves_extrema() {
+        let bins = reduce_samples_to_min_max(&[-0.8, 0.2, -0.1, 0.9, 0.0], 2);
+        assert_eq!(bins, vec![(-0.8, 0.2), (-0.1, 0.9)]);
+        assert_eq!(reduce_samples_to_min_max(&[0.25], 512), vec![(0.25, 0.25)]);
+    }
+
+    #[test]
+    fn metadata_parser_uses_container_duration_when_stream_duration_is_unavailable() {
+        let metadata = parse_audio_metadata_json(
+            br#"{"streams":[{"sample_rate":"44100","channels":2,"duration":"N/A"}],"format":{"duration":"2.0"}}"#,
+        )
+        .unwrap();
+        assert_eq!(metadata.sample_rate_hz, 44_100);
+        assert_eq!(metadata.channels, 2);
+        assert_eq!(metadata.duration_samples, 88_200);
     }
 
     #[test]
