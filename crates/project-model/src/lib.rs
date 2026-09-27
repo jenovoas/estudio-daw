@@ -155,6 +155,19 @@ impl Project {
 
         let tracks: std::collections::HashMap<_, _> =
             self.tracks.iter().map(|t| (t.id.as_str(), t)).collect();
+        for track in &self.tracks {
+            if track.role == TrackRole::Master && track.output_track_id.is_some() {
+                return Err(TrackValidationError::InvalidTrackOutput);
+            }
+            if let Some(output_id) = track.output_track_id.as_deref() {
+                if !tracks
+                    .get(output_id)
+                    .is_some_and(|target| target.kind == TrackKind::Audio && target.id != track.id)
+                {
+                    return Err(TrackValidationError::InvalidTrackOutput);
+                }
+            }
+        }
         let mut source_ids = std::collections::HashSet::new();
         for source in &self.audio_sources {
             if source.id.trim().is_empty() || !source_ids.insert(source.id.as_str()) {
@@ -747,6 +760,9 @@ pub struct Track {
     /// Functional routing role is separate from the media/event format.
     #[serde(default)]
     pub role: TrackRole,
+    /// Destino interno opcional del proyecto. La salida física pertenece al adaptador de plataforma.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub output_track_id: Option<String>,
     #[serde(default)]
     pub channel_config: TrackChannelConfig,
     /// Color belongs to the project so Session and Arrangement remain visually linked.
@@ -823,6 +839,8 @@ pub enum TrackValidationError {
     InvalidMixer,
     #[error("a project can contain at most one master track")]
     MultipleMasterTracks,
+    #[error("track output must reference a different existing audio track; the master has no project output")]
+    InvalidTrackOutput,
     #[error("audio source identity, owner, or format metadata is invalid")]
     InvalidAudioSource,
     #[error("audio playlist identity or region references are invalid")]
@@ -846,6 +864,7 @@ impl Track {
             name: name.into(),
             kind,
             role,
+            output_track_id: None,
             channel_config: TrackChannelConfig {
                 input_channels: audio_channels,
                 output_channels: 2,
@@ -1204,6 +1223,7 @@ pub fn import_project_xml(xml: &str) -> Result<ImportResult, ProjectError> {
                 name: track.name,
                 kind,
                 role,
+                output_track_id: None,
                 channel_config: TrackChannelConfig {
                     input_channels: is_audio_track
                         .then(|| track.channel.as_ref().and_then(|c| c.audio_channels))

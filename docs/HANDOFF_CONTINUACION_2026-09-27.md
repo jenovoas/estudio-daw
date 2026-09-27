@@ -5,13 +5,12 @@
 - Repositorio: `/home/jnovoas/proyectos/estudio-daw`.
 - Rama: `main`; HEAD funcional de partida `e66b5fe8fe2e71b6d8be399a717f4a338de0f4f2`, publicado en `origin/main`. Este archivo y el puntero de `AGENTS.md` se guardan en un commit documental posterior; al reanudar, confirmar el HEAD exacto con `git log`.
 - Árbol de trabajo limpio al guardar este handoff. Los cambios regenerados en `.codebase-memory/` se restauraron; no son trabajo del producto.
-- Cambio OpenSpec activo: `workstation-arrangement-surface-v2`, **7/35 tareas completas**. Consultar `tasks.md`; no inferir progreso adicional por commits o estado del modelo.
+- Cambio OpenSpec activo: `workstation-arrangement-surface-v2`, **9/35 tareas completas**. Las tareas 0.2 y 2.1 se cerraron; consultar `tasks.md` y `design.md`.
 - Bitácora de auditoría: `/home/jnovoas/proyectos/personalvault/docs/estudio-daw/BITACORA_AGENTES.md`. Estado: `/home/jnovoas/proyectos/personalvault/docs/estudio-daw/ESTADO_ACTUAL.md`.
 
 ## Siguiente trabajo
 
-1. Continuar el cotejo documental de la tarea 0.2 usando exclusivamente el manual, las notas de versión y las guías oficiales de Ableton. Live no es compatible oficialmente con Linux; no pedir instalarlo ni bloquear el trabajo esperando una inspección de su ventana. El inventario sigue abierto hasta relacionar las opciones estáticas documentadas pertinentes con acciones, comandos, tareas o exclusiones justificadas. Marcar como condicional lo que dependa de dispositivo/selección y que el fabricante no enumere. No afirmar paridad.
-2. Después avanzar la tarea 2.1 del flujo de pista de audio. La ventana ya tiene una acción Tauri para crear una pista vacía y mostrarla en el arreglo, pero no hay ruta de salida efectiva al Master ni superficies Sesión y Mezclador conectadas a una misma instantánea. No marcar 2.1 completa por la creación actual; revisar dependencias/código y entregar el flujo vertical real.
+1. Avanzar la tarea 2.2: importación de audio con procedencia, elección de copiar/vincular, asignación de canales, preescucha y colocación. 2.1 ya persiste la ruta interna al Master y muestra pistas en Arreglo, Session y Mezclador desde una instantánea común; el ruteo físico y la reproducción siguen pendientes.
 
 ## Acuerdos vigentes
 
@@ -23,14 +22,14 @@
 
 ## Estado documental y validación
 
-- La auditoría Live quedó ampliada en `design.md` con el manual oficial del 2026-04-30, notas hasta Live 12.4.6, guías oficiales en español, páginas de ajustes, menús/contextos y mapa de capacidades/tareas del proyecto.
-- El commit `159e87e` quitó la ejecución de Live en Linux como requisito de auditoría. `e66b5fe` tradujo las etiquetas de vistas agregadas. La tarea 0.2 continúa abierta porque falta terminar el cotejo documental; no por falta de instalación.
+- La auditoría Live quedó ampliada en `design.md` con el manual oficial del 2026-04-30, notas hasta Live 12.4.6, guías oficiales en español, páginas de ajustes, menús/contextos y matriz de trazabilidad. 0.2 cerrada documentalmente; sin afirmar paridad.
+- El commit `159e87e` quitó la ejecución de Live en Linux como requisito de auditoría. `e66b5fe` tradujo las etiquetas de vistas agregadas. La actualización actual añadió una matriz de trazabilidad documental y cerró 0.2; no afirma paridad ni implementación.
 - `openspec validate workstation-arrangement-surface-v2` pasó con ocho avisos de recomendación para los marcadores RFC ingleses en requisitos españoles. Se mantiene la redacción normativa española. `git diff --check` pasó. No se ejecutaron pruebas Rust en esta intervención documental.
 - Antes de cualquier cambio de código, seguir el orden de lectura de `AGENTS.md`. La siguiente verificación de código debe abarcar al menos las pruebas focales y, cuando corresponda, formato, espacio de trabajo, validación OpenSpec y diff check; registrar comandos/resultados exactos.
 
 ## Pendientes que no deben perderse
 
-- En `workstation-arrangement-surface-v2`: 0.2, todas las tareas 2.x–6.x siguen abiertas salvo lo que `tasks.md` marque `[x]`; las tareas de Session/Arreglo/Mezclador, transporte, reproducción de audio, menús y revisión visual no se consideran implícitas.
+- En `workstation-arrangement-surface-v2`, 2.2–6.4 siguen abiertas salvo lo que `tasks.md` marque `[x]`; la vista Session sólo expone encabezados/casillas vacías y el Mezclador es de sólo lectura. Lanzamiento, edición, reproducción de audio, hardware, mezcla activa, menús y revisión visual no se consideran implícitos.
 - En `soundfont-instrument-rendering`: la tarea 4.3 permanece abierta para la comprobación física de latencia que requiere la especificación. La escucha confirmada y la medición digital pre-DAC no prueban latencia tecla→parlante.
 - La bitácora de la bóveda es append-only. Se añadieron entradas durante esta sesión; los archivos de la bóveda siguen como cambios locales por guardar, no se publicaron en remoto.
 - El índice de código estaba fechado `2026-09-26T21:19Z` al iniciar esta sesión y se señaló como atrasado respecto a código/`git`. Actualizarlo sólo si hace falta y restaurar sus artefactos versionados generados al terminar. La evidencia de comportamiento es código, pruebas y Git.
@@ -40,4 +39,11 @@
 1. Ejecutar `git status --short --branch` y `git log -5 --oneline`.
 2. Leer `README.md`, `AGENTS.md`, propuesta/diseño/specs/tareas del cambio activo y `docs/ui-architecture.md` según la guía.
 3. Leer este handoff y las entradas finales de la bitácora para confirmar que no hubo cambios posteriores.
-4. Seguir con 0.2 mediante fuentes oficiales; pasar a 2.1 cuando se cierre ese cotejo o haya que alternar con trabajo de código independiente.
+4. Seguir con 2.2 tras leer el contrato de medios y revisar los adaptadores disponibles.
+
+## Actualización — cierre de 2.1
+
+- HEAD sigue en `0a615f83883337e2b459056b1b33b529b3f5f11e`; implementación/documentación local sin commit.
+- `AddTrack` crea pista de audio estéreo, la conecta por ID al Master y crea ese canal en la misma transacción cuando falta. Session y Mezclador presentan el mismo resumen de la instantánea que Arreglo; Session muestra encabezados/casillas vacías y el Mezclador es de sólo lectura.
+- Pasaron `cargo fmt --all`, `cargo test --workspace -- --test-threads=1`, `cargo check --workspace`, `cargo fmt --all -- --check`, `git diff --check` y `openspec validate workstation-arrangement-surface-v2`. La validación conserva ocho avisos lingüísticos sobre `MUST/SHALL`; no son fallos estructurales.
+- Progreso: 9/35. Próxima tarea: 2.2. No está disponible el ruteo a hardware, reproducción de audio, edición de Session ni controles activos de mezcla.

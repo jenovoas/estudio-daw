@@ -255,3 +255,13 @@ el cotejo documental oficial de Live 12.4.6 (0.2) sin exigir ejecutar Live en
 Linux y continuar con el flujo vertical de pista de audio (2.1). Mantener la
 documentación en español, la bitácora de bóveda append-only y todos los límites
 de evidencia descritos en el handoff.
+
+## Actualización de continuación — 2026-09-27
+
+- OpenSpec `workstation-arrangement-surface-v2` avanzó a 8/35: tarea 0.2 cerrada mediante cotejo documental del manual y guías oficiales de Live 12.4.6 y una matriz de trazabilidad en `design.md`. No implica paridad ni implementación.
+- Siguiente: tarea 2.1, flujo vertical de pista de audio. Consultar el handoff actualizado y comprobar código/dependencias antes de editar. La bitácora de la bóveda queda append-only.
+
+## Estado de continuación — 2026-09-27
+
+- `workstation-arrangement-surface-v2` está en 9/35. La tarea 2.1 añade ruteo interno al Master, instantánea de pistas con canales/destino y superficies de sólo lectura en Session y Mezclador; no implica ruteo físico ni reproducción de audio.
+- Siguiente: tarea 2.2, importación y procedencia de medios. Revisar el handoff actualizado. La bitácora externa sigue append-only.

@@ -67,7 +67,7 @@
         </section>
 
         <section class="editor-heading">
-          <div class="view-tabs"><div class="view-tab is-selected"><span class="tab-icon">▥</span>Arreglo</div><div class="view-tab view-tab-muted" title="Vista de sesión aún no implementada"><span class="tab-icon">▦</span>Sesión <small>PRONTO</small></div></div>
+          <div class="view-tabs" role="tablist" aria-label="Superficies del proyecto"><button id="show-arrangement" class="view-tab is-selected" role="tab" aria-selected="true"><span class="tab-icon">▥</span>Arreglo</button><button id="show-session" class="view-tab" role="tab" aria-selected="false"><span class="tab-icon">▦</span>Sesión</button><button id="show-mixer" class="view-tab" role="tab" aria-selected="false"><span class="tab-icon">▤</span>Mezclador</button></div>
           <div class="session-indicators"><span><i class="indicator-dot midi-dot"></i>MIDI</span><span><i class="indicator-dot audio-dot"></i>AUDIO</span></div>
         </section>
 
@@ -80,7 +80,9 @@
               <div id="arrangement-lanes" class="arrangement-lanes"><div class="empty-state timeline-empty">Pulsa «Demo MIDI» para cargar una secuencia audible.</div></div>
             </div>
           </div>
-          <div class="arrangement-legend"><span><i class="legend-swatch"></i>Clip MIDI</span><span>Vista previa de notas · edición aún no disponible</span></div>
+          <div id="session-view" class="alternative-surface session-surface" aria-label="Pistas de Session" hidden></div>
+          <div id="mixer-view" class="alternative-surface mixer-surface" aria-label="Mezclador del proyecto" hidden></div>
+          <div id="arrangement-legend" class="arrangement-legend"><span><i class="legend-swatch"></i>Clip MIDI</span><span>Vista previa de notas · edición aún no disponible</span></div>
         </section>
 
         <section class="lower-panel">

@@ -9,7 +9,7 @@ use estudio_daw_project_model::{
     add_audio_clip, attach_media_source, attach_midi_take, quantize_midi_clip,
     set_audio_clip_fades, set_audio_clip_gain, trim_audio_clip, AudioClip, ClipReference, ClipSlot,
     MediaSource, Project, ProjectEvent, ProjectHistory, ProjectSnapshot, ProxyAsset, Scene, Track,
-    TrackMixerState, TrackRole,
+    TrackKind, TrackMixerState, TrackRole,
 };
 use estudio_daw_session::{Session, SessionCommand, TransportSnapshot, TransportState};
 use serde::{Deserialize, Serialize};
@@ -330,7 +330,7 @@ impl CommandRuntime {
 
     fn apply_project_command(&mut self, command: ProjectCommand) -> Result<(), CommandError> {
         match command {
-            ProjectCommand::AddTrack { track, index } => self
+            ProjectCommand::AddTrack { mut track, index } => self
                 .project_history
                 .transact("add track", |project| -> Result<(), String> {
                     track.validate().map_err(|error| error.to_string())?;
@@ -348,7 +348,39 @@ impl CommandRuntime {
                     let insert_at = index
                         .unwrap_or(project.tracks.len())
                         .min(project.tracks.len());
+                    let mut master_to_add = None;
                     if track.role == TrackRole::Audio {
+                        if track.output_track_id.is_none() {
+                            let master = project
+                                .tracks
+                                .iter()
+                                .find(|item| item.role == TrackRole::Master)
+                                .cloned();
+                            let master = match master {
+                                Some(master) => master,
+                                None => {
+                                    let base_id = format!("master-{}", track.id);
+                                    let mut id = base_id.clone();
+                                    let mut suffix = 2;
+                                    while project.tracks.iter().any(|item| item.id == id)
+                                        || id == track.id
+                                    {
+                                        id = format!("{base_id}-{suffix}");
+                                        suffix += 1;
+                                    }
+                                    let master = Track::new(
+                                        id,
+                                        "Master",
+                                        TrackKind::Audio,
+                                        TrackRole::Master,
+                                    )
+                                    .map_err(|error| error.to_string())?;
+                                    master_to_add = Some(master.clone());
+                                    master
+                                }
+                            };
+                            track.output_track_id = Some(master.id);
+                        }
                         project
                             .audio_playlists
                             .push(estudio_daw_project_model::AudioPlaylist {
@@ -358,6 +390,9 @@ impl CommandRuntime {
                             });
                     }
                     project.tracks.insert(insert_at, track);
+                    if let Some(master) = master_to_add {
+                        project.tracks.push(master);
+                    }
                     project
                         .validate_persisted_contracts()
                         .map_err(|error| error.to_string())
@@ -913,6 +948,7 @@ mod tests {
                     name: "MIDI".into(),
                     kind: TrackKind::Midi,
                     role: TrackRole::Instrument,
+                    output_track_id: None,
                     channel_config: TrackChannelConfig::default(),
                     color: "#58a6b8".into(),
                     mixer: TrackMixerState::default(),
@@ -926,6 +962,7 @@ mod tests {
                     name: "Audio".into(),
                     kind: TrackKind::Audio,
                     role: TrackRole::Audio,
+                    output_track_id: None,
                     channel_config: TrackChannelConfig {
                         input_channels: Some(2),
                         output_channels: 2,
@@ -1138,6 +1175,48 @@ mod tests {
         assert!(restored.audio_playlists.iter().any(|playlist| {
             playlist.track_id == "track-audio" && playlist.region_ids == ["clip-1"]
         }));
+    }
+
+    #[test]
+    fn adding_audio_track_assigns_stereo_channels_and_default_master_output_reversibly() {
+        let mut runtime = CommandRuntime::new(project());
+        let mut track =
+            Track::new("audio-new", "Audio 2", TrackKind::Audio, TrackRole::Audio).unwrap();
+        track.channel_config.input_channels = Some(2);
+        runtime
+            .apply(envelope(
+                "add-audio-track",
+                DomainCommand::Project(ProjectCommand::AddTrack { track, index: None }),
+            ))
+            .unwrap();
+
+        let project_after_add = runtime.snapshot().project.project;
+        let audio = project_after_add
+            .tracks
+            .iter()
+            .find(|track| track.id == "audio-new")
+            .unwrap();
+        let master = project_after_add
+            .tracks
+            .iter()
+            .find(|track| track.role == TrackRole::Master)
+            .unwrap();
+        assert_eq!(audio.channel_config.input_channels, Some(2));
+        assert_eq!(audio.channel_config.output_channels, 2);
+        assert_eq!(audio.output_track_id.as_deref(), Some(master.id.as_str()));
+
+        runtime
+            .apply(envelope(
+                "undo-add-audio-track",
+                DomainCommand::Project(ProjectCommand::Undo),
+            ))
+            .unwrap();
+        let undone = runtime.snapshot().project.project;
+        assert!(!undone.tracks.iter().any(|track| track.id == "audio-new"));
+        assert!(!undone
+            .tracks
+            .iter()
+            .any(|track| track.role == TrackRole::Master));
     }
 
     #[test]

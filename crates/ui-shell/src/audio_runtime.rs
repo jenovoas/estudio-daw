@@ -390,6 +390,7 @@ mod tests {
             name: id.into(),
             kind: TrackKind::Midi,
             role: TrackRole::Instrument,
+            output_track_id: None,
             channel_config: TrackChannelConfig::default(),
             color: "#58a6b8".into(),
             mixer: TrackMixerState::default(),

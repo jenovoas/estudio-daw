@@ -684,11 +684,14 @@ La primera interfaz de escritorio usa Tauri como adaptador sobre
 ventana permite abrir/guardar proyectos JSON, inspeccionar pistas y clips,
 crear una sesión vacía, añadir pistas MIDI/audio vacías o cargar una Demo MIDI,
 reproducir clips MIDI de las pistas de instrumento y controlar transporte e
-historial. Es un prototipo de capacidades parciales: su composición visual actual no satisface todavía el
-flujo creativo de Ableton Live 12; no incluye Session View funcional, edición
-de clips/notas, un sistema utilizable de pistas de audio, reproducción de
-regiones de audio, grabación live ni monitorización de entrada. No se declara
-terminada la interfaz. La propuesta y las tareas abiertas de
+historial. Una pista de audio nueva persiste su disposición estéreo y su destino
+interno al Master; Arreglo, Session y Mezclador muestran las pistas desde la
+misma instantánea. Session sólo muestra encabezados/casillas vacías y Mezclador
+es de sólo lectura. Es un prototipo de capacidades parciales: su composición
+visual actual no satisface todavía el flujo creativo de Ableton Live 12; no
+incluye lanzamiento de clips en Session, edición de clips/notas, importación y
+reproducción de regiones de audio, selección de salidas físicas, grabación live
+ni monitorización de entrada. No se declara terminada la interfaz. La propuesta y las tareas abiertas de
 [workstation-arrangement-surface-v2](openspec/changes/workstation-arrangement-surface-v2/)
 registran Ableton Live 12 como referencia de UX prioritaria y Ardour sólo como
 consulta técnica secundaria para el flujo de audio.

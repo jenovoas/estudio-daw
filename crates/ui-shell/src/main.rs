@@ -34,8 +34,12 @@ struct TrackSummary {
     id: String,
     name: String,
     kind: &'static str,
+    role: &'static str,
     note_count: usize,
     color: String,
+    input_channels: Option<u32>,
+    output_channels: u32,
+    output_track_id: Option<String>,
     active: bool,
     mute: bool,
     solo: bool,
@@ -174,6 +178,14 @@ fn summarize(application: &ProjectApplication, audio_engine_connected: bool) -> 
                 TrackKind::Audio => "audio",
                 TrackKind::Midi => "midi",
             },
+            role: match track.role {
+                TrackRole::Midi => "midi",
+                TrackRole::Instrument => "instrument",
+                TrackRole::Audio => "audio",
+                TrackRole::Bus => "bus",
+                TrackRole::Return => "return",
+                TrackRole::Master => "master",
+            },
             note_count: track.notes.len()
                 + project
                     .midi_clips
@@ -183,6 +195,9 @@ fn summarize(application: &ProjectApplication, audio_engine_connected: bool) -> 
                     .filter(|event| matches!(&event.message, RecordedMidiMessage::NoteOn { velocity, .. } if *velocity > 0))
                     .count(),
             color: track.color.clone(),
+            input_channels: track.channel_config.input_channels,
+            output_channels: track.channel_config.output_channels,
+            output_track_id: track.output_track_id.clone(),
             active: track.mixer.active,
             mute: track.mixer.mute,
             solo: track.mixer.solo,
@@ -298,16 +313,26 @@ fn add_track(kind: String, state: State<'_, DesktopState>) -> Result<UiSnapshot,
         ),
         _ => return Err(format!("tipo de pista desconocido: {kind}")),
     };
-    let index = application.snapshot().project.project.tracks.len();
+    let current = application.snapshot().project.project;
+    let index = current.tracks.len();
+    let same_kind_count = current
+        .tracks
+        .iter()
+        .filter(|track| match &track.kind {
+            TrackKind::Audio => track.role == TrackRole::Audio,
+            TrackKind::Midi => track.role == TrackRole::Midi || track.role == TrackRole::Instrument,
+        })
+        .count();
     let track = estudio_daw_project_model::Track {
         id: format!("track-{}-{index}", unix_timestamp_millis()),
-        name: format!("{name} {}", index + 1),
+        name: format!("{name} {}", same_kind_count + 1),
         kind: track_kind,
         role: if kind == "audio" {
             TrackRole::Audio
         } else {
             TrackRole::Instrument
         },
+        output_track_id: None,
         channel_config: TrackChannelConfig {
             input_channels: if kind == "audio" { Some(2) } else { None },
             output_channels: 2,
@@ -424,6 +449,7 @@ fn new_project_model() -> Project {
             name: "MIDI 1".into(),
             kind: TrackKind::Midi,
             role: TrackRole::Instrument,
+            output_track_id: None,
             channel_config: TrackChannelConfig::default(),
             color: "#58a6b8".into(),
             mixer: TrackMixerState::default(),
@@ -756,6 +782,35 @@ mod tests {
         assert!(value.get("samples").is_none());
         assert!(value.get("pcm").is_none());
         assert!(value.get("gpu_buffers").is_none());
+    }
+
+    #[test]
+    fn ui_track_snapshot_exposes_audio_channels_and_master_destination() {
+        let mut application = ProjectApplication::new(new_project_model());
+        let track = Track::new(
+            "audio-ui-test",
+            "Audio 1",
+            TrackKind::Audio,
+            TrackRole::Audio,
+        )
+        .unwrap();
+        application
+            .execute_project(ProjectCommand::AddTrack { track, index: None })
+            .unwrap();
+
+        let value = serde_json::to_value(summarize(&application, false)).unwrap();
+        let tracks = value["tracks"].as_array().unwrap();
+        let audio = tracks
+            .iter()
+            .find(|track| track["id"] == "audio-ui-test")
+            .unwrap();
+        let master = tracks
+            .iter()
+            .find(|track| track["role"] == "master")
+            .unwrap();
+        assert_eq!(audio["inputChannels"], 2);
+        assert_eq!(audio["outputChannels"], 2);
+        assert_eq!(audio["outputTrackId"], master["id"]);
     }
 
     #[test]

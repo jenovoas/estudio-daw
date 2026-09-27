@@ -19,6 +19,13 @@ const elements = {
   tracks: document.querySelector("#track-list"),
   lanes: document.querySelector("#arrangement-lanes"),
   ruler: document.querySelector("#timeline-ruler"),
+  arrangementView: document.querySelector(".arrangement-scroll"),
+  sessionView: document.querySelector("#session-view"),
+  mixerView: document.querySelector("#mixer-view"),
+  arrangementLegend: document.querySelector("#arrangement-legend"),
+  showArrangement: document.querySelector("#show-arrangement"),
+  showSession: document.querySelector("#show-session"),
+  showMixer: document.querySelector("#show-mixer"),
   trackCount: document.querySelector("#track-count"),
   midiCount: document.querySelector("#midi-count"),
   audioCount: document.querySelector("#audio-count"),
@@ -116,6 +123,105 @@ function setProjectEnabled(enabled) {
   }
 }
 
+function selectSurface(surface) {
+  const selected = {
+    arrangement: elements.showArrangement,
+    session: elements.showSession,
+    mixer: elements.showMixer,
+  };
+  elements.arrangementView.hidden = surface !== "arrangement";
+  elements.sessionView.hidden = surface !== "session";
+  elements.mixerView.hidden = surface !== "mixer";
+  elements.arrangementLegend.hidden = surface !== "arrangement";
+  for (const [name, button] of Object.entries(selected)) {
+    const active = name === surface;
+    button.classList.toggle("is-selected", active);
+    button.setAttribute("aria-selected", String(active));
+  }
+}
+
+function trackChannelDescription(track) {
+  const input = track.inputChannels == null ? "sin entrada asignada" : `${track.inputChannels} canales de entrada`;
+  return `${input} · ${track.outputChannels} canales de salida`;
+}
+
+function trackOutputDescription(track, tracks) {
+  if (track.role === "master") return "Salida física: configuración de plataforma pendiente";
+  const target = tracks.find((candidate) => candidate.id === track.outputTrackId);
+  return target ? `Salida interna → ${target.name}` : "Sin salida interna asignada";
+}
+
+function renderSessionSurface(tracks) {
+  elements.sessionView.replaceChildren();
+  const heading = document.createElement("div");
+  heading.className = "surface-heading";
+  heading.innerHTML = "<strong>SESSION</strong><span>Identidad compartida · lanzamiento de clips pendiente</span>";
+  elements.sessionView.append(heading);
+  if (tracks.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "surface-empty";
+    empty.textContent = "El proyecto todavía no tiene pistas.";
+    elements.sessionView.append(empty);
+    return;
+  }
+  const grid = document.createElement("div");
+  grid.className = "session-track-grid";
+  for (const track of tracks) {
+    const column = document.createElement("article");
+    column.className = "session-track-card";
+    column.style.setProperty("--track-color", track.color);
+    const name = document.createElement("strong");
+    name.textContent = track.name;
+    const type = document.createElement("span");
+    type.textContent = track.role === "master" ? "MASTER" : track.kind.toUpperCase();
+    const channels = document.createElement("small");
+    channels.textContent = trackChannelDescription(track);
+    const emptySlot = document.createElement("div");
+    emptySlot.className = "session-empty-slot";
+    emptySlot.textContent = "Sin escena";
+    column.append(name, type, channels, emptySlot);
+    grid.append(column);
+  }
+  elements.sessionView.append(grid);
+}
+
+function renderMixerSurface(tracks) {
+  elements.mixerView.replaceChildren();
+  const heading = document.createElement("div");
+  heading.className = "surface-heading";
+  heading.innerHTML = "<strong>MEZCLADOR</strong><span>Ruteo de proyecto · controles de señal aún no conectados</span>";
+  elements.mixerView.append(heading);
+  if (tracks.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "surface-empty";
+    empty.textContent = "El proyecto todavía no tiene canales.";
+    elements.mixerView.append(empty);
+    return;
+  }
+  const channels = document.createElement("div");
+  channels.className = "mixer-channel-list";
+  for (const track of tracks) {
+    const channel = document.createElement("article");
+    channel.className = "mixer-channel";
+    channel.style.setProperty("--track-color", track.color);
+    const title = document.createElement("strong");
+    title.textContent = track.name;
+    const role = document.createElement("span");
+    role.className = "mixer-role";
+    role.textContent = track.role === "master" ? "MASTER" : track.kind.toUpperCase();
+    const routing = document.createElement("small");
+    routing.textContent = track.role === "master"
+      ? trackOutputDescription(track, tracks)
+      : `${trackChannelDescription(track)} · ${trackOutputDescription(track, tracks)}`;
+    const mix = document.createElement("span");
+    mix.className = "mixer-values";
+    mix.textContent = `${Number(track.gainDb).toFixed(1)} dB · Pan ${Number(track.pan).toFixed(2)}${track.mute ? " · Silencio" : ""}${track.solo ? " · Solo" : ""}${track.active ? "" : " · Inactiva"}`;
+    channel.append(title, role, routing, mix);
+    channels.append(channel);
+  }
+  elements.mixerView.append(channels);
+}
+
 function renderSnapshot(snapshot) {
   setProjectEnabled(true);
   elements.save.disabled = !snapshot.projectPath;
@@ -139,6 +245,8 @@ function renderSnapshot(snapshot) {
     : "Core listo · motor de audio aún no conectado";
   elements.undo.disabled = !snapshot.canUndo;
   elements.redo.disabled = !snapshot.canRedo;
+  renderSessionSurface(snapshot.tracks);
+  renderMixerSurface(snapshot.tracks);
 
   elements.tracks.replaceChildren();
   elements.lanes.replaceChildren();
@@ -161,13 +269,13 @@ function renderSnapshot(snapshot) {
     row.style.setProperty("--track-color", track.color);
     const icon = document.createElement("span");
     icon.className = `track-icon ${track.kind}`;
-    icon.textContent = track.kind === "audio" ? "◖" : "♫";
+    icon.textContent = track.role === "master" ? "M" : track.kind === "audio" ? "◖" : "♫";
     const label = document.createElement("span");
     label.textContent = track.name;
     const details = document.createElement("span");
     details.className = "track-meta";
     const mixState = [track.mute ? "MUTE" : null, track.solo ? "SOLO" : null, !track.active ? "OFF" : null].filter(Boolean).join(" · ");
-    details.textContent = `${track.kind === "audio" ? "AUDIO" : "MIDI"}${track.kind === "midi" ? ` · ${track.noteCount} notas` : ""}${mixState ? ` · ${mixState}` : ""}`;
+    details.textContent = `${track.role === "master" ? "MASTER" : track.kind === "audio" ? "AUDIO" : "MIDI"}${track.kind === "midi" ? ` · ${track.noteCount} notas` : track.kind === "audio" ? ` · ${track.outputChannels} ch` : ""}${mixState ? ` · ${mixState}` : ""}`;
     const name = document.createElement("div");
     name.className = "track-name";
     name.append(icon, label);
@@ -262,6 +370,9 @@ async function addTrack(kind, button) {
 
 elements.addMidiTrack.addEventListener("click", () => addTrack("midi", elements.addMidiTrack));
 elements.addAudioTrack.addEventListener("click", () => addTrack("audio", elements.addAudioTrack));
+elements.showArrangement.addEventListener("click", () => selectSurface("arrangement"));
+elements.showSession.addEventListener("click", () => selectSurface("session"));
+elements.showMixer.addEventListener("click", () => selectSurface("mixer"));
 
 elements.newProject.addEventListener("click", async () => {
   await whileBusy([elements.newProject], async () => { try {
