@@ -190,3 +190,11 @@
 - El menú contextual duplica un clip MIDI al final del original con ID único, duración y toma iguales. La copia no cambia slots de Session; `DuplicateMidiClip` es una sola transacción reversible y Tauri recompila el plan activo si corresponde.
 - Verificación conjunta de movimiento y duplicación: `cargo test -p estudio-daw-command-bus -- --test-threads=1` (16 pasaron), `cargo test --workspace -- --test-threads=1` (135 pruebas aprobadas), `cargo check --workspace`, fmt/fmt check, ambos `node --check`, `git diff --check` y OpenSpec estricto pasaron. Sin QA visual manual.
 - OpenSpec sigue 9/35; 3.3/5.3 avanzan parcialmente. Faltan división MIDI, piano roll, edición de notas, marcadores y QA visual/funcional. 2.2 mantiene implementado el flujo de audio y pendiente QA manual de importación/gestos/fuente.
+
+
+## Avance — división de clips MIDI en el cursor
+
+- Commit `65b808fa64ac11d2f76bab177ff1c8dde1ade4dc` (`feat: split MIDI clips at arrangement cursor`) publicado en `main`.
+- El menú contextual ofrece «Dividir en cursor» sólo dentro de los límites del clip. El comando reversible deja la primera parte con el ID original y crea la segunda contigua con ID único; las notas abiertas se cierran y rearticulan en el corte, y se restaura el estado previo de CC, pitch bend, presión y programa. Un Note Off en el punto de corte cierra la primera parte; SysEx anterior no se repite. El plan conectado se recompila. La rearticulación puede producir un nuevo ataque en notas sostenidas.
+- Verificación: `cargo test --workspace -- --test-threads=1` (137 aprobadas), `cargo test -p estudio-daw-project-model -p estudio-daw-command-bus -- --test-threads=1` (40 aprobadas tras ajuste final de ID), `cargo check --workspace`, fmt/fmt check, ambos `node --check`, `git diff --check` y OpenSpec estricto pasaron. Sin QA visual manual.
+- OpenSpec sigue 9/35 y 3.3/5.3 parciales. Pendientes: piano roll/edición de notas, marcadores, operaciones MIDI adicionales y QA visual. 2.2 mantiene pendiente la pasada manual de importación, edición y conservación de fuentes.
