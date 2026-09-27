@@ -15,12 +15,15 @@ use std::{
 };
 
 use estudio_daw_application::{
-    CommandEnvelope, CommandMetadata, DomainCommand, ProjectApplication, ProjectCommand,
+    load_audio_runtime_settings, AudioProfileSettings, CommandEnvelope, CommandMetadata,
+    DomainCommand, ProjectApplication, ProjectCommand,
 };
 use estudio_daw_audio_engine::{EqBandConfig, EqualizerNode, GainNode, RenderPlanBuilder};
 use estudio_daw_audio_platform::{
     run_pipewire_duplex_for_targets, run_pipewire_duplex_for_targets_with_capture,
-    PipeWireStreamConfig, PipeWireTargets, WavCaptureRecorder,
+    run_pipewire_output_for_targets, run_pipewire_output_for_targets_with_monitor_capture,
+    run_pipewire_output_for_targets_with_source_capture, PipeWireStreamConfig, PipeWireTargets,
+    WavCaptureRecorder,
 };
 use estudio_daw_midi_engine::{
     play_midi_take, play_midi_take_interactive, play_midi_take_live, record_alsa_midi,
@@ -56,9 +59,9 @@ fn usage() {
             ,
             "\n  estudio-daw-project audio-record <segundos> <salida.wav>"
             ,
-            "\n  estudio-daw-project midi-synth-live <segundos> <salida-toma.json> [entrada] [--soundfont archivo.sf2] [--bank N] [--program N] [--capture salida.wav]"
+            "\n  estudio-daw-project midi-synth-live <segundos> <salida-toma.json> [entrada] [--soundfont archivo.sf2] [--bank N] [--program N] [--capture salida.wav] [--capture-monitor]"
             ,
-            "\n  estudio-daw-project midi-synth-play <toma.json> [--soundfont archivo.sf2] [--bank N] [--program N] [--capture salida.wav]"
+            "\n  estudio-daw-project midi-synth-play <toma.json> [--soundfont archivo.sf2] [--bank N] [--program N] [--capture salida.wav] [--capture-monitor]"
             ,
             "\n  estudio-daw-project soundfont-presets <archivo.sf2>"
             ,
@@ -110,6 +113,7 @@ fn main() -> ExitCode {
                 .map(|value| value.to_string_lossy().into_owned())
                 .collect();
             let mut capture_path = None;
+            let mut capture_monitor = false;
             let mut synth_options = Vec::new();
             let mut index = 0;
             while index < trailing.len() {
@@ -121,10 +125,17 @@ fn main() -> ExitCode {
                         return ExitCode::from(2);
                     };
                     capture_path = Some(PathBuf::from(path));
+                } else if trailing[index] == "--capture-monitor" {
+                    capture_monitor = true;
                 } else {
                     synth_options.push(trailing[index].clone());
                 }
                 index += 1;
+            }
+            if capture_monitor && capture_path.is_none() {
+                eprintln!("--capture-monitor requiere --capture salida.wav");
+                usage();
+                return ExitCode::from(2);
             }
             let (midi_query, instrument) =
                 match parse_synth_options(&synth_options, Some("KeyLab Essential 49 MID".into())) {
@@ -141,6 +152,7 @@ fn main() -> ExitCode {
                 midi_query.expect("entrada MIDI por defecto"),
                 instrument,
                 capture_path,
+                capture_monitor,
             )
         }
         "midi-synth-play" => {
@@ -152,6 +164,7 @@ fn main() -> ExitCode {
                 .map(|value| value.to_string_lossy().into_owned())
                 .collect();
             let mut capture_path = None;
+            let mut capture_monitor = false;
             let mut synth_options = Vec::new();
             let mut index = 0;
             while index < trailing.len() {
@@ -163,10 +176,17 @@ fn main() -> ExitCode {
                         return ExitCode::from(2);
                     };
                     capture_path = Some(PathBuf::from(path));
+                } else if trailing[index] == "--capture-monitor" {
+                    capture_monitor = true;
                 } else {
                     synth_options.push(trailing[index].clone());
                 }
                 index += 1;
+            }
+            if capture_monitor && capture_path.is_none() {
+                eprintln!("--capture-monitor requiere --capture salida.wav");
+                usage();
+                return ExitCode::from(2);
             }
             let (unexpected_input, instrument) = match parse_synth_options(&synth_options, None) {
                 Ok(parsed) => parsed,
@@ -183,7 +203,7 @@ fn main() -> ExitCode {
                 usage();
                 return ExitCode::from(2);
             }
-            midi_synth_play_command(take.into(), instrument, capture_path)
+            midi_synth_play_command(take.into(), instrument, capture_path, capture_monitor)
         }
         "soundfont-presets" => {
             let Some(soundfont) = args.next() else {
@@ -688,6 +708,7 @@ fn parse_synth_options(
 fn build_synth_render_plan(
     config: PipeWireStreamConfig,
     instrument: SynthInstrument,
+    playback_safety_frames: usize,
 ) -> Result<
     (
         estudio_daw_audio_engine::RenderPlan,
@@ -714,8 +735,13 @@ fn build_synth_render_plan(
             bank,
             program,
         } => {
-            let (worker, node) =
-                SoundFontInstrumentWorker::start(path, config.sample_rate, bank, program)?;
+            let (worker, node) = SoundFontInstrumentWorker::start_with_queue_target_frames(
+                path,
+                config.sample_rate,
+                bank,
+                program,
+                playback_safety_frames,
+            )?;
             let worker = Arc::new(worker);
             let sender = worker.event_sender();
             (
@@ -753,17 +779,21 @@ fn midi_synth_live_command(
     midi_query: String,
     instrument: SynthInstrument,
     capture_output: Option<PathBuf>,
+    capture_monitor: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let seconds: f64 = seconds.parse()?;
     if !(seconds.is_finite() && seconds > 0.0) {
         return Err("los segundos deben ser un número positivo".into());
     }
 
-    let config = PipeWireStreamConfig::default();
+    let settings = load_audio_runtime_settings()?;
+    let profile = settings.live_record;
+    let config = capture_config(capture_monitor, profile.device_period_frames as usize);
+    print_audio_profile("Live / Grabar", profile, config.sample_rate);
     let devices = audio_devices()?;
-    let targets = audiobox_targets(&devices);
+    let targets = synth_capture_targets(&devices, capture_monitor);
     let (render_plan, mut event_sink, instrument_worker) =
-        build_synth_render_plan(config, instrument)?;
+        build_synth_render_plan(config, instrument, profile.playback_safety_frames as usize)?;
     let stop = Arc::new(AtomicBool::new(false));
     let dropped_events = Arc::new(AtomicUsize::new(0));
     let (ready_tx, ready_rx) = mpsc::sync_channel::<Result<String, String>>(1);
@@ -825,7 +855,11 @@ fn midi_synth_live_command(
         "Instrumento nativo conectado a {label}; grabando {} segundos.",
         seconds
     );
-    println!("Presiona el KeyLab; audio de salida dirigido a AudioBox si está disponible.");
+    if capture_monitor {
+        println!("Presiona el KeyLab; captura del monitor digital de AudioBox con quantum temporal de 256 frames.");
+    } else {
+        println!("Presiona el KeyLab; audio de salida dirigido a AudioBox si está disponible.");
+    }
 
     let pipewire_origin = Instant::now();
     let stream_result: Result<_, Box<dyn std::error::Error>> = (|| {
@@ -839,21 +873,42 @@ fn midi_synth_live_command(
                 config.channels as u16,
                 frames,
             )?;
-            let (report, capture) = run_pipewire_duplex_for_targets_with_capture(
-                config,
-                render_plan,
-                Duration::from_secs_f64(seconds),
-                targets,
-                recorder,
-            )?;
+            let duration = Duration::from_secs_f64(seconds);
+            let (report, capture) = if capture_monitor {
+                let capture_node = targets
+                    .capture_node
+                    .clone()
+                    .ok_or("no se encontró el sink AudioBox para capturar su monitor")?;
+                run_pipewire_output_for_targets_with_monitor_capture(
+                    config,
+                    render_plan,
+                    duration,
+                    targets.playback_node.clone(),
+                    capture_node,
+                    recorder,
+                )?
+            } else {
+                let capture_node = targets
+                    .capture_node
+                    .clone()
+                    .ok_or("no se encontró la entrada física de AudioBox")?;
+                run_pipewire_output_for_targets_with_source_capture(
+                    config,
+                    render_plan,
+                    duration,
+                    targets.playback_node.clone(),
+                    capture_node,
+                    recorder,
+                )?
+            };
             Ok((report, Some(capture)))
         } else {
             Ok((
-                run_pipewire_duplex_for_targets(
+                run_pipewire_output_for_targets(
                     config,
                     render_plan,
                     Duration::from_secs_f64(seconds),
-                    targets,
+                    targets.playback_node.clone(),
                 )?,
                 None,
             ))
@@ -898,13 +953,17 @@ fn midi_synth_play_command(
     take_path: PathBuf,
     instrument: SynthInstrument,
     capture_output: Option<PathBuf>,
+    capture_monitor: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let take: MidiTake = serde_json::from_slice(&fs::read(&take_path)?)?;
-    let config = PipeWireStreamConfig::default();
+    let settings = load_audio_runtime_settings()?;
+    let profile = settings.multitrack_playback;
+    let config = capture_config(capture_monitor, profile.device_period_frames as usize);
+    print_audio_profile("Reproducción multipista", profile, config.sample_rate);
     let devices = audio_devices()?;
-    let targets = audiobox_targets(&devices);
+    let targets = synth_capture_targets(&devices, capture_monitor);
     let (render_plan, mut event_sink, instrument_worker) =
-        build_synth_render_plan(config, instrument)?;
+        build_synth_render_plan(config, instrument, profile.playback_safety_frames as usize)?;
     let scheduled_end = take
         .events
         .iter()
@@ -950,17 +1009,42 @@ fn midi_synth_play_command(
                 config.channels as u16,
                 frames,
             )?;
-            let (report, capture) = run_pipewire_duplex_for_targets_with_capture(
-                config,
-                render_plan,
-                duration,
-                targets,
-                recorder,
-            )?;
+            let (report, capture) = if capture_monitor {
+                let capture_node = targets
+                    .capture_node
+                    .clone()
+                    .ok_or("no se encontró el sink AudioBox para capturar su monitor")?;
+                run_pipewire_output_for_targets_with_monitor_capture(
+                    config,
+                    render_plan,
+                    duration,
+                    targets.playback_node.clone(),
+                    capture_node,
+                    recorder,
+                )?
+            } else {
+                let capture_node = targets
+                    .capture_node
+                    .clone()
+                    .ok_or("no se encontró la entrada física de AudioBox")?;
+                run_pipewire_output_for_targets_with_source_capture(
+                    config,
+                    render_plan,
+                    duration,
+                    targets.playback_node.clone(),
+                    capture_node,
+                    recorder,
+                )?
+            };
             Ok((report, Some(capture)))
         } else {
             Ok((
-                run_pipewire_duplex_for_targets(config, render_plan, duration, targets)?,
+                run_pipewire_output_for_targets(
+                    config,
+                    render_plan,
+                    duration,
+                    targets.playback_node.clone(),
+                )?,
                 None,
             ))
         }
@@ -970,8 +1054,11 @@ fn midi_synth_play_command(
         .map_err(|_| "el scheduler MIDI terminó inesperadamente")?;
     let (report, capture_report) = stream_result?;
     println!(
-        "Reproducción sintetizada finalizada: {} callbacks PipeWire; eventos MIDI descartados={dropped_events}.",
+        "Reproducción sintetizada finalizada: {} callbacks PipeWire, {} frames de salida, último bloque={} muestras, última solicitud={} frames; eventos MIDI descartados={dropped_events}.",
         report.output_callbacks,
+        report.output_total_samples / u64::from(config.channels),
+        report.output_last_samples,
+        report.output_last_requested_frames,
     );
     if let Some(worker) = instrument_worker.as_ref() {
         print_soundfont_metrics(worker, config.sample_rate, config.period_frames);
@@ -1013,6 +1100,22 @@ fn print_soundfont_metrics(
     );
 }
 
+fn print_audio_profile(label: &str, profile: AudioProfileSettings, sample_rate: u32) {
+    print_audio_period(label, profile.device_period_frames, sample_rate);
+    let safety_ms = f64::from(profile.playback_safety_frames) * 1_000.0 / f64::from(sample_rate);
+    println!(
+        "Objetivo de cola de reproducción={} frames ({safety_ms:.2} ms) a {sample_rate} Hz.",
+        profile.playback_safety_frames,
+    );
+}
+
+fn print_audio_period(label: &str, period_frames: u32, sample_rate: u32) {
+    let period_ms = f64::from(period_frames) * 1_000.0 / f64::from(sample_rate);
+    println!(
+        "Perfil {label}: periodo solicitado={period_frames} frames ({period_ms:.2} ms) a {sample_rate} Hz. PipeWire puede negociar otro quantum; el periodo efectivo no está disponible en esta interfaz."
+    );
+}
+
 fn synth_event_from_input(event: &NormalizedMidiEvent) -> Option<SynthMidiEvent> {
     match event {
         NormalizedMidiEvent::NoteOn {
@@ -1030,6 +1133,12 @@ fn synth_event_from_input(event: &NormalizedMidiEvent) -> Option<SynthMidiEvent>
             channel: *channel,
             note: *note,
         }),
+        NormalizedMidiEvent::ControlChange {
+            channel,
+            controller,
+            value,
+            ..
+        } => synth_control_change(*channel, *controller, *value),
         _ => None,
     }
 }
@@ -1050,8 +1159,21 @@ fn synth_event_from_recorded(message: &RecordedMidiMessage) -> Option<SynthMidiE
             channel: *channel,
             note: *note,
         }),
+        RecordedMidiMessage::ControlChange {
+            channel,
+            controller,
+            value,
+        } => synth_control_change(*channel, *controller, *value),
         _ => None,
     }
+}
+
+fn synth_control_change(channel: u8, controller: u32, value: i32) -> Option<SynthMidiEvent> {
+    (controller == 64).then_some(SynthMidiEvent::ControlChange {
+        channel,
+        controller: 64,
+        value: value.clamp(0, 127) as u8,
+    })
 }
 
 fn audio_record_command(seconds: &str, output: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
@@ -1059,9 +1181,19 @@ fn audio_record_command(seconds: &str, output: PathBuf) -> Result<(), Box<dyn st
     if !(seconds.is_finite() && seconds > 0.0) {
         return Err("los segundos deben ser un número positivo".into());
     }
+    let settings = load_audio_runtime_settings()?;
+    let profile = settings.live_record;
     let devices = audio_devices()?;
     let targets = audiobox_targets(&devices);
-    let config = PipeWireStreamConfig::default();
+    let config = capture_config(false, profile.device_period_frames as usize);
+    print_audio_period(
+        "Live / Grabar",
+        profile.device_period_frames,
+        config.sample_rate,
+    );
+    println!(
+        "Grabación WAV: objetivo de cola PCM SoundFont no aplica; PipeWire muestra su quantum efectivo en el grafo mientras el stream está activo."
+    );
     let mut equalizer = EqualizerNode::new(config.sample_rate as f32, config.channels as usize)?;
     equalizer.add_band(EqBandConfig::high_pass(20.0, 0.707))?;
     let mut render_builder = RenderPlanBuilder::new();
@@ -1204,14 +1336,36 @@ fn audiobox_targets(devices: &[DeviceInfo]) -> PipeWireTargets {
             .find(|device| {
                 device.media_class.to_ascii_lowercase().contains("source") && is_audiobox(device)
             })
-            .map(|device| device.id),
+            .map(|device| device.name.clone()),
         playback_node: devices
             .iter()
             .find(|device| {
                 device.media_class.to_ascii_lowercase().contains("sink") && is_audiobox(device)
             })
-            .map(|device| device.id),
+            .map(|device| device.name.clone()),
     }
+}
+
+fn capture_config(capture_monitor: bool, period_frames: usize) -> PipeWireStreamConfig {
+    let mut config = PipeWireStreamConfig::default();
+    config.period_frames = period_frames;
+    if capture_monitor {
+        // El monitor del sink puede renegociar el graph a callbacks minúsculos.
+        // Este quantum se fuerza sólo mientras los streams de captura vivan.
+        config.force_graph_quantum = Some(period_frames);
+        config.capture_sink_monitor = true;
+    }
+    config
+}
+
+fn synth_capture_targets(devices: &[DeviceInfo], capture_monitor: bool) -> PipeWireTargets {
+    let mut targets = audiobox_targets(devices);
+    if capture_monitor {
+        // El source monitor es una salida del sink; no es una entrada física.
+        // Input 1 (micrófono) e Input 2 (guitarra) quedan intactas.
+        targets.capture_node = targets.playback_node.clone();
+    }
+    targets
 }
 
 fn midi_record_command(
@@ -1475,5 +1629,40 @@ mod synth_option_tests {
         assert_eq!(input.as_deref(), Some("KeyLab"));
         assert!(matches!(instrument, SynthInstrument::Sine));
         assert!(parse_synth_options(&["--program".into(), "5".into()], None).is_err());
+    }
+
+    #[test]
+    fn capture_config_uses_the_selected_period_for_normal_and_monitor_streams() {
+        let regular = capture_config(false, 128);
+        assert_eq!(regular.period_frames, 128);
+        assert_eq!(regular.force_graph_quantum, None);
+
+        let monitor = capture_config(true, 512);
+        assert_eq!(monitor.period_frames, 512);
+        assert_eq!(monitor.force_graph_quantum, Some(512));
+        assert!(monitor.capture_sink_monitor);
+    }
+
+    #[test]
+    fn synth_translation_preserves_sustain_controller_for_live_and_take_playback() {
+        let live = synth_control_change(2, 64, 127);
+        assert_eq!(
+            live,
+            Some(SynthMidiEvent::ControlChange {
+                channel: 2,
+                controller: 64,
+                value: 127,
+            })
+        );
+
+        let recorded = synth_control_change(2, 64, 0);
+        assert_eq!(
+            recorded,
+            Some(SynthMidiEvent::ControlChange {
+                channel: 2,
+                controller: 64,
+                value: 0,
+            })
+        );
     }
 }

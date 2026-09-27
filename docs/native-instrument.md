@@ -38,6 +38,20 @@ cero underruns y cero errores del worker; el periodo PipeWire solicitado fue
 observó el mismo pico, cero eventos MIDI descartados y cero underruns. Son
 mediciones del puente PCM en este equipo, no una afirmación de latencia total.
 
+El worker conserva un ring preasignado de 2048 frames para absorber jitter.
+Los perfiles fijan el objetivo de PCM pendiente de forma independiente del
+periodo PipeWire: inicialmente 512 frames para Live/Record y 1024 para
+reproducción SoundFont (10,67 ms y 21,33 ms a 48 kHz). La capacidad del ring no
+equivale a la cola configurada ni a la latencia total.
+
+En la verificación de 2026-09-27, `pw-top` mostró el sink AudioBox y ambos
+clientes de Estudio DAW operando a quantum 256/48 kHz durante reproducción.
+Cuatro ataques programados en un take de control aparecieron en el monitor
+digital 10–14 ms después (mediana 11.5 ms), con WAV sin muestras descartadas,
+cero underruns/errors en FluidSynth y nodos de aplicación, y 512 frames de pico
+en el ring. Es una medición hasta el monitor digital previo al DAC; no incluye
+la conversión y salida analógica de AudioBox ni la propagación acústica.
+
 ## SineSynth
 
 El instrumento de prueba tiene 16 voces, frecuencias precalculadas, ataque y
@@ -96,7 +110,31 @@ eso no es una evaluación subjetiva del timbre.
 mismo tiempo que la toma MIDI y el render SoundFont. `midi-synth-play --capture
 salida.wav` captura la reproducción de una toma guardada. Ambos informes dan el
 tiempo del primer callback de captura respecto del origen monotónico de los
-eventos MIDI.
+eventos MIDI. La captura física usa un cliente/hilo PipeWire asíncrono separado
+del stream de salida RT para que el ADC no cambie el scheduling del render; WAV
+y salida se guardan independientemente. El offset de primer callback sólo indica
+inicio de captura y no es por sí mismo latencia tecla→sonido.
+
+La opción `--capture-monitor` selecciona el source monitor digital del sink de
+AudioBox para medir la señal antes del DAC. Úsala junto con `--capture`; por
+ejemplo, al reproducir una toma:
+
+```bash
+cargo run -q -p estudio-daw-cli --bin estudio-daw-project -- \
+  midi-synth-play mi-toma.json \
+  --soundfont /usr/share/soundfonts/FluidR3_GM.sf2 --bank 0 --program 0 \
+  --capture monitor.wav --capture-monitor
+```
+
+Esta ruta marca el stream como captura del monitor de un sink (`stream.capture.sink`,
+`node.async`) y ejecuta esa captura fuera del hilo RT para que no condicione el
+callback de reproducción. Mantiene el quantum global de PipeWire en el periodo
+seleccionado en el perfil (256 frames iniciales, 5,33 ms a 48 kHz), que puede
+cambiar el tamaño de bloque de otras aplicaciones; al terminar, PipeWire
+recupera la configuración previa. El monitor se graba sin
+devolver sus muestras al stream de reproducción, para evitar realimentación.
+AudioBox se direcciona por `node.name`, como requiere `target.object`. No se
+conectan ni reasignan las entradas físicas.
 
 Para una medición acústica, el micrófono puede conectarse a Input 1 y colocarse
 frente a los parlantes alimentados por AudioBox. La captura registra entonces
@@ -106,12 +144,76 @@ ganancia y sala afectan el resultado.
 La AudioBox USB 96 expone un source monitor virtual de PipeWire para el sink de
 salida (`alsa_output.…analog-stereo.monitor`). Es un puerto digital separado de
 las entradas físicas: Input 1 conserva el micrófono e Input 2 la guitarra. El
-CLI `--capture` todavía captura la entrada física, no el monitor. Un intento de
-capturar el monitor como stream nativo llevó el callback PipeWire a procesar
-casi muestra por muestra y causó underruns de FluidSynth; esa ruta experimental
-se retiró. Hace falta desacoplar esa captura o corregir la configuración de
-latencia antes de medirla. El monitor representa la señal digital del sink y no
-incluye DAC, amplificación, parlantes, aire ni ADC.
+CLI `--capture` captura la entrada física; `--capture-monitor` elige de manera
+explícita el monitor digital del sink y solicita un quantum de 256 frames. El
+monitor representa la señal digital del sink y no incluye DAC,
+amplificación, parlantes, aire ni ADC. La medición física de tecla a sonido
+requiere además sincronizar una entrada física o un loopback dedicado.
+
+## Búfer de dispositivo y protección de dropout
+
+Son controles distintos. El manual de AudioBox USB 96 describe `Safe Mode` de
+Universal Control en Windows como un ajuste del búfer de entrada; el tamaño de
+bloque del driver determina el búfer de dispositivo y puede subir para dar más
+tiempo de procesamiento a costa de latencia. La perilla `Mixer` de AudioBox es
+monitoreo analógico directo de sus entradas físicas.
+
+`Dropout Protection` es una función del motor de **Studio One**, no una caché
+incluida en el hardware AudioBox. Añade un búfer de reproducción independiente
+del búfer de dispositivo; Studio One puede mantener baja la ruta de monitoreo y
+usar el búfer adicional en reproducción. Ableton utiliza sus propios ajustes de
+dispositivo, buffers y compensación; no usa Dropout Protection de Studio One.
+
+La ruta actual de Estudio DAW tampoco implementa Dropout Protection adaptativo.
+El perfil inicial solicita `period_frames=256` a PipeWire y define por separado
+el objetivo de frames de la cola PCM. La medición de ataques
+10–14 ms descrita arriba corresponde sólo al render y al monitor digital de
+Estudio DAW; no mide ni emula la protección de reproducción de Studio One.
+Referencias del fabricante: [manual de AudioBox USB 96](https://pae-web.presonusmusic.com/downloads/products/pdf/AudioBoxUSB96_Manual_del_propietario_ES_26062018.pdf), [Dropout Protection y monitoreo de baja latencia en Studio One](https://support.presonus.com/hc/en-us/articles/9223446792461-Studio-One-6-Audio-Dropout-Protection-and-Low-Latency-Monitoring-FAQ).
+
+### Perfiles de Estudio DAW
+
+El shell Tauri ofrece los perfiles **Live / Grabar** y **Reproducción
+multipista** en «Buffers y latencia». El periodo solicitado y el objetivo de
+cola PCM se editan por separado; los valores se guardan en
+`$XDG_CONFIG_HOME/estudio-daw/audio-runtime.json` (o
+`~/.config/estudio-daw/audio-runtime.json`) y no dentro del proyecto.
+
+Los comandos `midi-synth-live` y `audio-record` consumen el periodo del perfil
+Live/Record; `midi-synth-play` consume el perfil Multitrack Playback al abrir un
+stream nuevo. Los valores iniciales son 256 frames de periodo y objetivos PCM de
+512 frames en vivo y 1024 frames en reproducción. A 48 kHz equivalen
+respectivamente a 5,33 ms de periodo, 10,67 ms de objetivo de cola live y 21,33
+ms de objetivo PCM de reproducción; estas duraciones describen componentes, no
+latencia física total. `audio-record` captura WAV mediante su propio ring de
+captura y no consume el objetivo de cola PCM del worker SoundFont.
+El tamaño de bloque de PipeWire efectivo aún no se expone por el shell y se
+muestra como no disponible. Cambiar preferencias no reconfigura un stream que
+ya está corriendo; el siguiente inicio usa el perfil elegido para su modo.
+
+En la verificación de hardware del 2026-09-27 se usaron valores XDG temporales.
+Live/Record solicitó 256 frames y `pw-top` observó quantum 256/48 kHz durante la
+entrada KeyLab; se recibió 1 evento MIDI sin drops. La grabación WAV con periodo
+256 guardó 188.928 muestras intercaladas sin descartes; `pw-top` mostró la
+fuente AudioBox sugiriendo 256 y el driver de salida a 1024 durante esa muestra.
+Playback solicitó 512 frames y sink/cliente operaron a quantum 512/48 kHz. Con
+FluidR3_GM (SF2 de prueba, no Analog Lab), el objetivo de cola PCM de 1024 frames
+resultó en 1024 frames actuales/pico de un ring de 2048, sin underruns, errores
+del worker ni drops MIDI. La reproducción se escuchó en el equipo conectado a
+AudioBox.
+
+`pw-top` reportó ERR totales 235 para el sink y 16.140 para la fuente; la
+medición no aisló deltas por corrida, así que esos totales no se atribuyen a un
+perfil concreto. El quantum volvió al valor idle de 1024 al terminar los
+streams, y `clock.force-quantum` permaneció en 0. Los perfiles se leen al abrir
+cada stream; el shell Tauri todavía no controla un motor/transporte activo.
+
+El shell todavía no conecta sus botones de transporte con el stream. La ruta
+actual tampoco separa buffers por pista ni conserva una monitorización live de
+baja latencia mientras el resto de una sesión multipista recibe más margen. El
+objetivo PCM de reproducción se aplica al worker SoundFont utilizado por
+`midi-synth-play`; el sinte sinusoidal no tiene esa cola. Sustain CC64 del pedal
+se envía a FluidSynth y se aplica también al instrumento sinusoidal de prueba.
 
 ## Pruebas y límites
 

@@ -31,8 +31,20 @@ const VOICE_GAIN: f32 = 0.20;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SynthMidiEvent {
-    NoteOn { channel: u8, note: u8, velocity: u8 },
-    NoteOff { channel: u8, note: u8 },
+    NoteOn {
+        channel: u8,
+        note: u8,
+        velocity: u8,
+    },
+    NoteOff {
+        channel: u8,
+        note: u8,
+    },
+    ControlChange {
+        channel: u8,
+        controller: u8,
+        value: u8,
+    },
 }
 
 #[derive(Debug, Error, PartialEq, Eq)]
@@ -128,6 +140,7 @@ impl SynthEventReceiver {
 struct Voice {
     active: bool,
     releasing: bool,
+    sustained: bool,
     channel: u8,
     note: u8,
     velocity: f32,
@@ -146,6 +159,7 @@ pub struct SineSynthNode {
     frequencies: [f32; 128],
     receiver: SynthEventReceiver,
     voices: [Voice; POLYPHONY],
+    sustain: [bool; 16],
     next_voice: usize,
 }
 
@@ -176,6 +190,7 @@ impl SineSynthNode {
             frequencies,
             receiver,
             voices: [Voice::default(); POLYPHONY],
+            sustain: [false; 16],
             next_voice: 0,
         })
     }
@@ -190,7 +205,11 @@ impl SineSynthNode {
             | SynthMidiEvent::NoteOff { channel, note } => {
                 for voice in &mut self.voices {
                     if voice.active && voice.channel == channel && voice.note == note {
-                        voice.releasing = true;
+                        if self.sustain.get(channel as usize).copied().unwrap_or(false) {
+                            voice.sustained = true;
+                        } else {
+                            voice.releasing = true;
+                        }
                     }
                 }
             }
@@ -211,6 +230,7 @@ impl SineSynthNode {
                 self.voices[index] = Voice {
                     active: true,
                     releasing: false,
+                    sustained: false,
                     channel,
                     note,
                     velocity: velocity as f32 / 127.0,
@@ -218,6 +238,24 @@ impl SineSynthNode {
                     envelope: 0.0,
                 };
             }
+            SynthMidiEvent::ControlChange {
+                channel,
+                controller: 64,
+                value,
+            } if usize::from(channel) < self.sustain.len() => {
+                let is_down = value >= 64;
+                let was_down = self.sustain[channel as usize];
+                self.sustain[channel as usize] = is_down;
+                if was_down && !is_down {
+                    for voice in &mut self.voices {
+                        if voice.active && voice.channel == channel && voice.sustained {
+                            voice.sustained = false;
+                            voice.releasing = true;
+                        }
+                    }
+                }
+            }
+            SynthMidiEvent::ControlChange { .. } => {}
         }
     }
 }
@@ -295,6 +333,49 @@ mod tests {
         assert!(release[release.len() - 1_024..]
             .iter()
             .all(|sample| sample.abs() < 1.0e-6));
+    }
+
+    #[test]
+    fn sustain_pedal_holds_note_off_until_cc64_is_released() {
+        let (mut sender, receiver) = midi_event_queue();
+        let mut synth = SineSynthNode::new(48_000, 2, receiver).unwrap();
+        let mut block = [0.0; 512];
+        assert!(sender.try_send(SynthMidiEvent::NoteOn {
+            channel: 0,
+            note: 60,
+            velocity: 100,
+        }));
+        assert!(sender.try_send(SynthMidiEvent::ControlChange {
+            channel: 0,
+            controller: 64,
+            value: 127,
+        }));
+        assert!(sender.try_send(SynthMidiEvent::NoteOff {
+            channel: 0,
+            note: 60,
+        }));
+        synth.process(&mut block).unwrap();
+        let held_voice = synth
+            .voices
+            .iter()
+            .find(|voice| voice.active && voice.note == 60)
+            .expect("la voz debe seguir activa mientras el pedal está abajo");
+        assert!(held_voice.sustained);
+        assert!(!held_voice.releasing);
+
+        assert!(sender.try_send(SynthMidiEvent::ControlChange {
+            channel: 0,
+            controller: 64,
+            value: 0,
+        }));
+        synth.process(&mut block).unwrap();
+        let released_voice = synth
+            .voices
+            .iter()
+            .find(|voice| voice.active && voice.note == 60)
+            .expect("el envelope sigue sonando durante el release");
+        assert!(!released_voice.sustained);
+        assert!(released_voice.releasing);
     }
 
     #[test]

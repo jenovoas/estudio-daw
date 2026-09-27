@@ -21,6 +21,10 @@ const FRAMES_PER_CHUNK: usize = 256;
 const RING_SAMPLES: usize = 4096;
 const MIDI_QUEUE_CAPACITY: usize = 256;
 
+fn effective_queue_target_frames(requested: usize) -> usize {
+    requested.max(FRAMES_PER_CHUNK).min(RING_SAMPLES / 2)
+}
+
 #[derive(Debug, PartialEq, Eq)]
 enum WorkerCommand {
     Midi(SynthMidiEvent),
@@ -138,6 +142,19 @@ impl SoundFontInstrumentWorker {
         bank: u16,
         program: u8,
     ) -> Result<(Self, FluidSynthPcmNode), SoundFontWorkerError> {
+        Self::start_with_queue_target_frames(soundfont_path, sample_rate, bank, program, 512)
+    }
+
+    /// Abre un worker con un objetivo configurable de PCM pendiente.
+    /// El ring conserva capacidad preasignada de 2048 frames; el objetivo se
+    /// limita a esa capacidad y nunca se modifica desde el callback.
+    pub fn start_with_queue_target_frames(
+        soundfont_path: impl Into<String>,
+        sample_rate: u32,
+        bank: u16,
+        program: u8,
+        queue_target_frames: usize,
+    ) -> Result<(Self, FluidSynthPcmNode), SoundFontWorkerError> {
         let ring = Arc::new(SampleRingBuffer::new(RING_SAMPLES));
         let dropped_events = Arc::new(AtomicUsize::new(0));
         let worker_errors = Arc::new(AtomicUsize::new(0));
@@ -149,6 +166,8 @@ impl SoundFontInstrumentWorker {
         let worker_ring = Arc::clone(&ring);
         let worker_errors_inner = Arc::clone(&worker_errors);
         let path = soundfont_path.into();
+        let queue_target_samples =
+            effective_queue_target_frames(queue_target_frames).saturating_mul(2);
         let thread = thread::Builder::new()
             .name("estudio-soundfont-renderer".into())
             .spawn(move || {
@@ -187,9 +206,13 @@ impl SoundFontInstrumentWorker {
                         Err(TryRecvError::Empty) => {}
                     }
 
-                    // Al dejar espacio para un bloque completo, el worker
-                    // limita latencia y evita tirar muestras del ring.
-                    if worker_ring.capacity() - worker_ring.available() >= block.len() {
+                    // El ring reserva capacidad para tolerar scheduling, pero
+                    // no se debe llenar: PCM antiguo delante de un NoteOn se
+                    // convierte directamente en latencia audible.
+                    let queued_samples = worker_ring.available();
+                    if queued_samples + block.len() <= queue_target_samples
+                        && worker_ring.capacity() - queued_samples >= block.len()
+                    {
                         if engine.render_interleaved(&mut block).is_err() {
                             worker_errors_inner.fetch_add(1, Ordering::Relaxed);
                             block.fill(0.0);
@@ -326,6 +349,11 @@ fn apply_midi_event(
             *active = active.saturating_add(1);
             return Ok(());
         }
+        SynthMidiEvent::ControlChange {
+            channel,
+            controller,
+            value,
+        } => engine.control_change(channel, controller, value),
     }
 }
 
@@ -369,13 +397,22 @@ mod tests {
     }
 
     #[test]
+    fn pcm_queue_target_is_clamped_to_chunk_and_preallocated_ring_capacity() {
+        assert_eq!(effective_queue_target_frames(0), FRAMES_PER_CHUNK);
+        assert_eq!(effective_queue_target_frames(512), 512);
+        assert_eq!(effective_queue_target_frames(usize::MAX), RING_SAMPLES / 2);
+    }
+
+    #[test]
     fn worker_renders_soundfont_notes_into_the_callback_source() {
         let _guard = crate::fluidsynth::FLUIDSYNTH_TEST_LOCK.lock().unwrap();
         let path = "/usr/share/soundfonts/FluidR3_GM.sf2";
         if !std::path::Path::new(path).is_file() {
             return;
         }
-        let (worker, mut node) = SoundFontInstrumentWorker::start(path, 48_000, 0, 0).unwrap();
+        let (worker, mut node) =
+            SoundFontInstrumentWorker::start_with_queue_target_frames(path, 48_000, 0, 0, 1_024)
+                .unwrap();
         assert!(worker.try_send(SynthMidiEvent::NoteOn {
             channel: 0,
             note: 69,
@@ -396,7 +433,30 @@ mod tests {
             heard_note,
             "SoundFont worker never delivered audible samples"
         );
+        assert!(worker.try_send(SynthMidiEvent::ControlChange {
+            channel: 0,
+            controller: 64,
+            value: 127,
+        }));
+        assert!(worker.try_send(SynthMidiEvent::NoteOff {
+            channel: 0,
+            note: 69,
+        }));
+        assert!(worker.try_send(SynthMidiEvent::ControlChange {
+            channel: 0,
+            controller: 64,
+            value: 0,
+        }));
+        for _ in 0..20 {
+            node.process(&mut block).unwrap();
+            thread::sleep(Duration::from_millis(2));
+        }
+        assert!(
+            worker.pcm_queue_metrics().peak_frames <= 1_024,
+            "PCM prefetch exceeded the configured playback target"
+        );
         assert_eq!(node.underrun_samples(), 0);
+        assert_eq!(worker.worker_errors(), 0);
     }
 
     #[test]
@@ -418,6 +478,19 @@ mod tests {
             assert_eq!(receiver.try_recv().unwrap(), WorkerCommand::Midi(event));
         }
         assert!(matches!(receiver.try_recv(), Err(TryRecvError::Empty)));
+        assert!(sender.try_send(SynthMidiEvent::ControlChange {
+            channel: 0,
+            controller: 64,
+            value: 127,
+        }));
+        assert_eq!(
+            receiver.try_recv().unwrap(),
+            WorkerCommand::Midi(SynthMidiEvent::ControlChange {
+                channel: 0,
+                controller: 64,
+                value: 127,
+            })
+        );
         drop(receiver);
         assert!(!sender.try_send(event));
         assert_eq!(dropped.load(Ordering::Relaxed), 2);

@@ -26,4 +26,6 @@ window.estudioPlatform = {
   },
   setTransport: (command) => invoke("set_transport", { command }),
   historyAction: (action) => invoke("history_action", { action }),
+  audioRuntimeSettings: () => invoke("audio_runtime_settings"),
+  saveAudioSettings: (settings) => invoke("save_audio_settings", { settings }),
 };

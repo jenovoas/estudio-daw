@@ -25,12 +25,20 @@ pub struct PipeWireStreamConfig {
     pub channels: u32,
     pub period_frames: usize,
     pub max_buffer_frames: usize,
+    /// El destino de captura es el monitor de un nodo sink, no una fuente física.
+    pub capture_sink_monitor: bool,
+    /// Fuerza temporalmente el quantum del grafo mientras el stream vive.
+    /// Se usa para capturas de puertos monitor que de otro modo pueden
+    /// renegociar el grafo a bloques de una muestra.
+    pub force_graph_quantum: Option<usize>,
 }
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct PipeWireTargets {
-    pub capture_node: Option<u64>,
-    pub playback_node: Option<u64>,
+    /// `target.object` de PipeWire espera `node.name` o `object.serial`, no el
+    /// object id efímero que devuelve la enumeración.
+    pub capture_node: Option<String>,
+    pub playback_node: Option<String>,
 }
 
 impl Default for PipeWireStreamConfig {
@@ -38,8 +46,12 @@ impl Default for PipeWireStreamConfig {
         Self {
             sample_rate: 48_000,
             channels: 2,
-            period_frames: 32,
+            // 256 frames is a practical low-latency desktop starting point;
+            // smaller quanta can increase PipeWire scheduling errors.
+            period_frames: 256,
             max_buffer_frames: 2_048,
+            capture_sink_monitor: false,
+            force_graph_quantum: None,
         }
     }
 }
@@ -221,6 +233,7 @@ pub struct PipeWireDuplexReport {
     pub output_total_samples: u64,
     pub capture_last_samples: u64,
     pub output_last_samples: u64,
+    pub output_last_requested_frames: u64,
     pub capture_dropped_samples: u64,
     pub output_silence_samples: u64,
     /// Microsegundos desde el inicio de la función hasta el primer callback de captura.
@@ -233,6 +246,7 @@ impl PipeWireStreamConfig {
             || self.channels == 0
             || self.period_frames == 0
             || self.max_buffer_frames < self.period_frames
+            || self.force_graph_quantum == Some(0)
         {
             return Err(PipeWireError::InvalidConfig);
         }
@@ -284,6 +298,7 @@ pub fn run_pipewire_output_controlled(
             let Some(mut buffer) = stream.dequeue_buffer() else {
                 return;
             };
+            let requested_frames = buffer.requested();
             let Some(data) = buffer.datas_mut().first_mut() else {
                 return;
             };
@@ -294,7 +309,13 @@ pub fn run_pipewire_output_controlled(
                 // El stream fue negociado explícitamente como F32LE. PipeWire
                 // entrega el bloque mapeado y `align_to_mut` sólo separa el
                 // posible prefijo/sufijo no alineado sin asignar memoria.
-                let (_, samples, _) = unsafe { bytes.align_to_mut::<f32>() };
+                let valid_bytes = output_buffer_bytes(
+                    requested_frames,
+                    config.period_frames,
+                    config.channels as usize,
+                    bytes.len(),
+                );
+                let (_, samples, _) = unsafe { bytes[..valid_bytes].align_to_mut::<f32>() };
                 samples.fill(0.0);
                 let _ = processor.process(samples);
                 samples.len()
@@ -334,6 +355,343 @@ pub fn run_pipewire_output_controlled(
     )?;
     main_loop.run();
     Ok(())
+}
+
+/// Reproduce un `RenderPlan` por una duración finita, sin abrir una entrada
+/// física ni reenviar audio capturado a la salida.
+pub fn run_pipewire_output_for_targets(
+    config: PipeWireStreamConfig,
+    render_plan: RenderPlan,
+    duration: Duration,
+    playback_node: Option<String>,
+) -> Result<PipeWireDuplexReport, PipeWireError> {
+    let config = config.validate()?;
+    let mut processor = render_plan_exchange(render_plan).1;
+    pw::init();
+    let main_loop = pw::main_loop::MainLoopRc::new(None)?;
+    let context = pw::context::ContextRc::new(&main_loop, None)?;
+    let core = context.connect_rc(None)?;
+    let mut stream_properties = properties! {
+        *pw::keys::MEDIA_TYPE => "Audio",
+        *pw::keys::MEDIA_CATEGORY => "Playback",
+        *pw::keys::MEDIA_ROLE => "Music",
+        *pw::keys::AUDIO_CHANNELS => config.channels.to_string(),
+        *pw::keys::NODE_LATENCY => format!("{}/{}", config.period_frames, config.sample_rate),
+    };
+    if let Some(node) = playback_node {
+        stream_properties.insert(*pw::keys::TARGET_OBJECT, node);
+    }
+    let stream = pw::stream::StreamBox::new(&core, "estudio-daw-output", stream_properties)?;
+    let output_callbacks = Arc::new(AtomicU64::new(0));
+    let output_total_samples = Arc::new(AtomicU64::new(0));
+    let output_last_samples = Arc::new(AtomicU64::new(0));
+    let output_last_requested_frames = Arc::new(AtomicU64::new(0));
+    let callbacks = Arc::clone(&output_callbacks);
+    let total_samples = Arc::clone(&output_total_samples);
+    let last_samples = Arc::clone(&output_last_samples);
+    let last_requested = Arc::clone(&output_last_requested_frames);
+    let _listener = stream
+        .add_local_listener_with_user_data(())
+        .process(move |stream, _| {
+            let Some(mut buffer) = stream.dequeue_buffer() else {
+                return;
+            };
+            let requested_frames = buffer.requested();
+            last_requested.store(requested_frames, Ordering::Relaxed);
+            let Some(data) = buffer.datas_mut().first_mut() else {
+                return;
+            };
+            let sample_count = {
+                let Some(bytes) = data.data() else {
+                    return;
+                };
+                let valid_bytes = output_buffer_bytes(
+                    requested_frames,
+                    config.period_frames,
+                    config.channels as usize,
+                    bytes.len(),
+                );
+                let (_, samples, _) = unsafe { bytes[..valid_bytes].align_to_mut::<f32>() };
+                samples.fill(0.0);
+                let _ = processor.process(samples);
+                samples.len()
+            };
+            let chunk = data.chunk_mut();
+            *chunk.offset_mut() = 0;
+            *chunk.stride_mut() = (config.channels as usize * std::mem::size_of::<f32>()) as _;
+            *chunk.size_mut() = (sample_count * std::mem::size_of::<f32>()) as _;
+            callbacks.fetch_add(1, Ordering::Relaxed);
+            total_samples.fetch_add(sample_count as u64, Ordering::Relaxed);
+            last_samples.store(sample_count as u64, Ordering::Relaxed);
+        })
+        .register()?;
+
+    let mut params = audio_params(config);
+    stream.connect(
+        spa::utils::Direction::Output,
+        None,
+        pw::stream::StreamFlags::AUTOCONNECT
+            | pw::stream::StreamFlags::MAP_BUFFERS
+            | pw::stream::StreamFlags::RT_PROCESS,
+        &mut params,
+    )?;
+    let loop_to_quit = main_loop.clone();
+    let _timer = main_loop.loop_().add_timer(move |_| loop_to_quit.quit());
+    _timer
+        .update_timer(Some(duration), None)
+        .into_result()
+        .map_err(|error| PipeWireError::Timer(format!("{error:?}")))?;
+    main_loop.run();
+    drop(_listener);
+    drop(stream);
+    Ok(PipeWireDuplexReport {
+        capture_callbacks: 0,
+        output_callbacks: output_callbacks.load(Ordering::Relaxed),
+        capture_total_samples: 0,
+        output_total_samples: output_total_samples.load(Ordering::Relaxed),
+        capture_last_samples: 0,
+        output_last_samples: output_last_samples.load(Ordering::Relaxed),
+        capture_dropped_samples: 0,
+        output_silence_samples: 0,
+        output_last_requested_frames: output_last_requested_frames.load(Ordering::Relaxed),
+        capture_start_delay_micros: 0,
+    })
+}
+
+/// Ejecuta la salida en su propio hilo de PipeWire y la captura del monitor
+/// del sink en un cliente/hilo separado para aislar la planificación RT.
+pub fn run_pipewire_output_for_targets_with_monitor_capture(
+    config: PipeWireStreamConfig,
+    render_plan: RenderPlan,
+    duration: Duration,
+    playback_node: Option<String>,
+    capture_node: String,
+    recorder: WavCaptureRecorder,
+) -> Result<(PipeWireDuplexReport, WavCaptureReport), PipeWireError> {
+    if !config.capture_sink_monitor {
+        return Err(PipeWireError::InvalidConfig);
+    }
+    run_pipewire_output_for_targets_with_capture(
+        config,
+        render_plan,
+        duration,
+        playback_node,
+        capture_node,
+        recorder,
+        true,
+    )
+}
+
+/// Ejecuta reproducción en el cliente de salida y captura de una entrada física
+/// en un cliente/hilo asíncrono independiente. La captura no gobierna el reloj
+/// de salida ni entra en el callback de render RT.
+pub fn run_pipewire_output_for_targets_with_source_capture(
+    config: PipeWireStreamConfig,
+    render_plan: RenderPlan,
+    duration: Duration,
+    playback_node: Option<String>,
+    capture_node: String,
+    recorder: WavCaptureRecorder,
+) -> Result<(PipeWireDuplexReport, WavCaptureReport), PipeWireError> {
+    if config.capture_sink_monitor {
+        return Err(PipeWireError::InvalidConfig);
+    }
+    run_pipewire_output_for_targets_with_capture(
+        config,
+        render_plan,
+        duration,
+        playback_node,
+        capture_node,
+        recorder,
+        false,
+    )
+}
+
+fn run_pipewire_output_for_targets_with_capture(
+    config: PipeWireStreamConfig,
+    render_plan: RenderPlan,
+    duration: Duration,
+    playback_node: Option<String>,
+    capture_node: String,
+    recorder: WavCaptureRecorder,
+    sink_monitor: bool,
+) -> Result<(PipeWireDuplexReport, WavCaptureReport), PipeWireError> {
+    let capture_started_at = Instant::now();
+    let capture_stop = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let worker_stop = Arc::clone(&capture_stop);
+    let (ready_tx, ready_rx) = std::sync::mpsc::sync_channel(1);
+    let capture_worker = thread::Builder::new()
+        .name(if sink_monitor {
+            "estudio-pipewire-monitor".into()
+        } else {
+            "estudio-pipewire-source".into()
+        })
+        .spawn(move || {
+            run_pipewire_external_capture(
+                config,
+                capture_node,
+                capture_started_at,
+                worker_stop,
+                recorder,
+                ready_tx,
+                sink_monitor,
+            )
+        })
+        .map_err(PipeWireError::Capture)?;
+
+    if ready_rx.recv().is_err() {
+        return capture_worker
+            .join()
+            .map_err(|_| PipeWireError::CaptureWorkerPanic)?;
+    }
+
+    let output_result =
+        run_pipewire_output_for_targets(config, render_plan, duration, playback_node);
+    capture_stop.store(true, Ordering::Release);
+    let (capture_metrics, capture_report) = capture_worker
+        .join()
+        .map_err(|_| PipeWireError::CaptureWorkerPanic)??;
+    let mut output_report = output_result?;
+    output_report.capture_callbacks = capture_metrics.capture_callbacks;
+    output_report.capture_total_samples = capture_metrics.capture_total_samples;
+    output_report.capture_last_samples = capture_metrics.capture_last_samples;
+    output_report.capture_dropped_samples = capture_metrics.capture_dropped_samples;
+    output_report.capture_start_delay_micros = capture_metrics.capture_start_delay_micros;
+    Ok((output_report, capture_report))
+}
+
+fn run_pipewire_external_capture(
+    config: PipeWireStreamConfig,
+    capture_node: String,
+    stream_started_at: Instant,
+    stop: Arc<std::sync::atomic::AtomicBool>,
+    recorder: WavCaptureRecorder,
+    ready: std::sync::mpsc::SyncSender<()>,
+    sink_monitor: bool,
+) -> Result<(PipeWireDuplexReport, WavCaptureReport), PipeWireError> {
+    let config = config.validate()?;
+    pw::init();
+    let main_loop = pw::main_loop::MainLoopRc::new(None)?;
+    let context = pw::context::ContextRc::new(&main_loop, None)?;
+    let core = context.connect_rc(None)?;
+    let recorder = Arc::new(recorder);
+    let mut capture_properties = properties! {
+        *pw::keys::MEDIA_TYPE => "Audio",
+        *pw::keys::MEDIA_CATEGORY => "Capture",
+        *pw::keys::MEDIA_ROLE => "Music",
+        *pw::keys::AUDIO_CHANNELS => config.channels.to_string(),
+        *pw::keys::NODE_LATENCY => format!("{}/{}", config.period_frames, config.sample_rate),
+        *pw::keys::TARGET_OBJECT => capture_node,
+        // Keep ADC/monitor processing out of the sink driver's RT dependency
+        // chain. The mapped capture callback is dispatched on this client's
+        // regular loop and only copies into the preallocated recorder ring.
+        "node.async" => "true",
+    };
+    if sink_monitor {
+        capture_properties.insert("stream.capture.sink", "true");
+        capture_properties.insert(
+            "node.force-quantum",
+            config
+                .force_graph_quantum
+                .unwrap_or(config.period_frames)
+                .to_string(),
+        );
+    }
+    let capture_stream = pw::stream::StreamBox::new(
+        &core,
+        if sink_monitor {
+            "estudio-daw-monitor-capture"
+        } else {
+            "estudio-daw-physical-capture"
+        },
+        capture_properties,
+    )?;
+    let capture_callbacks = Arc::new(AtomicU64::new(0));
+    let capture_total_samples = Arc::new(AtomicU64::new(0));
+    let capture_last_samples = Arc::new(AtomicU64::new(0));
+    let capture_dropped_samples = Arc::new(AtomicU64::new(0));
+    let capture_start_delay_micros = Arc::new(AtomicU64::new(0));
+    let callbacks = Arc::clone(&capture_callbacks);
+    let total_samples = Arc::clone(&capture_total_samples);
+    let last_samples = Arc::clone(&capture_last_samples);
+    let dropped_samples = Arc::clone(&capture_dropped_samples);
+    let start_delay = Arc::clone(&capture_start_delay_micros);
+    let capture_recorder = Arc::clone(&recorder);
+    let _listener = capture_stream
+        .add_local_listener_with_user_data(())
+        .process(move |stream, _| {
+            let Some(mut buffer) = stream.dequeue_buffer() else {
+                return;
+            };
+            let Some(data) = buffer.datas_mut().first_mut() else {
+                return;
+            };
+            let valid_bytes = data.chunk().size() as usize;
+            let Some(bytes) = data.data() else {
+                return;
+            };
+            let valid_bytes = valid_bytes.min(bytes.len());
+            let (_, samples, _) = unsafe { bytes[..valid_bytes].align_to::<f32>() };
+            let elapsed_micros = stream_started_at.elapsed().as_micros() as u64;
+            let _ = start_delay.compare_exchange(
+                0,
+                elapsed_micros.saturating_add(1),
+                Ordering::Relaxed,
+                Ordering::Relaxed,
+            );
+            callbacks.fetch_add(1, Ordering::Relaxed);
+            total_samples.fetch_add(samples.len() as u64, Ordering::Relaxed);
+            last_samples.store(samples.len() as u64, Ordering::Relaxed);
+            let pushed = capture_recorder.push(samples);
+            dropped_samples.fetch_add((samples.len() - pushed) as u64, Ordering::Relaxed);
+        })
+        .register()?;
+
+    let mut params = audio_params(config);
+    capture_stream.connect(
+        spa::utils::Direction::Input,
+        None,
+        pw::stream::StreamFlags::AUTOCONNECT | pw::stream::StreamFlags::MAP_BUFFERS,
+        &mut params,
+    )?;
+    let _ = ready.send(());
+    let stop_check = Arc::clone(&stop);
+    let loop_to_quit = main_loop.clone();
+    let timer = main_loop.loop_().add_timer(move |_| {
+        if stop_check.load(Ordering::Acquire) {
+            loop_to_quit.quit();
+        }
+    });
+    timer
+        .update_timer(
+            Some(Duration::from_millis(2)),
+            Some(Duration::from_millis(2)),
+        )
+        .into_result()
+        .map_err(|error| PipeWireError::Timer(format!("{error:?}")))?;
+    main_loop.run();
+    drop(_listener);
+    drop(capture_stream);
+    let capture_report = Arc::try_unwrap(recorder)
+        .map_err(|_| PipeWireError::CaptureStillInUse)?
+        .finish()?;
+    Ok((
+        PipeWireDuplexReport {
+            capture_callbacks: capture_callbacks.load(Ordering::Relaxed),
+            output_callbacks: 0,
+            capture_total_samples: capture_total_samples.load(Ordering::Relaxed),
+            output_total_samples: 0,
+            capture_last_samples: capture_last_samples.load(Ordering::Relaxed),
+            output_last_samples: 0,
+            output_silence_samples: 0,
+            output_last_requested_frames: 0,
+            capture_dropped_samples: capture_dropped_samples.load(Ordering::Relaxed),
+            capture_start_delay_micros: capture_start_delay_micros
+                .load(Ordering::Relaxed)
+                .saturating_sub(1),
+        },
+        capture_report,
+    ))
 }
 
 /// Ejecuta captura y reproducción PipeWire con un ring SPSC entre ambos.
@@ -435,6 +793,7 @@ fn run_pipewire_duplex_internal(
     let output_callbacks = Arc::new(AtomicU64::new(0));
     let output_total_samples = Arc::new(AtomicU64::new(0));
     let output_last_samples = Arc::new(AtomicU64::new(0));
+    let output_last_requested_frames = Arc::new(AtomicU64::new(0));
     let output_silence_samples = Arc::new(AtomicU64::new(0));
 
     let mut capture_properties = properties! {
@@ -445,7 +804,18 @@ fn run_pipewire_duplex_internal(
             *pw::keys::NODE_LATENCY => format!("{}/{}", config.period_frames, config.sample_rate),
     };
     if let Some(node) = targets.capture_node {
-        capture_properties.insert(*pw::keys::TARGET_OBJECT, node.to_string());
+        capture_properties.insert(*pw::keys::TARGET_OBJECT, node);
+    }
+    if config.capture_sink_monitor {
+        // WirePlumber otherwise treats an Audio/Sink target as incompatible
+        // with a capture stream and falls back to the default physical source.
+        capture_properties.insert("stream.capture.sink", "true");
+        // The monitor link points back from the playback sink. Async graph
+        // scheduling prevents that dependency from perturbing the sink driver.
+        capture_properties.insert("node.async", "true");
+    }
+    if let Some(quantum) = config.force_graph_quantum {
+        capture_properties.insert("node.force-quantum", quantum.to_string());
     }
     let capture_stream =
         pw::stream::StreamBox::new(&core, "estudio-daw-input", capture_properties)?;
@@ -456,6 +826,7 @@ fn run_pipewire_duplex_internal(
     let capture_dropped_counter = Arc::clone(&capture_dropped_samples);
     let capture_start_delay_counter = Arc::clone(&capture_start_delay_micros);
     let capture_recorder = recorder.as_ref().map(Arc::clone);
+    let capture_sink_monitor = config.capture_sink_monitor;
     let _capture_listener = capture_stream
         .add_local_listener_with_user_data(())
         .process(move |stream, _| {
@@ -481,7 +852,13 @@ fn run_pipewire_duplex_internal(
             capture_callbacks_counter.fetch_add(1, Ordering::Relaxed);
             capture_total_counter.fetch_add(samples.len() as u64, Ordering::Relaxed);
             capture_last_counter.store(samples.len() as u64, Ordering::Relaxed);
-            let pushed = capture_ring.push(samples);
+            let pushed = if capture_sink_monitor {
+                // A sink monitor already contains the playback stream. Feeding
+                // it back through the duplex ring would create a feedback loop.
+                samples.len()
+            } else {
+                capture_ring.push(samples)
+            };
             capture_dropped_counter.fetch_add((samples.len() - pushed) as u64, Ordering::Relaxed);
             if let Some(recorder) = capture_recorder.as_ref() {
                 recorder.push(samples);
@@ -494,40 +871,51 @@ fn run_pipewire_duplex_internal(
         *pw::keys::MEDIA_CATEGORY => "Playback",
         *pw::keys::MEDIA_ROLE => "Music",
         *pw::keys::AUDIO_CHANNELS => config.channels.to_string(),
+        *pw::keys::NODE_LATENCY => format!("{}/{}", config.period_frames, config.sample_rate),
     };
     if let Some(node) = targets.playback_node {
-        output_properties.insert(*pw::keys::TARGET_OBJECT, node.to_string());
+        output_properties.insert(*pw::keys::TARGET_OBJECT, node);
     }
     let output_stream = pw::stream::StreamBox::new(&core, "estudio-daw-output", output_properties)?;
     let output_ring = Arc::clone(&ring);
     let output_callbacks_counter = Arc::clone(&output_callbacks);
     let output_total_counter = Arc::clone(&output_total_samples);
     let output_last_counter = Arc::clone(&output_last_samples);
+    let output_requested_counter = Arc::clone(&output_last_requested_frames);
     let output_silence_counter = Arc::clone(&output_silence_samples);
+    let capture_sink_monitor = config.capture_sink_monitor;
     let _output_listener = output_stream
         .add_local_listener_with_user_data(())
         .process(move |stream, _| {
             let Some(mut buffer) = stream.dequeue_buffer() else {
                 return;
             };
+            let requested_frames = buffer.requested();
+            output_requested_counter.store(requested_frames, Ordering::Relaxed);
             let Some(data) = buffer.datas_mut().first_mut() else {
                 return;
             };
             let Some(bytes) = data.data() else {
                 return;
             };
-            // En un buffer de salida el chunk puede venir con size=0 porque
-            // todavía no existe contenido producido. La capacidad mapeada es
-            // maxsize; la acotamos al bloque configurado para no procesar
-            // memoria de más si PipeWire entrega un pool sobredimensionado.
-            let valid_bytes = (config.period_frames * config.channels as usize)
-                .saturating_mul(std::mem::size_of::<f32>())
-                .min(bytes.len());
+            // PipeWire puede solicitar menos frames que el quantum del grafo
+            // después del remuestreo; producir el quantum completo aceleraría
+            // el render y vaciaría el ring PCM.
+            let valid_bytes = output_buffer_bytes(
+                requested_frames,
+                config.period_frames,
+                config.channels as usize,
+                bytes.len(),
+            );
             let (_, samples, _) = unsafe { bytes[..valid_bytes].align_to_mut::<f32>() };
             output_callbacks_counter.fetch_add(1, Ordering::Relaxed);
             output_total_counter.fetch_add(samples.len() as u64, Ordering::Relaxed);
             output_last_counter.store(samples.len() as u64, Ordering::Relaxed);
-            let copied = output_ring.pop(samples);
+            let copied = if capture_sink_monitor {
+                0
+            } else {
+                output_ring.pop(samples)
+            };
             samples[copied..].fill(0.0);
             output_silence_counter.fetch_add((samples.len() - copied) as u64, Ordering::Relaxed);
             let _ = processor.process(samples);
@@ -535,12 +923,17 @@ fn run_pipewire_duplex_internal(
         .register()?;
 
     let mut capture_params = audio_params(config);
+    let mut capture_flags =
+        pw::stream::StreamFlags::AUTOCONNECT | pw::stream::StreamFlags::MAP_BUFFERS;
+    // Without RT_PROCESS PipeWire dispatches the monitor callback asynchronously,
+    // so it cannot control playback's realtime schedule.
+    if !config.capture_sink_monitor {
+        capture_flags |= pw::stream::StreamFlags::RT_PROCESS;
+    }
     capture_stream.connect(
         spa::utils::Direction::Input,
         None,
-        pw::stream::StreamFlags::AUTOCONNECT
-            | pw::stream::StreamFlags::MAP_BUFFERS
-            | pw::stream::StreamFlags::RT_PROCESS,
+        capture_flags,
         &mut capture_params,
     )?;
     let mut output_params = audio_params(config);
@@ -585,6 +978,7 @@ fn run_pipewire_duplex_internal(
             output_total_samples: output_total_samples.load(Ordering::Relaxed),
             capture_last_samples: capture_last_samples.load(Ordering::Relaxed),
             output_last_samples: output_last_samples.load(Ordering::Relaxed),
+            output_last_requested_frames: output_last_requested_frames.load(Ordering::Relaxed),
             capture_dropped_samples: capture_dropped_samples.load(Ordering::Relaxed),
             output_silence_samples: output_silence_samples.load(Ordering::Relaxed),
             capture_start_delay_micros: capture_start_delay_micros
@@ -616,6 +1010,23 @@ fn audio_params(config: PipeWireStreamConfig) -> [&'static Pod; 1] {
     [Pod::from_bytes(bytes).expect("pod válido")]
 }
 
+fn output_buffer_bytes(
+    requested_frames: u64,
+    fallback_frames: usize,
+    channels: usize,
+    buffer_bytes: usize,
+) -> usize {
+    let frames = if requested_frames > 0 {
+        usize::try_from(requested_frames).unwrap_or(usize::MAX)
+    } else {
+        fallback_frames
+    };
+    frames
+        .saturating_mul(channels)
+        .saturating_mul(std::mem::size_of::<f32>())
+        .min(buffer_bytes)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -629,12 +1040,21 @@ mod tests {
                 channels: 2,
                 period_frames: 32,
                 max_buffer_frames: 2_048,
+                capture_sink_monitor: false,
+                force_graph_quantum: None,
             }
             .validate()
             .unwrap_err()
             .to_string(),
             "configuración PipeWire inválida"
         );
+    }
+
+    #[test]
+    fn output_stream_respects_pipewire_requested_frames() {
+        assert_eq!(output_buffer_bytes(8, 128, 2, 4_096), 64);
+        assert_eq!(output_buffer_bytes(0, 128, 2, 4_096), 1_024);
+        assert_eq!(output_buffer_bytes(256, 128, 2, 512), 512);
     }
 
     #[test]

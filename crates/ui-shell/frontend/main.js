@@ -21,9 +21,60 @@ const elements = {
   stop: document.querySelector("#stop"),
   undo: document.querySelector("#undo"),
   redo: document.querySelector("#redo"),
+  audioProfile: document.querySelector("#audio-profile"),
+  devicePeriod: document.querySelector("#device-period"),
+  playbackSafety: document.querySelector("#playback-safety"),
+  saveAudioSettings: document.querySelector("#save-audio-settings"),
+  audioApplyState: document.querySelector("#audio-apply-state"),
+  audioSampleRate: document.querySelector("#audio-sample-rate"),
+  audioRequestedPeriod: document.querySelector("#audio-requested-period"),
+  audioEffectivePeriod: document.querySelector("#audio-effective-period"),
+  audioSafetyDuration: document.querySelector("#audio-safety-duration"),
 };
 
 let hasProject = false;
+let audioSettings = null;
+
+function selectedAudioProfile() {
+  return audioSettings?.[elements.audioProfile.value];
+}
+
+function renderAudioProfile(view = null) {
+  if (!audioSettings) return;
+  const profile = selectedAudioProfile();
+  elements.devicePeriod.value = profile.devicePeriodFrames;
+  elements.playbackSafety.value = profile.playbackSafetyFrames;
+  if (view) {
+    const rate = view.sampleRateHz;
+    elements.audioSampleRate.textContent = `${rate.toLocaleString()} Hz`;
+    elements.audioRequestedPeriod.textContent = `${view.requestedPeriodFrames} frames (${view.requestedPeriodMs.toFixed(2)} ms)`;
+    elements.audioEffectivePeriod.textContent = view.effectivePeriodFrames == null
+      ? "No disponible"
+      : `${view.effectivePeriodFrames} frames (${(view.effectivePeriodFrames * 1000 / rate).toFixed(2)} ms)`;
+    elements.audioSafetyDuration.textContent = `${view.playbackSafetyFrames} frames (${view.playbackSafetyMs.toFixed(2)} ms)`;
+    elements.audioApplyState.textContent = view.applyState === "nextStream" ? "Pendiente · próximo inicio" : view.applyState;
+  } else {
+    const rate = 48_000;
+    const requested = Number(profile.devicePeriodFrames);
+    const safety = Number(profile.playbackSafetyFrames);
+    elements.audioSampleRate.textContent = `${rate.toLocaleString()} Hz`;
+    elements.audioRequestedPeriod.textContent = `${requested} frames (${(requested * 1000 / rate).toFixed(2)} ms)`;
+    elements.audioEffectivePeriod.textContent = "No disponible";
+    elements.audioSafetyDuration.textContent = `${safety} frames (${(safety * 1000 / rate).toFixed(2)} ms)`;
+  }
+}
+
+async function loadAudioSettings() {
+  try {
+    const view = await platform.audioRuntimeSettings();
+    audioSettings = view.settings;
+    elements.audioProfile.value = audioSettings.activeProfile;
+    renderAudioProfile(view);
+  } catch (error) {
+    elements.audioApplyState.textContent = "No se pudo cargar";
+    setNotice("Configuración de audio no disponible", String(error));
+  }
+}
 
 function setNotice(title, text) {
   elements.noticeTitle.textContent = title;
@@ -116,8 +167,31 @@ elements.stop.addEventListener("click", () => runCommand("Transporte detenido", 
 elements.undo.addEventListener("click", () => runCommand("Undo aplicado", () => platform.historyAction("undo")));
 elements.redo.addEventListener("click", () => runCommand("Redo aplicado", () => platform.historyAction("redo")));
 
+elements.audioProfile.addEventListener("change", () => {
+  if (!audioSettings) return;
+  audioSettings.activeProfile = elements.audioProfile.value;
+  renderAudioProfile();
+});
+
+elements.saveAudioSettings.addEventListener("click", async () => {
+  if (!audioSettings) return;
+  const profile = selectedAudioProfile();
+  profile.devicePeriodFrames = Number(elements.devicePeriod.value);
+  profile.playbackSafetyFrames = Number(elements.playbackSafety.value);
+  try {
+    const view = await platform.saveAudioSettings(audioSettings);
+    audioSettings = view.settings;
+    elements.audioProfile.value = audioSettings.activeProfile;
+    renderAudioProfile(view);
+    setNotice("Preferencias de audio guardadas", "El perfil se usará al iniciar el siguiente stream. El cambio no modifica un stream que ya esté ejecutándose.");
+  } catch (error) {
+    setNotice("No se pudieron guardar los buffers", String(error));
+  }
+});
+
 // Este shell inicial sólo resume datos compactos; jamás solicita PCM o buffers
 // GPU al core a través del bridge.
 setProjectEnabled(false);
 elements.undo.disabled = true;
 elements.redo.disabled = true;
+loadAudioSettings();

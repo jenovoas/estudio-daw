@@ -49,6 +49,30 @@
         <div id="track-list" class="track-list"><div class="empty-state">Abre un proyecto para ver sus pistas.</div></div>
       </section>
 
+      <section class="audio-settings panel" aria-labelledby="audio-settings-title">
+        <div class="panel-heading"><div><span class="eyebrow">AUDIO</span><h2 id="audio-settings-title">Buffers y latencia</h2></div><span id="audio-apply-state" class="revision">Cargando…</span></div>
+        <div class="audio-profile-row">
+          <label for="audio-profile">Perfil</label>
+          <select id="audio-profile">
+            <option value="liveRecord">Live / Grabar</option>
+            <option value="multitrackPlayback">Reproducción multipista</option>
+          </select>
+          <label for="device-period">Periodo del dispositivo</label>
+          <div class="audio-number"><input id="device-period" type="number" min="16" max="2048" step="32" /><span>frames</span></div>
+          <label for="playback-safety">Margen PCM de reproducción</label>
+          <div class="audio-number"><input id="playback-safety" type="number" min="0" max="2048" step="256" /><span>frames</span></div>
+          <button id="save-audio-settings" class="button button-primary">Aplicar al próximo inicio</button>
+        </div>
+        <div class="audio-readouts">
+          <span>Frecuencia solicitada <strong id="audio-sample-rate">—</strong></span>
+          <span>Periodo solicitado <strong id="audio-requested-period">—</strong></span>
+          <span>Periodo efectivo <strong id="audio-effective-period">No disponible</strong></span>
+          <span>Búfer extra <strong id="audio-safety-duration">—</strong></span>
+        </div>
+        <p class="audio-help">Un periodo menor puede reducir el tiempo de bloque y aumentar la exigencia de CPU y scheduling. El búfer extra agrega margen al audio que procesa; puede añadir demora a esa ruta. PipeWire puede negociar un periodo efectivo distinto al solicitado.</p>
+        <p id="audio-engine-note" class="audio-help audio-warning">Este shell todavía no conecta el motor al transporte. El cambio se guarda para el siguiente inicio del stream. El margen PCM actual configura el worker SoundFont; el motor aún no separa buffers de reproducción por pista ni del monitoreo live.</p>
+      </section>
+
       <section class="notice panel">
         <span class="notice-icon">i</span>
         <div><strong id="notice-title">Shell de escritorio experimental</strong><p id="notice-text">El transporte actual modifica el estado de sesión; todavía no inicia el motor de audio.</p></div>

@@ -30,6 +30,7 @@ type PresetName = unsafe extern "C" fn(*mut c_void) -> *const c_char;
 type ProgramSelect = unsafe extern "C" fn(*mut c_void, c_int, c_int, c_int, c_int) -> c_int;
 type NoteOn = unsafe extern "C" fn(*mut c_void, c_int, c_int, c_int) -> c_int;
 type NoteOff = unsafe extern "C" fn(*mut c_void, c_int, c_int) -> c_int;
+type ControlChange = unsafe extern "C" fn(*mut c_void, c_int, c_int, c_int) -> c_int;
 type WriteFloat = unsafe extern "C" fn(
     *mut c_void,
     c_int,
@@ -121,6 +122,7 @@ struct FluidSynthApi {
     program_select: ProgramSelect,
     note_on: NoteOn,
     note_off: NoteOff,
+    control_change: ControlChange,
     write_float: WriteFloat,
 }
 
@@ -168,6 +170,7 @@ impl FluidSynthApi {
             program_select: symbol!("fluid_synth_program_select", ProgramSelect),
             note_on: symbol!("fluid_synth_noteon", NoteOn),
             note_off: symbol!("fluid_synth_noteoff", NoteOff),
+            control_change: symbol!("fluid_synth_cc", ControlChange),
             write_float: symbol!("fluid_synth_write_float", WriteFloat),
             _library: library,
         };
@@ -346,6 +349,25 @@ impl FluidSynthEngine {
 
     pub fn note_off(&mut self, channel: u8, note: u8) -> Result<(), FluidSynthError> {
         let result = unsafe { (self.api.note_off)(self.synth, channel as i32, note as i32) };
+        if result == 0 {
+            Ok(())
+        } else {
+            Err(FluidSynthError::MidiEvent)
+        }
+    }
+
+    pub fn control_change(
+        &mut self,
+        channel: u8,
+        controller: u8,
+        value: u8,
+    ) -> Result<(), FluidSynthError> {
+        if channel >= 16 || controller >= 128 || value >= 128 {
+            return Err(FluidSynthError::MidiEvent);
+        }
+        let result = unsafe {
+            (self.api.control_change)(self.synth, channel as i32, controller as i32, value as i32)
+        };
         if result == 0 {
             Ok(())
         } else {

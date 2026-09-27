@@ -4,7 +4,9 @@
 //! ni buffers de GPU por IPC y no accede al motor RT desde los comandos de UI.
 
 use estudio_daw_application::{
-    CommandAuthor, DomainCommand, ProjectApplication, SessionCommand, TransportState,
+    load_audio_runtime_settings, save_audio_runtime_settings, AudioRuntimeSettings,
+    AudioRuntimeView, CommandAuthor, DomainCommand, ProjectApplication, SessionCommand,
+    TransportState,
 };
 use estudio_daw_project_model::{Project, TrackKind};
 use serde::Serialize;
@@ -252,6 +254,18 @@ fn history_action(action: String, state: State<'_, DesktopState>) -> Result<UiSn
     Ok(summarize(application))
 }
 
+#[tauri::command]
+fn audio_runtime_settings() -> Result<AudioRuntimeView, String> {
+    let settings = load_audio_runtime_settings().map_err(|error| error.to_string())?;
+    Ok(AudioRuntimeView::from_settings(settings, 48_000))
+}
+
+#[tauri::command]
+fn save_audio_settings(settings: AudioRuntimeSettings) -> Result<AudioRuntimeView, String> {
+    save_audio_runtime_settings(&settings).map_err(|error| error.to_string())?;
+    Ok(AudioRuntimeView::from_settings(settings, 48_000))
+}
+
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
@@ -264,7 +278,9 @@ fn main() {
             save_project,
             save_project_as,
             set_transport,
-            history_action
+            history_action,
+            audio_runtime_settings,
+            save_audio_settings
         ])
         .run(tauri::generate_context!())
         .expect("no se pudo iniciar el shell de Estudio DAW");

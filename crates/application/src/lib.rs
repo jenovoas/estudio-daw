@@ -11,6 +11,7 @@ pub use estudio_daw_command_bus::{
 use estudio_daw_command_bus::{CommandDiagnostic, CommandRuntime, DomainCommandBus};
 use estudio_daw_project_model::{load_project_json, Project, ProjectJsonError};
 pub use estudio_daw_session::{SessionCommand, TransportSnapshot, TransportState};
+use serde::{Deserialize, Serialize};
 use std::{
     ffi::OsString,
     fs::{self, OpenOptions},
@@ -24,6 +25,189 @@ static NEXT_COMMAND_ID: AtomicU64 = AtomicU64::new(1);
 static NEXT_TEMP_FILE_ID: AtomicU64 = AtomicU64::new(1);
 
 const COMMAND_QUEUE_CAPACITY: usize = 64;
+
+const AUDIO_SETTINGS_SCHEMA: &str = "audio-runtime-settings.v1";
+const DEFAULT_SETTINGS_BACKEND: &str = "pipewire:default";
+
+/// Perfil activo para el próximo stream de audio.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum AudioProfile {
+    LiveRecord,
+    MultitrackPlayback,
+}
+
+/// Parámetros solicitados; no representan una latencia extremo a extremo.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AudioProfileSettings {
+    pub device_period_frames: u32,
+    pub playback_safety_frames: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AudioRuntimeSettings {
+    pub schema_version: String,
+    pub backend_device_key: String,
+    pub active_profile: AudioProfile,
+    pub live_record: AudioProfileSettings,
+    pub multitrack_playback: AudioProfileSettings,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AudioRuntimeView {
+    pub settings: AudioRuntimeSettings,
+    pub sample_rate_hz: u32,
+    pub requested_period_frames: u32,
+    pub requested_period_ms: f64,
+    pub effective_period_frames: Option<u32>,
+    pub playback_safety_frames: u32,
+    pub playback_safety_ms: f64,
+    pub effective_period_available: bool,
+    pub engine_connected: bool,
+    pub playback_path_isolation_supported: bool,
+    pub apply_state: &'static str,
+}
+
+impl AudioRuntimeView {
+    pub fn from_settings(settings: AudioRuntimeSettings, sample_rate_hz: u32) -> Self {
+        let profile = settings.active();
+        Self {
+            settings,
+            sample_rate_hz,
+            requested_period_frames: profile.device_period_frames,
+            requested_period_ms: frames_to_milliseconds(
+                profile.device_period_frames,
+                sample_rate_hz,
+            )
+            .unwrap_or_default(),
+            effective_period_frames: None,
+            playback_safety_frames: profile.playback_safety_frames,
+            playback_safety_ms: frames_to_milliseconds(
+                profile.playback_safety_frames,
+                sample_rate_hz,
+            )
+            .unwrap_or_default(),
+            effective_period_available: false,
+            engine_connected: false,
+            playback_path_isolation_supported: false,
+            apply_state: "nextStream",
+        }
+    }
+}
+
+pub fn frames_to_milliseconds(frames: u32, sample_rate_hz: u32) -> Option<f64> {
+    (sample_rate_hz > 0).then(|| f64::from(frames) * 1_000.0 / f64::from(sample_rate_hz))
+}
+
+impl Default for AudioRuntimeSettings {
+    fn default() -> Self {
+        Self {
+            schema_version: AUDIO_SETTINGS_SCHEMA.to_owned(),
+            backend_device_key: DEFAULT_SETTINGS_BACKEND.to_owned(),
+            active_profile: AudioProfile::LiveRecord,
+            live_record: AudioProfileSettings {
+                device_period_frames: 256,
+                playback_safety_frames: 512,
+            },
+            multitrack_playback: AudioProfileSettings {
+                device_period_frames: 256,
+                playback_safety_frames: 1_024,
+            },
+        }
+    }
+}
+
+impl AudioRuntimeSettings {
+    pub fn active(&self) -> AudioProfileSettings {
+        match self.active_profile {
+            AudioProfile::LiveRecord => self.live_record,
+            AudioProfile::MultitrackPlayback => self.multitrack_playback,
+        }
+    }
+
+    pub fn validate(&self) -> Result<(), AudioSettingsError> {
+        if self.schema_version != AUDIO_SETTINGS_SCHEMA {
+            return Err(AudioSettingsError::UnsupportedVersion(
+                self.schema_version.clone(),
+            ));
+        }
+        if self.backend_device_key.trim().is_empty()
+            || !valid_profile(self.live_record)
+            || !valid_profile(self.multitrack_playback)
+        {
+            return Err(AudioSettingsError::InvalidSettings);
+        }
+        Ok(())
+    }
+}
+
+fn valid_profile(profile: AudioProfileSettings) -> bool {
+    (16..=2_048).contains(&profile.device_period_frames) && profile.playback_safety_frames <= 2_048
+}
+
+#[derive(Debug, Error)]
+pub enum AudioSettingsError {
+    #[error("falló la operación de archivo de configuración: {0}")]
+    Io(#[from] std::io::Error),
+    #[error("la configuración de audio no es JSON válido: {0}")]
+    Json(#[from] serde_json::Error),
+    #[error("versión de configuración de audio no compatible: {0}")]
+    UnsupportedVersion(String),
+    #[error("la configuración de audio contiene valores inválidos")]
+    InvalidSettings,
+}
+
+/// Ruta compartida por la UI y los adaptadores CLI para preferencias del usuario.
+pub fn audio_runtime_settings_path() -> Result<PathBuf, AudioSettingsError> {
+    let config_root = if let Some(path) = std::env::var_os("XDG_CONFIG_HOME") {
+        PathBuf::from(path)
+    } else {
+        PathBuf::from(std::env::var_os("HOME").ok_or_else(|| {
+            AudioSettingsError::Io(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                "HOME/XDG_CONFIG_HOME no está disponible",
+            ))
+        })?)
+        .join(".config")
+    };
+    Ok(config_root.join("estudio-daw").join("audio-runtime.json"))
+}
+
+pub fn load_audio_runtime_settings() -> Result<AudioRuntimeSettings, AudioSettingsError> {
+    load_audio_runtime_settings_from(&audio_runtime_settings_path()?)
+}
+
+pub fn load_audio_runtime_settings_from(
+    path: &Path,
+) -> Result<AudioRuntimeSettings, AudioSettingsError> {
+    if !path.exists() {
+        return Ok(AudioRuntimeSettings::default());
+    }
+    let settings: AudioRuntimeSettings = serde_json::from_slice(&fs::read(path)?)?;
+    settings.validate()?;
+    Ok(settings)
+}
+
+pub fn save_audio_runtime_settings(
+    settings: &AudioRuntimeSettings,
+) -> Result<(), AudioSettingsError> {
+    settings.validate()?;
+    let path = audio_runtime_settings_path()?;
+    save_audio_runtime_settings_to(&path, settings)
+}
+
+pub fn save_audio_runtime_settings_to(
+    path: &Path,
+    settings: &AudioRuntimeSettings,
+) -> Result<(), AudioSettingsError> {
+    settings.validate()?;
+    fs::create_dir_all(path.parent().unwrap_or(Path::new(".")))?;
+    atomic_write(path, &serde_json::to_vec_pretty(settings)?)?;
+    Ok(())
+}
 
 #[derive(Debug, Error)]
 pub enum ApplicationError {
@@ -239,6 +423,60 @@ mod tests {
     use std::sync::atomic::AtomicU64;
 
     static NEXT_TEST_DIR: AtomicU64 = AtomicU64::new(1);
+
+    #[test]
+    fn audio_runtime_settings_default_and_round_trip_are_versioned() {
+        let directory = TestDirectory::new();
+        let path = directory.0.join("settings/audio-runtime.json");
+        let defaults = load_audio_runtime_settings_from(&path).unwrap();
+        assert_eq!(defaults, AudioRuntimeSettings::default());
+        defaults.validate().unwrap();
+
+        save_audio_runtime_settings_to(&path, &defaults).unwrap();
+        assert_eq!(load_audio_runtime_settings_from(&path).unwrap(), defaults);
+        assert!(path.exists());
+    }
+
+    #[test]
+    fn audio_runtime_settings_reject_unknown_versions_and_invalid_periods() {
+        let directory = TestDirectory::new();
+        let path = directory.0.join("audio-runtime.json");
+        let mut settings = AudioRuntimeSettings::default();
+        settings.schema_version = "audio-runtime-settings.v9".into();
+        fs::write(&path, serde_json::to_vec(&settings).unwrap()).unwrap();
+        assert!(matches!(
+            load_audio_runtime_settings_from(&path),
+            Err(AudioSettingsError::UnsupportedVersion(_))
+        ));
+
+        settings.schema_version = AUDIO_SETTINGS_SCHEMA.into();
+        settings.live_record.device_period_frames = 0;
+        assert!(matches!(
+            save_audio_runtime_settings_to(&path, &settings),
+            Err(AudioSettingsError::InvalidSettings)
+        ));
+
+        settings.live_record.device_period_frames = 2_049;
+        assert!(matches!(
+            save_audio_runtime_settings_to(&path, &settings),
+            Err(AudioSettingsError::InvalidSettings)
+        ));
+    }
+
+    #[test]
+    fn audio_runtime_view_keeps_requested_period_distinct_from_unknown_effective_period() {
+        let mut settings = AudioRuntimeSettings::default();
+        settings.live_record.device_period_frames = 128;
+        settings.live_record.playback_safety_frames = 512;
+        let view = AudioRuntimeView::from_settings(settings, 48_000);
+        assert_eq!(view.requested_period_frames, 128);
+        assert!((view.requested_period_ms - 2.666_666_7).abs() < 0.001);
+        assert_eq!(view.effective_period_frames, None);
+        assert!(!view.playback_path_isolation_supported);
+        assert_eq!(view.apply_state, "nextStream");
+        assert!((view.playback_safety_ms - 10.666_666_7).abs() < 0.001);
+        assert_eq!(frames_to_milliseconds(64, 0), None);
+    }
 
     struct TestDirectory(PathBuf);
 
