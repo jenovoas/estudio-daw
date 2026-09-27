@@ -18,4 +18,4 @@
 ## 3. Verification and traceability
 
 - [x] 3.1 Run `cargo fmt --all`, `cargo test --workspace -- --test-threads=1`, `cargo check --workspace`, strict OpenSpec validation, and `git diff --check`.
-- [ ] 3.2 Update the project handoff and append a factual vault log entry with SHA, files, tests, outcome, and remaining audit items.
+- [x] 3.2 Update the project handoff and append a factual vault log entry with SHA, files, tests, outcome, and remaining audit items.

@@ -153,3 +153,28 @@ riesgos y decisiones concretas; no repetir acuerdos ya asentados.
 <!-- codebase-memory-mcp:start -->
 For structural codebase exploration, use the installed `codebase-memory` skill.
 <!-- codebase-memory-mcp:end -->
+
+## Corrección de auditoría — 2026-09-27
+
+- HEAD publicado al iniciar la corrección: `31ef702`; implementación local:
+  `9d3eb46` (`fix: align Tauri transport and arrangement behavior`).
+- `soundfont-instrument-rendering` 4.3 está completada según la evidencia final
+  en sus tareas: 10–14 ms hasta el monitor digital pre-DAC; no es una medida
+  tecla→parlante. Las notas históricas anteriores a la anotación de cierre son
+  evidencia de intentos previos, no el estado vigente.
+- Tauri sí enlaza Play/Pause/Stop con PipeWire. Pause ya no procesa el plan y
+  por tanto no consume el ring PCM ni avanza nodos síncronos; eventos fuera de
+  `duration_ticks` no se programan. Hay regresiones para pausa, límite del clip,
+  nota MIDI fuera de rango y slot vacío.
+- La shell tiene arreglo musical como superficie principal, con grilla y clips
+  de color inspirados en Ableton Live 12 sin activos de terceros. Sigue sin
+  edición de notas/arreglo ni grabación live.
+- Verificación sobre `9d3eb46`: `cargo fmt --all`,
+  `cargo test --workspace -- --test-threads=1`, `cargo check --workspace`,
+  `openspec validate runtime-transport-correctness --strict` y
+  `git diff --check` pasaron.
+- Auditoría aún abierta para un cambio separado: límites de dependencias del
+  Portable Domain/ALSA/ffmpeg, semántica real de `RenderPlanBuilder::connect`
+  (orden in-place frente a DAG mezclado), reloj/posición musical Tauri y
+  recompilación del plan tras cambios de proyecto. No declarar esos puntos
+  resueltos por el cambio de transporte.
