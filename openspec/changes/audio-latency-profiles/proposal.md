@@ -2,15 +2,15 @@
 
 ## Why
 
-Estudio DAW currently chooses the PipeWire period and SoundFont PCM queue depth internally, so the user cannot tune responsiveness versus dropout resistance from the DAW. Separate user-selectable live/record and multitrack playback profiles are needed, with honest feedback about the effective device period and the extra playback buffering.
+Actualmente Estudio DAW elige internamente el período PipeWire y la profundidad de la cola PCM SoundFont, por lo que el usuario no puede ajustar desde el DAW la respuesta frente a la resistencia a interrupciones. Se necesitan perfiles seleccionables independientes para interpretación/grabación y reproducción multipista, con información honesta sobre el período efectivo del dispositivo y el búfer adicional de reproducción.
 
 ## What Changes
 
-- Add DAW-level audio settings for the requested device period and a separate playback safety buffer.
-- Provide starting profiles for Live/Record and Multitrack Playback; allow the user to adjust and see the effective values.
-- Preserve a low-latency monitored/live instrument path while allowing already-rendered playback tracks to use additional buffering where the engine supports it.
-- Keep MIDI events, including sustain pedal CC64, intact across profile changes and recording/playback.
-- Explain when PipeWire or the audio device negotiates a different effective period than requested.
+- Añadir en el DAW ajustes de audio para el período solicitado al dispositivo y un búfer de seguridad de reproducción independiente.
+- Ofrecer perfiles iniciales de interpretación/grabación y reproducción multipista; permitir que el usuario los ajuste y consulte sus valores efectivos.
+- Conservar una ruta de instrumento en vivo con monitorización de baja latencia y permitir búfer adicional en pistas de reproducción ya renderizadas cuando el motor lo admita.
+- Conservar intactos los eventos MIDI, incluido el pedal de sustain CC64, al cambiar de perfil y durante la grabación/reproducción.
+- Explicar cuándo PipeWire o el dispositivo de audio negocien un período efectivo distinto del solicitado.
 
 ## Capabilities
 
@@ -20,11 +20,11 @@ Estudio DAW currently chooses the PipeWire period and SoundFont PCM queue depth 
 
 ### Modified Capabilities
 
-None. The repository has no canonical `openspec/specs` entries yet; the related runtime requirements currently live in the bootstrap architecture change. This change adds an independently verifiable capability without altering that historical plan.
+Ninguna. El repositorio todavía no tiene entradas canónicas en `openspec/specs`; los requisitos relacionados con el entorno de ejecución están actualmente en el cambio de arquitectura fundacional. Este cambio incorpora una capacidad verificable de forma independiente sin alterar ese plan histórico.
 
 ## Impact
 
-- Likely affected areas: `audio-platform`, `synth`, `application`, UI shell, and runtime diagnostics.
-- PipeWire remains responsible for negotiating graph quantum; requested and effective periods must be shown separately.
-- The extra playback buffer is DAW-managed and must not be labeled as an AudioBox hardware cache or as PreSonus Studio One Dropout Protection.
-- Presets should be starting points, not promises of a fixed end-to-end latency or dropout-free performance.
+- Áreas posiblemente afectadas: `audio-platform`, `synth`, `application`, la ventana de interfaz y los diagnósticos de ejecución.
+- PipeWire sigue a cargo de negociar el cuanto del grafo; los períodos solicitado y efectivo deben mostrarse por separado.
+- El búfer adicional de reproducción lo administra el DAW y no debe llamarse caché de hardware AudioBox ni protección contra interrupciones de PreSonus Studio One.
+- Los preajustes son puntos de partida, no promesas de latencia fija de extremo a extremo ni de funcionamiento sin interrupciones.

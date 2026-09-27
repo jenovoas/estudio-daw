@@ -2,25 +2,25 @@
 
 ## Why
 
-`RenderPlanBuilder::connect` suggests a routed graph, but audio nodes only receive one shared mutable block in sequence. Branching sources therefore overwrite one another and the API describes behavior the processor cannot provide.
+`RenderPlanBuilder::connect` sugiere un grafo con ruteo, pero los nodos de audio sólo reciben en secuencia un bloque mutable compartido. Por ello, las fuentes en ramas distintas se sobrescriben entre sí y la API describe un comportamiento que el procesador no puede ofrecer.
 
 ## What Changes
 
-- **BREAKING** Remove `connect` and DAG/cycle compilation from the current processor API.
-- Define `RenderPlan` as an insertion-ordered, in-place effects chain.
-- Keep parallel source summing explicit in mixer nodes that own preallocated scratch buffers.
-- Update the CLI pipeline and architecture documentation; add a regression proving sequential chain semantics.
+- **INCOMPATIBLE** Quitar `connect` y la compilación de DAG/ciclos de la API actual del procesador.
+- Definir `RenderPlan` como una cadena de efectos en el sitio que respeta el orden de inserción.
+- Mantener explícita la suma de fuentes paralelas en nodos mezcladores con búferes temporales preasignados.
+- Actualizar la secuencia de la CLI y la documentación de arquitectura; añadir una prueba de regresión de la semántica secuencial de la cadena.
 
 ## Capabilities
 
 ### New Capabilities
 
-- `audio-render-chain`: explicit processing order and parallel mixing contract for the current RenderPlan engine.
+- `audio-render-chain`: contrato del orden explícito de procesamiento y la mezcla en paralelo del motor `RenderPlan` actual.
 
 ### Modified Capabilities
 
-None. `openspec/specs/` has no synchronized main specs, so this establishes a canonical capability contract.
+Ninguna. `openspec/specs/` aún no contiene especificaciones principales sincronizadas; este cambio establece un contrato canónico de capacidad.
 
 ## Impact
 
-Affected code is `crates/audio-engine`, its CLI plan construction, and `docs/audio-render-plan.md`. No callback allocation or serialized project behavior changes.
+El cambio afecta `crates/audio-engine`, la construcción de su plan en la CLI y `docs/audio-render-plan.md`. No modifica las asignaciones de memoria de la devolución de audio ni el comportamiento de serialización del proyecto.

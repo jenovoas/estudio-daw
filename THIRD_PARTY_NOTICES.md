@@ -1,19 +1,24 @@
-# Third-party components
+# Componentes de terceros
 
-Estudio DAW does not bundle FluidSynth or SoundFont banks. The FluidSynth
-adapter loads the host's shared library at runtime through `libloading`.
+Estudio DAW no incluye FluidSynth ni bancos SoundFont. El adaptador FluidSynth
+carga en tiempo de ejecución la biblioteca compartida del sistema anfitrión
+mediante `libloading`.
 
-| Component | Use | License / distribution |
+| Componente | Uso | Licencia / distribución |
 |---|---|---|
-| FluidSynth | Optional local SoundFont synthesis runtime | LGPL-2.1-or-later; dynamically loaded from the user's system, not vendored here. The project source and license are available at [FluidSynth](https://github.com/FluidSynth/fluidsynth). |
-| libloading | Loads the optional FluidSynth shared library | ISC license; dependency metadata and license are recorded in `Cargo.lock` and the crate registry package. |
-| SoundFont files (`.sf2`) | User-selected instrument banks | Not included or downloaded by Estudio DAW. Users must obtain banks from a source whose license permits their intended use and retain the accompanying license/attribution. |
+| FluidSynth | Entorno local opcional de síntesis SoundFont | LGPL-2.1-or-later; se carga dinámicamente desde el sistema del usuario y no se incluye en este repositorio. El código fuente y la licencia están disponibles en [FluidSynth](https://github.com/FluidSynth/fluidsynth). |
+| libloading | Carga la biblioteca FluidSynth compartida opcional | Licencia ISC; los metadatos de dependencia y licencia figuran en `Cargo.lock` y en el paquete del registro de crates. |
+| Archivos SoundFont (`.sf2`) | Bancos de instrumentos elegidos por el usuario | Estudio DAW no los incluye ni descarga. Cada usuario debe obtener bancos de una fuente cuya licencia permita el uso previsto y conservar la licencia/atribución correspondiente. |
 
-This notice is an inventory, not legal advice. Any future packaging that ships
-FluidSynth or a SoundFont must include the corresponding license texts and
-comply with the library/bank redistribution terms of that exact version.
+Este aviso es un inventario, no asesoría legal. Cualquier distribución futura
+que incluya FluidSynth o un SoundFont debe incorporar los textos de licencia
+correspondientes y cumplir las condiciones de redistribución de la biblioteca o
+del banco en esa versión concreta.
 
-## libloading — ISC license
+## libloading — licencia ISC
+
+El texto de la licencia ISC que sigue se conserva en su idioma original para no
+alterar sus términos legales.
 
 Copyright © 2015, Simonas Kazlauskas
 

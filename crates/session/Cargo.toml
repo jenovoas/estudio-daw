@@ -3,7 +3,7 @@ name = "estudio-daw-session"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "Session state and bounded command bus for Estudio DAW"
+description = "Estado de sesión y bus acotado de comandos para Estudio DAW"
 
 [dependencies]
 serde = { version = "1", features = ["derive"] }

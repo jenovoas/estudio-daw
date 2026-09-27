@@ -4,11 +4,11 @@
 //! conocer PipeWire, ALSA, ffmpeg, GPU ni widgets. Cada comando está versionado,
 //! atribuido y puede declarar precondiciones antes de mutar el estado.
 
-use estudio_daw_midi_engine::MidiTake;
+use estudio_daw_midi_types::MidiTake;
 use estudio_daw_project_model::{
     add_audio_clip, attach_media_source, attach_midi_take, quantize_midi_clip,
     set_audio_clip_fades, set_audio_clip_gain, trim_audio_clip, AudioClip, ClipReference, ClipSlot,
-    MediaSource, Project, ProjectEvent, ProjectHistory, ProjectSnapshot, Scene, Track,
+    MediaSource, Project, ProjectEvent, ProjectHistory, ProjectSnapshot, ProxyAsset, Scene, Track,
     TrackMixerState, TrackRole,
 };
 use estudio_daw_session::{Session, SessionCommand, TransportSnapshot, TransportState};
@@ -132,6 +132,10 @@ pub enum ProjectCommand {
     AttachMediaSource {
         track_id: String,
         source: MediaSource,
+    },
+    SetAudioSourceProxy {
+        source_id: String,
+        proxy: Option<ProxyAsset>,
     },
     AttachMidiTake {
         take: MidiTake,
@@ -777,6 +781,29 @@ impl CommandRuntime {
                     attach_media_source(project, &track_id, source)
                 })
                 .map_err(|error| CommandError::Project(error.to_string()))?,
+            ProjectCommand::SetAudioSourceProxy { source_id, proxy } => self
+                .project_history
+                .transact("set audio source proxy", |project| -> Result<(), String> {
+                    let source = project
+                        .audio_sources
+                        .iter_mut()
+                        .find(|source| source.id == source_id)
+                        .ok_or_else(|| format!("unknown audio source: {source_id}"))?;
+                    if let Some(asset) = &proxy {
+                        if asset.source_signature != source.media.original_signature
+                            || asset.source_hash != source.media.original_hash
+                        {
+                            return Err(format!(
+                                "proxy provenance does not match source: {source_id}"
+                            ));
+                        }
+                    }
+                    source.media.proxy = proxy;
+                    project
+                        .validate_persisted_contracts()
+                        .map_err(|error| error.to_string())
+                })
+                .map_err(|error| CommandError::Project(error.to_string()))?,
             ProjectCommand::AttachMidiTake { take, name } => self
                 .project_history
                 .transact("attach MIDI take", |project| {
@@ -863,7 +890,7 @@ impl DomainCommandBus {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use estudio_daw_midi_engine::{MidiSource, RecordedMidiEvent, RecordedMidiMessage};
+    use estudio_daw_midi_types::{MidiSource, RecordedMidiEvent, RecordedMidiMessage};
     use estudio_daw_project_model::{
         AudioClip, ImportProvenance, InstrumentConfig, MidiClip, TimeSignature, Track,
         TrackChannelConfig, TrackKind, TrackMixerState, TrackRole, Transport,
@@ -1111,6 +1138,75 @@ mod tests {
         assert!(restored.audio_playlists.iter().any(|playlist| {
             playlist.track_id == "track-audio" && playlist.region_ids == ["clip-1"]
         }));
+    }
+
+    #[test]
+    fn audio_source_proxy_uses_reversible_command_and_checks_provenance() {
+        let mut initial = project();
+        initial
+            .audio_sources
+            .push(estudio_daw_project_model::AudioSource {
+                id: "source-1".into(),
+                owner_track_id: "track-audio".into(),
+                media: MediaSource {
+                    original_path: "audio.wav".into(),
+                    original_signature: "size:10:mtime:1".into(),
+                    original_hash: "sha256:source".into(),
+                    proxy: None,
+                },
+                sample_rate_hz: Some(48_000),
+                channels: Some(2),
+            });
+        let mut runtime = CommandRuntime::new(initial);
+        let proxy = ProxyAsset {
+            path: "cache/audio.opus".into(),
+            source_signature: "size:10:mtime:1".into(),
+            source_hash: "sha256:source".into(),
+            profile: "preview".into(),
+        };
+        runtime
+            .apply(envelope(
+                "set-proxy",
+                DomainCommand::Project(ProjectCommand::SetAudioSourceProxy {
+                    source_id: "source-1".into(),
+                    proxy: Some(proxy.clone()),
+                }),
+            ))
+            .unwrap();
+        assert_eq!(
+            runtime.snapshot().project.project.audio_sources[0]
+                .media
+                .proxy,
+            Some(proxy.clone())
+        );
+        runtime
+            .apply(envelope(
+                "undo-proxy",
+                DomainCommand::Project(ProjectCommand::Undo),
+            ))
+            .unwrap();
+        assert_eq!(
+            runtime.snapshot().project.project.audio_sources[0]
+                .media
+                .proxy,
+            None
+        );
+
+        let before = runtime.snapshot().project.project;
+        let error = runtime
+            .apply(envelope(
+                "bad-proxy",
+                DomainCommand::Project(ProjectCommand::SetAudioSourceProxy {
+                    source_id: "source-1".into(),
+                    proxy: Some(ProxyAsset {
+                        source_signature: "otra-firma".into(),
+                        ..proxy
+                    }),
+                }),
+            ))
+            .unwrap_err();
+        assert!(matches!(error, CommandError::Project(_)));
+        assert_eq!(runtime.snapshot().project.project, before);
     }
 
     #[test]

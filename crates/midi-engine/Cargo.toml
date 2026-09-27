@@ -3,9 +3,10 @@ name = "estudio-daw-midi-engine"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "MIDI event model and take recorder for Estudio DAW"
+description = "Modelo de eventos MIDI y grabador de tomas para Estudio DAW"
 
 [dependencies]
+estudio-daw-midi-types = { path = "../midi-types" }
 alsa = "0.9"
 estudio-daw-runtime-diagnostics = { path = "../runtime-diagnostics" }
 estudio-daw-session = { path = "../session" }

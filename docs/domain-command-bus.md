@@ -43,7 +43,9 @@ mutación.
 - escenas/casillas: crear, renombrar, reordenar y quitar escenas; asignar o
   quitar casillas que referencian clips existentes sin copiarlos;
 - audio: agregar, recortar, mover, ajustar ganancia y desvanecimientos de clips;
-- medios: asociar una fuente original/proxy a una pista de audio;
+- medios: asociar una fuente original o proxy a una pista de audio mediante un
+  comando reversible; validar que la firma y el hash del proxy correspondan a
+  la fuente;
 - MIDI: adjuntar una toma y cuantizar eventos de activación/desactivación de nota de un clip;
 - historial: deshacer y rehacer transacciones del proyecto.
 
@@ -60,6 +62,19 @@ generan `ProjectEvent` dentro de `DomainEventPayload::ProjectChanged`.
 
 - El módulo contiene el motor de ejecución del dominio y una cola acotada en
   memoria; todavía no constituye un registro persistente de comandos.
+- Los datos serializables de las tomas y eventos MIDI viven en
+  `estudio-daw-midi-types`, sin dependencia de ALSA. La captura, descubrimiento
+  y salida MIDI pertenecen a `estudio-daw-midi-engine` y sus adaptadores del
+  sistema.
+- El modelo portable no depende de PipeWire, ALSA, el motor de audio ni los
+  diagnósticos de dispositivos. La inspección de archivos, firmas/hash y
+  generación/validación de proxies con `ffmpeg`/`ffprobe` pertenecen a
+  `estudio-daw-media-adapter`; esos procesos no se ejecutan desde una mutación
+  del modelo ni desde la llamada de retorno de audio.
+- El adaptador de medios puede generar archivos derivados y actualizar su
+  manifiesto, pero no modifica el proyecto. La asociación del proxy se solicita
+  mediante `ProjectCommand::SetAudioSourceProxy`; el bus comprueba su
+  procedencia y ofrece deshacer/rehacer.
 - `estudio-daw-application` es la fachada de ciclo de vida: mantiene vivo el
   motor para que una sesión de interfaz pueda encadenar comandos y deshacer o
   rehacer, y publica eventos e instantáneas al abrir o guardar un proyecto. La
@@ -67,8 +82,8 @@ generan `ProjectEvent` dentro de `DomainEventPayload::ProjectChanged`.
   entre cierres.
 - La interfaz de línea de comandos está aislada en `estudio-daw-cli`, por fuera del modelo portable. Sus
   comandos `attach-take`, `quantize`, `attach-media` y `add-audio-clip` delegan
-  ahora en la misma API de aplicación; import/export, generación de proxies y
-  operaciones de dispositivos siguen siendo adaptadores directos porque también
+  ahora en la misma API de aplicación; la interoperabilidad DAWproject y las
+  operaciones de dispositivos también se atienden como adaptadores porque
   coordinan formatos, archivos o servicios del sistema.
 - La API de comandos se ampliará según las tareas aprobadas; no implica que toda
   mutación existente ya esté migrada.
@@ -85,5 +100,6 @@ Las pruebas cubren coordinación de sesión/proyecto, precondiciones obsoletas,
 serialización, atribución de eventos, cuantización que conserva controladores,
 duplicación reversible de pistas MIDI con sus clips/casillas, cambios
 reversibles de escenas, casillas, estado de pista y posición de audio,
-preservación de la fuente al mover regiones y rechazo de casillas con tipos de
-pista/clip incompatibles y de fuentes dirigidas a pistas MIDI.
+preservación de la fuente al mover regiones, asociación reversible de proxy con
+verificación de procedencia y rechazo de casillas con tipos de pista/clip
+incompatibles y de fuentes dirigidas a pistas MIDI.

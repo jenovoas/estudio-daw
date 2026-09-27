@@ -1,0 +1,12 @@
+[package]
+name = "estudio-daw-midi-types"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Tipos portables y serializables de eventos y tomas MIDI para Estudio DAW"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+
+[dev-dependencies]
+serde_json = "1"

@@ -3,7 +3,7 @@ name = "estudio-daw-ui-shell"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "Tauri desktop shell for Estudio DAW"
+description = "Ventana de escritorio Tauri para Estudio DAW"
 build = "build.rs"
 
 [[bin]]

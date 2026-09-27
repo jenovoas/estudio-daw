@@ -1063,6 +1063,7 @@ dependencies = [
  "estudio-daw-application",
  "estudio-daw-audio-engine",
  "estudio-daw-audio-platform",
+ "estudio-daw-media-adapter",
  "estudio-daw-midi-engine",
  "estudio-daw-project-model",
  "estudio-daw-runtime-diagnostics",
@@ -1075,7 +1076,7 @@ dependencies = [
 name = "estudio-daw-command-bus"
 version = "0.1.0"
 dependencies = [
- "estudio-daw-midi-engine",
+ "estudio-daw-midi-types",
  "estudio-daw-project-model",
  "estudio-daw-session",
  "serde",
@@ -1099,10 +1100,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "estudio-daw-media-adapter"
+version = "0.1.0"
+dependencies = [
+ "estudio-daw-project-model",
+ "serde",
+ "serde_json",
+ "sha2",
+ "thiserror 2.0.21",
+]
+
+[[package]]
 name = "estudio-daw-midi-engine"
 version = "0.1.0"
 dependencies = [
  "alsa",
+ "estudio-daw-midi-types",
  "estudio-daw-runtime-diagnostics",
  "estudio-daw-session",
  "serde",
@@ -1110,19 +1123,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "estudio-daw-midi-types"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "estudio-daw-project-model"
 version = "0.1.0"
 dependencies = [
- "estudio-daw-audio-engine",
- "estudio-daw-audio-platform",
- "estudio-daw-midi-engine",
- "estudio-daw-runtime-diagnostics",
- "estudio-daw-session",
+ "estudio-daw-midi-types",
  "pretty_assertions",
  "quick-xml 0.37.5",
  "serde",
  "serde_json",
- "sha2",
  "thiserror 2.0.21",
  "zip",
 ]

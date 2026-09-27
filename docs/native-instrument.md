@@ -151,7 +151,7 @@ del stream de salida RT para que el ADC no cambie el scheduling del render; WAV
 y salida se guardan independientemente. El offset de primer callback sólo indica
 inicio de captura y no es por sí mismo latencia tecla→sonido.
 
-La opción `--capture-monitor` selecciona el source monitor digital del sink de
+La opción `--capture-monitor` selecciona la fuente de monitor digital de salida de
 AudioBox para medir la señal antes del DAC. Úsala junto con `--capture`; por
 ejemplo, al reproducir una toma:
 

@@ -3,7 +3,7 @@ name = "estudio-daw-runtime-diagnostics"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "Non-real-time PipeWire/MIDI diagnostics for Estudio DAW"
+description = "Diagnósticos PipeWire/MIDI fuera del tiempo real para Estudio DAW"
 
 [dependencies]
 alsa = "0.9"

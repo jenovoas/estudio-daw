@@ -25,15 +25,15 @@ use estudio_daw_audio_platform::{
     run_pipewire_output_for_targets_with_source_capture, PipeWireStreamConfig, PipeWireTargets,
     WavCaptureRecorder,
 };
+use estudio_daw_media_adapter::{
+    generate_audio_proxy_ffmpeg, inspect_media_source, AudioProxyProfile, ProxyCacheManager,
+};
 use estudio_daw_midi_engine::{
     play_midi_take, play_midi_take_interactive, play_midi_take_live, record_alsa_midi,
     record_alsa_midi_live, run_alsa_midi_control, run_alsa_midi_input_until, MidiControlMap,
     MidiRecorder, MidiTake, RecordedMidiMessage, DEFAULT_PPQ,
 };
-use estudio_daw_project_model::{
-    ensure_track_audio_proxy, export_dawproject, generate_audio_proxy_ffmpeg, import_dawproject,
-    AudioProxyProfile, MediaSource, Project, ProxyCacheManager,
-};
+use estudio_daw_project_model::{export_dawproject, import_dawproject, Project};
 use estudio_daw_runtime_diagnostics::{
     audio_devices, enumerate_alsa_midi_output_ports, midi_devices, monitor_alsa_midi, DeviceInfo,
     NormalizedMidiEvent,
@@ -1231,7 +1231,7 @@ fn proxy_audio_command(input: PathBuf, output: PathBuf) -> Result<(), Box<dyn st
     if !input.is_file() {
         return Err(format!("no existe el archivo de audio fuente: {}", input.display()).into());
     }
-    let source = MediaSource::from_original(&input)?;
+    let source = inspect_media_source(&input)?;
     let profile = AudioProxyProfile::opus_preview();
     let asset = generate_audio_proxy_ffmpeg(&source, &output, &profile)?;
     println!(
@@ -1249,11 +1249,34 @@ fn proxy_track_command(
     cache_path: PathBuf,
     output_path: PathBuf,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let mut project: Project = serde_json::from_slice(&fs::read(&project_path)?)?;
+    let project: Project = serde_json::from_slice(&fs::read(&project_path)?)?;
+    let track = project
+        .tracks
+        .iter()
+        .find(|track| track.id == track_id)
+        .ok_or_else(|| format!("no existe la pista '{track_id}'"))?;
+    if track.kind != estudio_daw_project_model::TrackKind::Audio {
+        return Err(format!("la pista '{track_id}' no es de audio").into());
+    }
+    let source = project
+        .audio_sources
+        .iter()
+        .find(|source| source.owner_track_id == track_id)
+        .ok_or_else(|| format!("la pista '{track_id}' no tiene una fuente de audio asociada"))?;
+    let source_id = source.id.clone();
+    let mut media = source.media.clone();
     let manager = ProxyCacheManager::new(cache_path);
     let profile = AudioProxyProfile::opus_preview();
-    let state = ensure_track_audio_proxy(&mut project, &track_id, &manager, &profile)?;
-    fs::write(&output_path, serde_json::to_vec_pretty(&project)?)?;
+    let state = manager.ensure_audio_proxy(&mut media, &profile)?;
+    let _project = apply_project_command_file(
+        project_path,
+        output_path.clone(),
+        "cli-set-audio-source-proxy",
+        ProjectCommand::SetAudioSourceProxy {
+            source_id,
+            proxy: media.proxy,
+        },
+    )?;
     println!(
         "Proxy de pista listo: pista={} estado={state:?} proyecto={}",
         track_id,
@@ -1268,7 +1291,7 @@ fn attach_media_command(
     audio_path: PathBuf,
     output_path: PathBuf,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let source = MediaSource::from_original(&audio_path)?;
+    let source = inspect_media_source(&audio_path)?;
     let _project = apply_project_command_file(
         project_path,
         output_path.clone(),
@@ -1398,7 +1421,8 @@ fn print_devices(devices: &[DeviceInfo]) {
 }
 
 fn import_command(input: PathBuf, output: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
-    let result = import_dawproject(input)?;
+    let bytes = fs::read(&input)?;
+    let result = import_dawproject(&bytes)?;
     fs::write(&output, serde_json::to_string_pretty(&result.project)?)?;
     println!("Importado a {}", output.display());
     print_warnings(&result.warnings);
@@ -1407,7 +1431,8 @@ fn import_command(input: PathBuf, output: PathBuf) -> Result<(), Box<dyn std::er
 
 fn export_command(input: PathBuf, output: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
     let project: Project = serde_json::from_slice(&fs::read(&input)?)?;
-    let result = export_dawproject(&project, &output)?;
+    let (bytes, result) = export_dawproject(&project)?;
+    fs::write(&output, bytes)?;
     println!("Exportado a {}", output.display());
     print_warnings(&result.warnings);
     Ok(())

@@ -2,27 +2,27 @@
 
 ## Why
 
-The desktop transport can drift from the rendered audio when paused, and clip playback does not consistently respect clip bounds. The current desktop surface also fails to communicate a usable DAW arrangement workflow and falls short of the previously approved Ableton Live 12 visual direction.
+El transporte de escritorio puede desfasarse del audio renderizado al pausar, y la reproducción no siempre respeta los límites del clip. La superficie actual tampoco comunica un flujo de arreglo utilizable de DAW y no alcanza la dirección visual previamente aprobada, inspirada en Ableton Live 12.
 
 ## What Changes
 
-- Freeze audio DSP/PCM consumption while paused and keep MIDI scheduling aligned across pause/resume.
-- Schedule only MIDI events within each clip's start and duration; derive demo take timing from its declared PPQ and tempo.
-- Make real-time playback fail safely without panicking and constrain SineSynth pitches to MIDI's valid range.
-- Rework the Tauri frontend into a dense, dark arrangement workspace with clear transport, track, clip, and audio settings hierarchy inspired by Live 12.
-- Correct product documentation to describe the connected Tauri playback path and state the remaining experimental limits.
+- Congelar el procesamiento DSP/consumo PCM durante la pausa y mantener alineada la planificación MIDI al pausar/reanudar.
+- Planificar sólo los eventos MIDI dentro del inicio y la duración de cada clip; calcular el tiempo de la toma de demostración con el PPQ y tempo declarados.
+- Hacer que la reproducción en tiempo real falle de manera segura, sin entrar en pánico, y limitar los tonos de `SineSynth` al intervalo MIDI válido.
+- Reorganizar la interfaz Tauri como un espacio de arreglo denso y oscuro, con jerarquía clara de transporte, pistas, clips y ajustes de audio, inspirado en Live 12.
+- Corregir la documentación del producto para describir la ruta de reproducción conectada en Tauri e indicar los límites experimentales restantes.
 
 ## Capabilities
 
 ### New Capabilities
 
-- `runtime-midi-playback`: clip-bounded MIDI scheduling, pause semantics, and fail-safe callback behavior.
-- `desktop-workstation-ui`: a DAW-oriented desktop arrangement and transport surface.
+- `runtime-midi-playback`: planificación MIDI acotada por clip, semántica de pausa y comportamiento seguro ante fallos de la devolución.
+- `desktop-workstation-ui`: superficie de arreglo y transporte de escritorio orientada a DAW.
 
 ### Modified Capabilities
 
-None. The repository has no synchronized main specs yet; these new capabilities establish the behavior contracts without pretending older deltas are already canonical.
+Ninguna. El repositorio aún no tiene especificaciones principales sincronizadas; estas capacidades nuevas establecen los contratos de comportamiento sin presentar deltas anteriores como canónicos.
 
 ## Impact
 
-Affected code includes `crates/audio-platform`, `crates/audio-engine`, `crates/synth`, and `crates/ui-shell`. README and native audio/render-plan documentation will be aligned. No serialized project format or hardware routing changes are intended.
+El cambio afecta `crates/audio-platform`, `crates/audio-engine`, `crates/synth` y `crates/ui-shell`. Se alinearán README y la documentación nativa de audio/planes de renderizado. No se prevén cambios en el formato serializado del proyecto ni en el ruteo de hardware.

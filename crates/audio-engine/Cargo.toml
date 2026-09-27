@@ -3,7 +3,7 @@ name = "estudio-daw-audio-engine"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "Compiled realtime DSP render plan for Estudio DAW"
+description = "Plan de renderizado DSP compilado en tiempo real para Estudio DAW"
 
 [dependencies]
 estudio-daw-dsp = { path = "../dsp" }

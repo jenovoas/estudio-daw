@@ -1,76 +1,90 @@
-# Design
+# Diseño
 
 ## Context
 
-See `proposal.md` for the motivation and `specs/soundfont-instrument/spec.md` for observable behavior. `SineSynthNode` currently receives MIDI inside the existing render plan. The PipeWire callback must remain allocation-free and non-blocking. FluidSynth's official audio-rendering API documents that render calls block and belong to its synthesis thread; SoundFont loading also performs work unsuitable for the callback ([rendering API](https://www.fluidsynth.org/api/group__audio__rendering.html), [synthesis context](https://www.fluidsynth.org/api/synth-context.html), [SoundFont loading](https://www.fluidsynth.org/api/LoadingSoundfonts.html)).
+Consultar `proposal.md` para conocer la motivación y `specs/soundfont-instrument/spec.md` para el comportamiento observable. Actualmente `SineSynthNode` recibe MIDI dentro del plan de renderizado existente. La devolución de PipeWire debe seguir sin asignaciones de memoria ni bloqueos. La documentación oficial de renderizado de FluidSynth indica que las llamadas de renderizado bloquean y pertenecen a su hilo de síntesis; la carga SoundFont también realiza tareas inadecuadas para la devolución ([API de renderizado](https://www.fluidsynth.org/api/group__audio__rendering.html), [contexto de síntesis](https://www.fluidsynth.org/api/synth-context.html), [carga de SoundFont](https://www.fluidsynth.org/api/LoadingSoundfonts.html)).
 
 ## Goals / Non-Goals
 
-**Goals:**
+**Objetivos:**
 
-- Render a user-selected local SF2 preset through the existing PipeWire output and DSP graph.
-- Keep the PipeWire callback independent of FluidSynth calls, file access, and locks.
-- Keep the sine node and current MIDI take format working.
-- Make missing runtime/font and audio starvation observable.
+- Renderizar por la salida PipeWire y el grafo DSP existentes un preajuste SF2 local elegido por el usuario.
+- Mantener la devolución PipeWire independiente de llamadas FluidSynth, acceso a archivos y bloqueos.
+- Conservar el nodo sinusoidal y el formato actual de tomas MIDI.
+- Hacer visibles la ausencia del entorno/archivo y la falta de datos de audio.
 
-**Non-Goals:**
+**Exclusiones:**
 
-- Ship a SoundFont, claim that a SoundFont is license-free, or package a specific piano library.
-- Reimplement a sample-based synthesizer or create an instrument editor in this change.
-- Claim zero added latency; the worker-to-callback PCM queue is observable, while end-to-end latency requires a physical MIDI/audio loopback measurement.
-- Replace the existing external ALSA MIDI destination workflow.
+- Distribuir un SoundFont, afirmar que carece de restricciones de licencia o empaquetar una biblioteca de piano específica.
+- Reimplementar un sintetizador basado en muestras o crear un editor de instrumentos en este cambio.
+- Afirmar que no se añade latencia; la cola PCM entre proceso y devolución es observable, pero la latencia de extremo a extremo requiere una medición física de retorno MIDI/audio.
+- Sustituir el flujo de destinos MIDI ALSA externos existente.
 
 ## Decisions
 
-### Use the official FluidSynth engine behind an optional narrow runtime adapter
+### Usar el motor FluidSynth oficial mediante un adaptador opcional acotado
 
-The first backend uses the official `libfluidsynth` C API loaded as a system shared library. Keep FFI isolated in the synth/platform boundary, and do not expose FluidSynth types through the portable project model. The old `fluidsynth` Rust crate found during research is version 0.0.1 and dates from 2018; do not depend on it without a separate maintenance and safety audit. `fluidlite` is a maintained-looking safe wrapper candidate but targets a different, minimal FluidLite engine; it remains an alternative, not an invisible substitute. FluidSynth is LGPL-2.1 licensed; dynamic system linking and required notices are preferred, subject to a distribution-license review ([upstream license](https://github.com/FluidSynth/fluidsynth/blob/master/LICENSE), [upstream licensing FAQ](https://www.fluidsynth.org/wiki/LicensingFAQ/)).
+El primer motor de plataforma usa la API C oficial de `libfluidsynth`, cargada como biblioteca compartida del sistema. La interfaz FFI debe permanecer aislada en el límite entre síntesis y plataforma; los tipos de FluidSynth no deben exponerse desde el modelo portable del proyecto. El crate antiguo de Rust `fluidsynth` encontrado durante la investigación tiene versión 0.0.1 y data de 2018; no debe usarse sin una auditoría independiente de mantenimiento y seguridad. `fluidlite` parece ser una alternativa de envoltorio seguro con mantenimiento, pero apunta a otro motor mínimo, FluidLite; sigue siendo una alternativa y no un reemplazo implícito. FluidSynth usa la licencia LGPL-2.1; se prefiere enlazar dinámicamente la biblioteca del sistema e incluir los avisos requeridos, sujeto a una revisión de licencias antes de distribuir ([licencia oficial](https://github.com/FluidSynth/fluidsynth/blob/master/LICENSE), [preguntas frecuentes oficiales sobre licencias](https://www.fluidsynth.org/wiki/LicensingFAQ/)).
 
-Alternatives considered:
+Alternativas consideradas:
 
-- **Write a SoundFont engine in Rust:** rejected for this slice; it would duplicate mature format parsing, sample playback, modulators, and envelopes.
-- **Call FluidSynth directly from `RenderPlan::process_block`:** rejected because its render API blocks and requires synthesis-context ownership, and the callback contract forbids blocking.
-- **Launch only the standalone `fluidsynth` executable:** retained as an existing interoperability option, but rejected as the primary backend because its audio stream and presets would not be represented as an instrument source in our render graph.
+- **Escribir un motor SoundFont en Rust:** se descarta para este corte porque duplicaría análisis maduro de formato, reproducción de muestras, moduladores y envolventes.
+- **Llamar directamente a FluidSynth desde `RenderPlan::process_block`:** se descarta porque su API de renderizado bloquea y requiere propiedad del contexto de síntesis, mientras que el contrato de la devolución prohíbe bloquear.
+- **Ejecutar sólo el programa independiente `fluidsynth`:** se conserva como opción de interoperabilidad existente, pero se descarta como motor principal porque su flujo de audio y sus preajustes no aparecerían como fuente de instrumento dentro de nuestro grafo de renderizado.
 
-### Give one worker exclusive ownership of the FluidSynth instance
+### Asignar la instancia FluidSynth a un único proceso de trabajo
 
-Create the synth, load/unload the SoundFont, select presets, dispatch MIDI, render samples, and destroy the synth on one dedicated worker thread. This follows FluidSynth's synthesis-thread model and avoids concurrent calls into mutable synth state. Control commands use a bounded queue; the worker publishes preallocated float audio blocks through a bounded single-producer/single-consumer queue. Queue capacity, block sizing, startup pre-roll, and sample rate are configured outside the callback.
+Crear y destruir el sintetizador, cargar/descargar el SoundFont, seleccionar preajustes, enviar MIDI y renderizar muestras en un único proceso de trabajo dedicado. Esto sigue el modelo de hilos de síntesis de FluidSynth y evita llamadas concurrentes sobre el estado mutable del sintetizador. Los comandos de control usan una cola acotada; el proceso publica bloques de audio flotante preasignados mediante una cola acotada de productor/consumidor único. La capacidad de las colas, el tamaño de bloque, el precargado inicial y la frecuencia de muestreo se configuran fuera de la devolución de audio.
 
-The render-plan adapter only drains available PCM frames into its preallocated `AudioBlock`. It never calls the C API or waits for the worker. If the queue is empty it writes silence for missing frames and increments an underrun counter. A successful instrument load is swapped at a safe plan boundary; the old instrument remains active until then. A failed replacement does not invalidate the active plan.
+El adaptador del plan de renderizado sólo extrae los cuadros PCM disponibles y los copia al `AudioBlock` preasignado. Nunca llama a la API C ni espera al proceso de trabajo. Si la cola está vacía, escribe silencio para los cuadros faltantes e incrementa el contador de interrupciones. Una carga de instrumento exitosa se intercambia en un límite seguro del plan; el instrumento anterior permanece activo hasta entonces. Una sustitución fallida no invalida el plan activo.
 
-Render-plan replacement uses two preallocated ownership slots shared by a
-single control producer and the audio processor. The producer fully constructs
-the replacement before publishing its slot with release ordering. At the next
-`RenderPlanProcessor::process` boundary, the callback adopts that slot and marks
-the old slot retired. It never destroys a plan or node; `RenderPlanControl`
-reclaims retired plans from the control thread. A second publication is refused
-until that reclamation completes. Instrument workers are retained by their
-`RenderPlan`, so a SoundFont worker stays alive while its plan is pending or
-active; reclaiming the retired plan releases that ownership off-RT. This keeps
-node/worker destructors and their joins out of the audio callback. PipeWire
-exposes controlled output and duplex entry points so a host can retain the
-control endpoint while streaming.
+La sustitución del plan de renderizado usa dos ranuras de propiedad preasignadas
+compartidas por un único productor de control y el procesador de audio. El
+productor construye por completo el reemplazo antes de publicar su ranura con
+orden de liberación. En el siguiente límite de
+`RenderPlanProcessor::process`, la devolución adopta esa ranura y marca la
+anterior como retirada. Nunca destruye un plan ni nodo; `RenderPlanControl`
+recupera los planes retirados desde el hilo de control. No se acepta una segunda
+publicación hasta completar esa recuperación. Cada `RenderPlan` conserva sus
+procesos de instrumentos, así que el proceso SoundFont sigue activo mientras el
+plan esté pendiente o en uso; recuperar el plan retirado libera esa propiedad
+fuera del hilo de tiempo real. Así se mantienen los destructores de nodos y
+procesos, y su espera de cierre, fuera de la devolución de audio. PipeWire ofrece
+puntos de entrada controlados de salida y dúplex para que un anfitrión conserve
+el extremo de control mientras transmite.
 
-### Persist references, not sample-bank bytes
+### Persistir referencias, no el contenido del banco de muestras
 
-Portable project state records the backend, local SoundFont reference, optional expected content hash, and bank/program selection. It never embeds or copies the SoundFont. Resolution supports a project-relative asset when the user has deliberately placed it in project media, otherwise a local external path; missing references produce a recoverable diagnostic. Bundling and sharing projects with third-party SoundFonts is outside this change.
+El estado portable del proyecto registra el motor, la referencia local al
+SoundFont, el hash de contenido esperado opcional y la selección de
+banco/programa. Nunca inserta ni copia el SoundFont. La resolución admite un
+archivo relativo al proyecto cuando el usuario lo ha colocado deliberadamente
+entre sus medios; de lo contrario usa una ruta local externa. Las referencias
+ausentes producen un diagnóstico recuperable. Este cambio no incluye empaquetar
+ni compartir proyectos con SoundFont de terceros.
 
-### Preserve explicit fallback behavior
+### Conservar un comportamiento alternativo explícito
 
-The sine source remains available for tests and systems without FluidSynth. Selecting the SoundFont backend never silently changes the instrument. If the selected backend cannot start, report the specific reason and let the caller explicitly choose the sine source or retry.
+La fuente sinusoidal permanece disponible para pruebas y sistemas sin FluidSynth. Elegir el motor SoundFont nunca cambia el instrumento de manera silenciosa. Si el motor elegido no puede iniciarse, se informa el motivo concreto y se permite seleccionar explícitamente la fuente sinusoidal o volver a intentarlo.
 
 ## Risks / Trade-offs
 
-- **[Worker scheduling can add latency or underrun]** → expose current/peak PCM queue depth and underruns; document buffer-equivalent queue duration separately from end-to-end latency. Measure key-to-audio latency with a physical MIDI/audio loopback on target hardware. Do not block the callback to hide starvation.
-- **[Native ABI or library version mismatch]** → validate required symbols and minimum runtime version before creating the instrument; return an actionable compatibility error.
-- **[SoundFont formats and presets vary]** → start with SF2, enumerate presets from the selected file, and test with a user-provided fixture without checking copyrighted banks into Git.
-- **[SoundFont licensing is independent of FluidSynth]** → store no bundled bank; show the external path and document asset-license responsibility.
-- **[Extra FluidSynth threads could compete with PipeWire]** → configure one synthesis owner and conservative internal worker settings initially; benchmark before exposing parallel FluidSynth cores.
+- **[La planificación del proceso puede añadir latencia o causar interrupciones]** → mostrar la profundidad actual/máxima de la cola PCM y las interrupciones; documentar por separado la duración equivalente del búfer de cola y la latencia de extremo a extremo. Medir la latencia entre tecla y audio con retorno MIDI/audio físico en el hardware objetivo. No bloquear la devolución para ocultar la falta de datos.
+- **[Incompatibilidad de ABI nativa o versión de biblioteca]** → validar los símbolos requeridos y la versión mínima del entorno antes de crear el instrumento; devolver un error de compatibilidad que indique cómo actuar.
+- **[Los formatos y preajustes SoundFont varían]** → comenzar con SF2, enumerar los preajustes del archivo elegido y probar con un archivo proporcionado por el usuario, sin añadir bancos con derechos de autor a Git.
+- **[La licencia SoundFont es independiente de FluidSynth]** → no almacenar bancos incluidos; mostrar la ruta externa y documentar la responsabilidad sobre la licencia del archivo.
+- **[Hilos FluidSynth adicionales podrían competir con PipeWire]** → configurar inicialmente un único propietario de síntesis y valores internos conservadores; medir antes de habilitar núcleos FluidSynth en paralelo.
 
 ## Migration Plan
 
-No existing project or take schema is removed. Add an optional instrument configuration with an explicit backend discriminator and a migration default that preserves existing projects as the current sine/test instrument. The CLI keeps its current commands and gains explicit SoundFont selection. If the optional runtime is absent, existing sine and external MIDI routes continue to work. Rollback consists of selecting the sine instrument; project MIDI remains unchanged.
+No se elimina ningún esquema existente de proyecto o toma. Se añade una
+configuración opcional de instrumento con selector explícito de motor y un valor
+de migración que conserva los proyectos existentes como instrumento sinusoidal
+de prueba actual. La CLI conserva sus comandos actuales y añade selección
+explícita de SoundFont. Si falta el entorno opcional, siguen funcionando la
+fuente sinusoidal y las rutas MIDI externas. Para revertirlo, se selecciona el
+instrumento sinusoidal; el MIDI del proyecto permanece intacto.
 
 ## Open Questions
 
-- Which user-provided SoundFont will be used for the first manual listening test? This does not block implementation; tests must not depend on redistributing it.
+- ¿Qué SoundFont proporcionado por el usuario se utilizará en la primera prueba de escucha manual? Esto no bloquea la implementación; las pruebas no deben depender de redistribuirlo.

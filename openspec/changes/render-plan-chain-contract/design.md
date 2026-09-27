@@ -1,17 +1,17 @@
-# Design
+# Diseño
 
-## Plan model
+## Modelo del plan
 
-`RenderPlanBuilder` stores nodes in insertion order. `build()` transfers that ordered list into an immutable-topology plan; `process()` calls each node in order on the same interleaved buffer. A source node replaces/fills the block and subsequent insert/master nodes transform it in place. This is a chain, not a DAG.
+`RenderPlanBuilder` guarda los nodos en orden de inserción. `build()` transfiere la lista ordenada a un plan de topología inmutable; `process()` llama a cada nodo en orden sobre el mismo búfer intercalado. Un nodo fuente reemplaza o llena el bloque, y los nodos de inserción/master posteriores lo transforman en el sitio. Es una cadena, no un DAG.
 
-## Parallel sources
+## Fuentes en paralelo
 
-Parallel instruments must be wrapped in an explicit mixer such as `InstrumentMixerNode`, which renders each source into preallocated scratch, sums samples, and writes the mixed block. A future graph implementation requires a separate audio-buffer input/output node contract and precompiled buffer allocation plan.
+Los instrumentos en paralelo deben conectarse mediante un mezclador explícito, como `InstrumentMixerNode`, que renderiza cada fuente en memoria temporal preasignada, suma las muestras y escribe el bloque resultante. Una futura implementación de grafo requiere contratos independientes de entrada/salida de búferes de audio y un plan de asignación de búferes compilado de antemano.
 
-## API impact
+## Impacto en la API
 
-Remove `GraphError`, per-node dependency lists, topological sort, and `connect`. `build()` becomes infallible. Update in-repository call sites to express their intended chain solely through insertion order.
+Quitar `GraphError`, las listas de dependencias por nodo, la ordenación topológica y `connect`. `build()` pasa a ser infalible. Actualizar las llamadas del repositorio para expresar la cadena prevista únicamente mediante el orden de inserción.
 
-## Verification
+## Verificación
 
-Test that two additive test nodes run in insertion order on the same block; retain mixer tests to prove parallel summing is explicit and allocation-free. Run formatting, workspace tests/check, strict OpenSpec validation, and diff checks.
+Comprobar que dos nodos de prueba aditivos se ejecuten en orden de inserción sobre el mismo bloque; conservar las pruebas del mezclador para demostrar que la suma en paralelo es explícita y no asigna memoria. Ejecutar formato, pruebas/verificación del espacio de trabajo, validación estricta de OpenSpec y revisión de diferencias.

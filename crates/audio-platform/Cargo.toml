@@ -3,7 +3,7 @@ name = "estudio-daw-audio-platform"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "Linux audio backends for Estudio DAW"
+description = "Motores de audio Linux para Estudio DAW"
 
 [dependencies]
 estudio-daw-audio-engine = { path = "../audio-engine" }

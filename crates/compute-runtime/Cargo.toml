@@ -3,7 +3,7 @@ name = "estudio-daw-compute-runtime"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "CPU/GPU scheduling policy and fallback contracts for Estudio DAW"
+description = "Política de planificación CPU/GPU y contratos de alternativa para Estudio DAW"
 
 [dependencies]
 pollster = "0.4"

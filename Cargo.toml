@@ -4,6 +4,8 @@ members = [
     "crates/project-model",
     "crates/runtime-diagnostics",
     "crates/midi-engine",
+    "crates/midi-types",
+    "crates/media-adapter",
     "crates/compute-runtime",
     "crates/dsp",
     "crates/session",

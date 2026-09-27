@@ -2,29 +2,29 @@
 
 ## Why
 
-The current native instrument proves MIDI capture and the real-time render path, but its sine tone is only a diagnostic sound and cannot support meaningful practice or production. A local SoundFont instrument would provide familiar piano, bass, guitar, and orchestral presets without cloud use or per-play charges, while reusing a mature open-source synthesis engine instead of recreating sample playback.
+El instrumento nativo actual demuestra la captura MIDI y la ruta de renderizado en tiempo real, pero su tono sinusoidal sólo sirve para diagnóstico y no permite practicar ni producir de manera significativa. Un instrumento local SoundFont ofrecería sonidos conocidos de piano, bajo, guitarra y orquesta sin depender de la nube ni cobrar por reproducción, y permitiría reutilizar un motor de síntesis maduro y de código abierto en vez de recrear la reproducción de muestras.
 
 ## What Changes
 
-- Add an optional SoundFont instrument backend based on the system `libfluidsynth` library, with a user-selected local SoundFont file and preset.
-- Keep the sine instrument available as a small, dependency-free fallback and test source.
-- Isolate SoundFont loading, MIDI dispatch, and FluidSynth rendering from the PipeWire callback; exchange bounded MIDI commands and preallocated PCM blocks with the render graph.
-- Report missing library/font, invalid preset, render-worker failure, and PCM underruns clearly; never silently replace a selected instrument.
-- Persist instrument configuration as a reference to user-owned media; do not bundle or redistribute SoundFont files.
+- Añadir un motor de instrumento SoundFont opcional basado en la biblioteca de sistema `libfluidsynth`, con archivo y preajuste local seleccionados por el usuario.
+- Mantener el instrumento sinusoidal disponible como alternativa pequeña sin dependencias y como fuente de pruebas.
+- Aislar de la devolución PipeWire la carga SoundFont, el envío MIDI y el renderizado FluidSynth; intercambiar comandos MIDI acotados y bloques PCM preasignados con el grafo de renderizado.
+- Informar claramente si falta la biblioteca/archivo, el preajuste no es válido, falla el proceso de renderizado o se interrumpe el flujo PCM; nunca sustituir silenciosamente un instrumento seleccionado.
+- Guardar la configuración del instrumento como referencia a medios propiedad del usuario; no incluir ni redistribuir archivos SoundFont.
 
 ## Capabilities
 
 ### New Capabilities
 
-- `soundfont-instrument`: local SoundFont instrument configuration, lifecycle, MIDI response, audio delivery, and diagnostics.
+- `soundfont-instrument`: configuración de instrumento SoundFont local, ciclo de vida, respuesta MIDI, entrega de audio y diagnósticos.
 
 ### Modified Capabilities
 
-- None. The existing runtime callback contract is preserved; this change adds an instrument capability behind that contract.
+- Ninguna. Se conserva el contrato actual de la devolución de ejecución; este cambio añade una capacidad de instrumento que respeta ese contrato.
 
 ## Impact
 
-- Likely affected crates: `synth`, `audio-engine`, `audio-platform`, `application`, and `cli`; the exact boundary is settled in the design artifact.
-- Adds an optional system runtime dependency on FluidSynth, dynamically linked so users can install or update it independently. The library is LGPL-licensed; include required notices and audit the selected Rust binding before adopting it.
-- Project state will reference, but will not copy, the user's SoundFont. SoundFont licenses remain the user's responsibility and are not implied by the library license.
-- PipeWire remains the output backend; MIDI, scheduling, and the current SineSynthNode remain usable when FluidSynth is unavailable.
+- Crates posiblemente afectados: `synth`, `audio-engine`, `audio-platform`, `application` y `cli`; el artefacto de diseño determina el límite exacto.
+- Añade una dependencia opcional del sistema en tiempo de ejecución para FluidSynth, enlazada dinámicamente para que el usuario pueda instalarla o actualizarla por separado. La biblioteca usa LGPL; se incluirán los avisos requeridos y se auditará el enlace Rust elegido antes de adoptarlo.
+- El estado del proyecto referenciará el SoundFont del usuario, pero no lo copiará. Las licencias SoundFont son responsabilidad del usuario y no quedan cubiertas por la licencia de la biblioteca.
+- PipeWire sigue siendo el motor de salida; MIDI, planificación y el `SineSynthNode` actual siguen disponibles si FluidSynth no está instalado.

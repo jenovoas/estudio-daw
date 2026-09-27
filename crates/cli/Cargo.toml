@@ -3,7 +3,7 @@ name = "estudio-daw-cli"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "Command-line adapter for Estudio DAW"
+description = "Adaptador de línea de comandos para Estudio DAW"
 
 [[bin]]
 name = "estudio-daw-project"
@@ -14,6 +14,7 @@ estudio-daw-application = { path = "../application" }
 estudio-daw-audio-engine = { path = "../audio-engine" }
 estudio-daw-audio-platform = { path = "../audio-platform" }
 estudio-daw-midi-engine = { path = "../midi-engine" }
+estudio-daw-media-adapter = { path = "../media-adapter" }
 estudio-daw-project-model = { path = "../project-model" }
 estudio-daw-runtime-diagnostics = { path = "../runtime-diagnostics" }
 estudio-daw-session = { path = "../session" }

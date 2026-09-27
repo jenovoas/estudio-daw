@@ -3,11 +3,11 @@ name = "estudio-daw-command-bus"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "Versioned domain command bus for Estudio DAW"
+description = "Bus versionado de comandos de dominio para Estudio DAW"
 
 [dependencies]
 estudio-daw-project-model = { path = "../project-model" }
-estudio-daw-midi-engine = { path = "../midi-engine" }
+estudio-daw-midi-types = { path = "../midi-types" }
 estudio-daw-session = { path = "../session" }
 serde = { version = "1", features = ["derive"] }
 thiserror = "2"

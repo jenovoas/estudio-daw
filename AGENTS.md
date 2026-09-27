@@ -95,6 +95,14 @@ usuario únicamente por un bloqueo real, una decisión que cambie el alcance o u
 acción destructiva/externa que requiera autorización. Informar resultados,
 riesgos y decisiones concretas; no repetir acuerdos ya asentados.
 
+## Idioma de la documentación
+
+Redactar y mantener en español todo el texto explicativo, los requisitos, las
+tareas y los títulos descriptivos. Traducir la prosa inglesa existente cuando se
+edite un documento. Se conservan nombres oficiales, identificadores de código,
+comandos ejecutables y las etiquetas estructurales que exijan los analizadores
+de formatos como OpenSpec; no se usan como excusa para añadir prosa en inglés.
+
 ## Handoff persistente — 2026-09-26
 
 - Proyecto: `/home/jnovoas/proyectos/estudio-daw`, rama `main`; último cambio
@@ -158,10 +166,11 @@ For structural codebase exploration, use the installed `codebase-memory` skill.
 
 - HEAD publicado al iniciar la corrección: `31ef702`; implementación local:
   `9d3eb46` (`fix: align Tauri transport and arrangement behavior`).
-- `soundfont-instrument-rendering` 4.3 está completada según la evidencia final
-  en sus tareas: 10–14 ms hasta el monitor digital pre-DAC; no es una medida
-  tecla→parlante. Las notas históricas anteriores a la anotación de cierre son
-  evidencia de intentos previos, no el estado vigente.
+- En una anotación inicial se declaró completa `soundfont-instrument-rendering`
+  4.3 por una medida de 10–14 ms hasta el monitor digital pre-DAC. La auditoría
+  posterior estableció que esa evidencia no mide la ruta física tecla→parlante;
+  OpenSpec vuelve a dejar 4.3 abierta. La confirmación auditiva del piano se
+  conserva como evidencia de escucha, no como medición de latencia.
 - Tauri sí enlaza Play/Pause/Stop con PipeWire. Pause ya no procesa el plan y
   por tanto no consume el ring PCM ni avanza nodos síncronos; eventos fuera de
   `duration_ticks` no se programan. Hay regresiones para pausa, límite del clip,
@@ -205,3 +214,32 @@ For structural codebase exploration, use the installed `codebase-memory` skill.
   publicada más reciente.
 - La bitácora append-only fue actualizada. Restan Portable Domain y reloj/
   posición/rebuild de Tauri, que requieren su propio diseño OpenSpec.
+
+## Handoff de auditoría portable y documentación en español — 2026-09-27
+
+- La anotación anterior que declaraba `soundfont-instrument-rendering` 4.3
+  completa quedó corregida: `tasks.md` vuelve a dejarla `[ ]`. La medición de
+  10–14 ms corresponde al monitor digital previo al DAC, no a la latencia física
+  tecla→parlante. El usuario sí confirmó la escucha del piano; falta una prueba
+  de retorno físico que permita sostener la medición que exige el handoff.
+- OpenSpec `workstation-arrangement-surface-v2`, tarea 1.4, ya está `[x]` con
+  evidencia de dependencias y pruebas. `project-model` usa `midi-types` puro;
+  `command-bus` no arrastra ALSA; inspección/FFmpeg/FFprobe viven en
+  `media-adapter`; la asociación de proxies usa un comando reversible con
+  validación de procedencia. DAWproject se convierte en memoria desde/hacia
+  bytes; el acceso a rutas queda en la CLI. Tauri consulta instantáneas y emite
+  comandos.
+- Verificación de esta intervención: `cargo fmt --all -- --check`,
+  `cargo test --workspace -- --test-threads=1`, `cargo check --workspace`,
+  `git diff --check` y las seis validaciones OpenSpec pertinentes pasaron. Los
+  árboles de dependencias de `project-model` y `command-bus` no incluyen ALSA
+  ni PipeWire. La validación de `workstation-arrangement-surface-v2` presenta
+  ocho recomendaciones lingüísticas; se conservan los requisitos normativos en
+  español.
+- Los párrafos explicativos de OpenSpec y los metadatos de crates editados se
+  tradujeron al español. Se conservan únicamente identificadores técnicos y las
+  etiquetas obligatorias del formato OpenSpec (`Purpose`, `Requirements`,
+  `Requirement`, `Scenario`, `MUST`, `MAY`, `SHALL`), que su analizador requiere.
+- Próximo trabajo del arreglo: 0.2 sigue abierta por requerir cotejo en la
+  aplicación opción por opción; 1.4 está completa. Continuar con las tareas
+  independientes según sus dependencias, sin presentar pendientes como hechos.

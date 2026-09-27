@@ -3,7 +3,7 @@ name = "estudio-daw-dsp"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "Realtime-safe DSP building blocks for Estudio DAW"
+description = "Bloques DSP seguros para tiempo real de Estudio DAW"
 
 [dependencies]
 thiserror = "2"

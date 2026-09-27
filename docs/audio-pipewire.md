@@ -53,11 +53,11 @@ salida y sirve como primera prueba nativa.
 usan el formato F32LE y comparten un `SampleRingBuffer` SPSC preasignado:
 
 ```text
-AudioBox capture callback
+Devolución de captura AudioBox
           ↓ push
 SampleRingBuffer (lock-free SPSC)
           ↓ pop
-PipeWire playback callback → RenderPlan
+Devolución de reproducción PipeWire → RenderPlan
 ```
 
 La capacidad se calcula con `channels * max_buffer_frames * 4`. El periodo DSP

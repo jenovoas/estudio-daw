@@ -1,76 +1,76 @@
-# Design
+# Diseño
 
 ## Context
 
-See `proposal.md` and `specs/audio-runtime-control/spec.md`. The Linux runtime currently has `PipeWireStreamConfig.period_frames` and a separate maximum PCM ring capacity, while the FluidSynth worker limits queued PCM internally. The default period is 256 frames and the SoundFont queue target is currently fixed at two 256-frame chunks. The application API and Tauri shell do not yet expose audio-runtime settings.
+Consultar `proposal.md` y `specs/audio-runtime-control/spec.md`. El entorno Linux actual ofrece `PipeWireStreamConfig.period_frames` y una capacidad máxima independiente para el anillo PCM, mientras que el proceso FluidSynth limita internamente el PCM en cola. El período predeterminado es de 256 cuadros y el objetivo de la cola SoundFont está fijado actualmente en dos bloques de 256 cuadros. La API de aplicación y la ventana Tauri aún no exponen los ajustes del entorno de audio.
 
-The PipeWire requested period is a negotiation request; the active graph quantum can differ. Device block negotiation and the DAW's queued playback frames therefore need separate models and readouts. Profile choices must not be described as hardware cache controls.
+El período solicitado a PipeWire es una petición de negociación; el cuanto activo del grafo puede ser distinto. Por eso, la negociación del bloque del dispositivo y los cuadros de reproducción en cola del DAW necesitan modelos e indicadores separados. Las opciones de perfil no deben describirse como controles de caché del hardware.
 
 ## Goals / Non-Goals
 
-**Goals:**
+**Objetivos:**
 
-- Give the DAW a backend-neutral settings model for requested device period, playback safety frames, and live/playback profile selection.
-- Report requested and effective settings, including durations derived from sample rate and frame counts.
-- Provide practical starting profiles that the user can tune per selected audio device.
-- Keep MIDI and recording state intact when settings change.
+- Ofrecer al DAW un modelo de ajustes independiente del motor de plataforma para el período solicitado al dispositivo, los cuadros de seguridad de reproducción y la selección de perfiles de interpretación/reproducción.
+- Informar los ajustes solicitados y efectivos, incluidas las duraciones derivadas de la frecuencia de muestreo y la cantidad de cuadros.
+- Ofrecer perfiles iniciales prácticos que el usuario pueda ajustar para cada dispositivo de audio seleccionado.
+- Conservar intacto el estado MIDI y de grabación cuando cambien los ajustes.
 
-**Non-Goals:**
+**Exclusiones:**
 
-- Promise a fixed key-to-speaker latency or dropout-free operation for any profile.
-- Change AudioBox firmware/Universal Control settings, or emulate PreSonus Studio One's Dropout Protection.
-- Change sample rate automatically or measure analog DAC-to-speaker latency.
-- Implement the entire multiphase monitor/track engine in this change; settings must accurately disclose where the current engine cannot separate playback and monitoring buffers.
+- Prometer una latencia fija entre tecla y parlante o funcionamiento sin interrupciones para algún perfil.
+- Cambiar el firmware/los ajustes de Universal Control de AudioBox ni emular la protección contra interrupciones de PreSonus Studio One.
+- Cambiar automáticamente la frecuencia de muestreo o medir la latencia analógica entre DAC y parlante.
+- Implementar en este cambio todo el motor de pistas/monitorización multipista; los ajustes deben indicar con precisión cuándo el motor actual no puede separar los búferes de reproducción y monitorización.
 
 ## Decisions
 
-### Keep device period and playback safety buffer as separate values
+### Mantener separados el período del dispositivo y el búfer de seguridad de reproducción
 
-Represent the requested device period in frames and the additional playback safety buffer in frames. Derive milliseconds from the active sample rate for display, rather than storing a rounded duration that could become stale after sample-rate changes. Keep backend negotiated period as a separate reported field. On PipeWire, pass the requested period through the existing stream configuration and query/report the actual active quantum using the backend's runtime information.
+Representar en cuadros el período solicitado al dispositivo y el búfer adicional de seguridad de reproducción. Calcular los milisegundos a partir de la frecuencia de muestreo activa al mostrarlos, en vez de guardar una duración redondeada que quedaría obsoleta si cambia la frecuencia. Informar por separado el período negociado por el motor de plataforma. En PipeWire, pasar el período solicitado mediante la configuración de flujo existente y consultar/informar el cuanto activo real usando la información de ejecución del motor.
 
-Alternative: expose one “latency” slider. Rejected because it conflates backend scheduling blocks with queued rendered audio and cannot explain which path acquires the added delay.
+Alternativa: ofrecer un único control deslizante de «latencia». Se descartó porque mezcla los bloques de planificación del motor con el audio renderizado en cola y no permite explicar qué ruta recibe el retardo adicional.
 
-### Store preferences outside project audio content
+### Guardar las preferencias fuera del contenido de audio del proyecto
 
-Keep audio-device preferences and profile values in DAW user settings scoped to a device/backend identity, with in-memory fallback if persistence is unavailable. A session can select which profile is active, but projects do not overwrite machine-specific hardware preferences when opened. This avoids transferring an AudioBox-specific quantum into a different machine or interface.
+Guardar las preferencias de dispositivos de audio y los valores de perfiles en los ajustes del usuario del DAW, asociados a la identidad del dispositivo/motor de plataforma; usar memoria como alternativa si no se pueden persistir. Una sesión puede elegir el perfil activo, pero al abrir proyectos no se sobrescriben las preferencias de hardware específicas de la máquina. Así se evita trasladar a otra máquina o interfaz el cuanto configurado para AudioBox.
 
-Alternative: serialize the selected hardware period in `project.json`. Rejected because device support and allowed periods differ across machines; project intent and physical audio configuration have different portability.
+Alternativa: serializar en `project.json` el período elegido para el hardware. Se descartó porque la compatibilidad de dispositivos y los períodos admitidos varían entre máquinas; el contenido del proyecto y la configuración física de audio tienen distinta portabilidad.
 
-### Profiles are editable presets over the same controls
+### Los perfiles son preajustes editables de los mismos controles
 
-Provide Live/Record and Multitrack Playback presets that populate device period and playback safety buffer. The user can tune both fields and save those values as personal settings. The profile name is a convenience label, not an automatic detector of session load. During overdubbing, the DAW can retain a low-latency monitored input path while buffering eligible backing playback only after the engine has distinct path scheduling. Until then, the UI reports the current shared-path limitation.
+Ofrecer perfiles de interpretación/grabación y reproducción multipista que establezcan el período del dispositivo y el búfer de seguridad de reproducción. El usuario puede ajustar ambos campos y guardar esos valores como preferencias personales. El nombre del perfil es sólo una etiqueta práctica, no un detector automático de la carga de la sesión. Durante la sobregrabación, el DAW podrá conservar una ruta de entrada monitorizada de baja latencia y almacenar en búfer sólo el acompañamiento admisible cuando el motor disponga de planificación separada por ruta. Hasta entonces, la interfaz informa de la limitación actual de ruta compartida.
 
-Alternative: automatically increase buffers when CPU use rises. Deferred because automatic mode switching can disrupt monitoring and the current engine has no per-path deadline/scheduling control.
+Alternativa: aumentar automáticamente los búferes cuando crezca el uso de CPU. Se aplazó porque el cambio automático de modo puede interrumpir la monitorización y el motor actual no permite controlar plazos/planificación de cada ruta.
 
-### Apply changes through the control plane
+### Aplicar cambios mediante el plano de control
 
-Create and validate the new runtime configuration outside the callback. If the backend supports live renegotiation, publish/apply at a stream-safe boundary; otherwise stop/reopen the stream through the control plane and show a pending/restart state. MIDI queues and note/controller state must remain owned outside the callback and be reconciled explicitly across stream replacement. Sustain CC64 is ordinary timestamped controller state and must not be dropped by the profile transition.
+Crear y validar la nueva configuración de ejecución fuera de la devolución de audio. Si el motor de plataforma admite renegociación en vivo, publicar/aplicar en un límite seguro del flujo; en caso contrario, detener/reabrir el flujo mediante el plano de control e indicar que queda pendiente o requiere reinicio. Las colas MIDI y el estado de notas/controladores deben permanecer bajo propiedad externa a la devolución y conciliarse explícitamente al sustituir el flujo. Sustain CC64 es un estado de controlador con marca de tiempo y no debe descartarse al cambiar de perfil.
 
-Alternative: mutate PipeWire settings directly in the callback. Rejected because callback work must remain bounded and the existing architecture prohibits control I/O there.
+Alternativa: modificar los ajustes PipeWire directamente en la devolución. Se descartó porque el trabajo de esta ruta debe permanecer acotado y la arquitectura actual prohíbe allí operaciones de control/entrada/salida.
 
-### Show requested and effective values explicitly
+### Mostrar explícitamente los valores solicitados y efectivos
 
-The settings view displays the requested period, backend-reported effective period, sample rate, playback safety frames, and each known duration in frames/ms. If a value is not reported by a backend, mark it unavailable. Do not add the independent values into a single purported end-to-end latency figure.
+La vista de ajustes muestra el período solicitado, el período efectivo informado por el motor de plataforma, la frecuencia de muestreo, los cuadros de seguridad de reproducción y cada duración conocida en cuadros y milisegundos. Si el motor no informa un valor, se muestra como no disponible. No se suman valores independientes para presentar una supuesta cifra de latencia de extremo a extremo.
 
 ## Risks / Trade-offs
 
-- **[PipeWire may negotiate a different graph quantum]** → show requested and effective values separately, with backend diagnostics.
-- **[Changing a running stream may interrupt audio]** → use a backend-supported safe update or clearly indicate when transport stop/restart is needed; preserve pending MIDI and recording data.
-- **[Playback safety frames may not be independently consumed by the current render graph]** → implement the control contract and diagnostics first; do not imply independent monitoring latency until per-path buffering exists.
-- **[Device period and safety buffer affect different parts of the signal path]** → label each control and explain frame/sample-rate conversion in the UI.
-- **[Some backends expose incomplete period data]** → represent unknown effective values explicitly and avoid guessing.
+- **[PipeWire podría negociar un cuanto distinto para el grafo]** → mostrar por separado los valores solicitado y efectivo, junto con diagnósticos del motor.
+- **[Cambiar un flujo en ejecución podría interrumpir el audio]** → usar una actualización segura admitida por el motor o indicar claramente si es necesario detener/reiniciar el transporte; conservar los datos MIDI y de grabación pendientes.
+- **[El grafo de renderizado actual podría no consumir por separado los cuadros de seguridad de reproducción]** → implementar primero el contrato de control y sus diagnósticos; no insinuar una latencia de monitorización independiente hasta que exista almacenamiento temporal por ruta.
+- **[El período del dispositivo y el búfer de seguridad afectan partes distintas de la ruta de señal]** → etiquetar cada control y explicar la conversión de cuadros/frecuencia de muestreo en la interfaz.
+- **[Algunos motores no exponen todos los datos de período]** → representar explícitamente los valores efectivos desconocidos y evitar estimarlos.
 
 ## Migration Plan
 
-1. Add backend-neutral audio runtime settings and diagnostics with defaults matching current runtime behavior (48 kHz default and 256-frame requested period where applicable; zero additional playback safety frames until consumed by an independent path).
-2. Add backend support for requested/effective period reporting without changing existing CLI defaults.
-3. Wire settings through the application control API and expose the two profiles in the DAW settings UI.
-4. Add playback safety buffering only where the engine can apply it to eligible playback work; until then present its support state accurately.
-5. Persist per-device user preferences in a versioned settings file. Existing projects require no migration.
+1. Añadir ajustes y diagnósticos del entorno de audio independientes del motor, con valores predeterminados que coincidan con el comportamiento actual (48 kHz y período solicitado de 256 cuadros cuando corresponda; cero cuadros adicionales de seguridad hasta que una ruta independiente los consuma).
+2. Añadir al motor la capacidad de informar los períodos solicitado/efectivo sin cambiar los valores predeterminados actuales de la CLI.
+3. Conectar los ajustes mediante la API de control de aplicación y mostrar los dos perfiles en la interfaz de ajustes del DAW.
+4. Añadir búferes de seguridad de reproducción sólo donde el motor pueda aplicarlos a trabajo de reproducción admisible; mientras tanto, informar con precisión el estado de soporte.
+5. Persistir las preferencias de usuario por dispositivo en un archivo de ajustes versionado. Los proyectos existentes no requieren migración.
 
-Rollback removes the UI preference binding and returns to the existing stream configuration defaults; projects and MIDI takes remain unchanged.
+Para revertir el cambio, quitar la conexión de preferencias de la interfaz y volver a los valores predeterminados actuales de configuración de flujo; los proyectos y las tomas MIDI permanecen intactos.
 
 ## Open Questions
 
-- The exact default frame values for the two profiles should be confirmed by deterministic runtime tests and measurements on supported backends during implementation; presets remain editable and are not guarantees.
-- Future backends may expose different legal buffer increments; the settings model should allow backend validation to provide the supported choices rather than hard-coding AudioBox-specific values.
+- Los valores predeterminados exactos en cuadros para los dos perfiles deben confirmarse mediante pruebas deterministas de ejecución y mediciones de los motores admitidos durante la implementación; los preajustes siguen siendo editables y no constituyen garantías.
+- Futuros motores podrían admitir incrementos distintos de búfer; el modelo de ajustes debería permitir que cada motor proporcione las opciones válidas mediante su propia validación, en vez de fijar valores específicos de AudioBox.
