@@ -3,6 +3,8 @@
 //! Esta capa traduce llamadas de la UI a la API de aplicación. No mueve audio
 //! ni buffers de GPU por IPC y no accede al motor RT desde los comandos de UI.
 
+mod audio_runtime;
+
 use estudio_daw_application::{
     load_audio_runtime_settings, save_audio_runtime_settings, AudioRuntimeSettings,
     AudioRuntimeView, CommandAuthor, DomainCommand, ProjectApplication, SessionCommand,
@@ -13,10 +15,13 @@ use serde::Serialize;
 use std::{path::PathBuf, sync::Mutex};
 use tauri::State;
 
+use audio_runtime::AudioRuntimeHost;
+
 struct DesktopState {
     // ProjectApplication conserva su runtime/historial; el lock sólo se toma
     // desde comandos de UI, nunca desde el callback de audio.
     application: Mutex<Option<ProjectApplication>>,
+    audio: Mutex<AudioRuntimeHost>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -120,7 +125,7 @@ struct SpectrogramTileRefV1 {
     encoding: &'static str,
 }
 
-fn summarize(application: &ProjectApplication) -> UiSnapshot {
+fn summarize(application: &ProjectApplication, audio_engine_connected: bool) -> UiSnapshot {
     let domain = application.snapshot();
     let project: Project = domain.project.project;
     let (can_undo, can_redo) = application.history_state();
@@ -157,9 +162,7 @@ fn summarize(application: &ProjectApplication) -> UiSnapshot {
         tracks,
         can_undo,
         can_redo,
-        // El prototipo sólo actualiza el estado de sesión; aún no conecta
-        // TransportSnapshot con el RenderPlan ni el stream de audio.
-        audio_engine_connected: false,
+        audio_engine_connected,
     }
 }
 
@@ -167,11 +170,17 @@ fn summarize(application: &ProjectApplication) -> UiSnapshot {
 fn open_project(path: String, state: State<'_, DesktopState>) -> Result<UiSnapshot, String> {
     // Abrir fuera del lock evita bloquear otras llamadas durante lectura/parsing.
     let application = ProjectApplication::open(PathBuf::from(path)).map_err(|e| e.to_string())?;
-    let snapshot = summarize(&application);
-    *state
+    let mut current = state
         .application
         .lock()
-        .map_err(|_| "el estado de la aplicación quedó bloqueado".to_owned())? = Some(application);
+        .map_err(|_| "el estado de la aplicación quedó bloqueado".to_owned())?;
+    state
+        .audio
+        .lock()
+        .map_err(|_| "el estado del motor de audio quedó bloqueado".to_owned())?
+        .stop()?;
+    *current = Some(application);
+    let snapshot = summarize(current.as_ref().expect("proyecto recién abierto"), false);
     Ok(snapshot)
 }
 
@@ -181,10 +190,15 @@ fn project_snapshot(state: State<'_, DesktopState>) -> Result<UiSnapshot, String
         .application
         .lock()
         .map_err(|_| "el estado de la aplicación quedó bloqueado".to_owned())?;
-    application
+    let application = application
         .as_ref()
-        .map(summarize)
-        .ok_or_else(|| "primero abre un proyecto".to_owned())
+        .ok_or_else(|| "primero abre un proyecto".to_owned())?;
+    let connected = state
+        .audio
+        .lock()
+        .map_err(|_| "el estado del motor de audio quedó bloqueado".to_owned())?
+        .is_connected();
+    Ok(summarize(application, connected))
 }
 
 #[tauri::command]
@@ -197,7 +211,12 @@ fn save_project(state: State<'_, DesktopState>) -> Result<UiSnapshot, String> {
         .as_ref()
         .ok_or_else(|| "primero abre un proyecto".to_owned())?;
     application.save().map_err(|e| e.to_string())?;
-    Ok(summarize(application))
+    let connected = state
+        .audio
+        .lock()
+        .map_err(|_| "el estado del motor de audio quedó bloqueado".to_owned())?
+        .is_connected();
+    Ok(summarize(application, connected))
 }
 
 #[tauri::command]
@@ -212,7 +231,12 @@ fn save_project_as(path: String, state: State<'_, DesktopState>) -> Result<UiSna
     application
         .save_as(PathBuf::from(path))
         .map_err(|e| e.to_string())?;
-    Ok(summarize(application))
+    let connected = state
+        .audio
+        .lock()
+        .map_err(|_| "el estado del motor de audio quedó bloqueado".to_owned())?
+        .is_connected();
+    Ok(summarize(application, connected))
 }
 
 #[tauri::command]
@@ -230,10 +254,24 @@ fn set_transport(command: String, state: State<'_, DesktopState>) -> Result<UiSn
         "stop" => SessionCommand::Stop,
         _ => return Err(format!("comando de transporte desconocido: {command}")),
     };
+    let mut audio = state
+        .audio
+        .lock()
+        .map_err(|_| "el estado del motor de audio quedó bloqueado".to_owned())?;
+    match session_command {
+        SessionCommand::Play => {
+            let project = application.snapshot().project.project;
+            let settings = load_audio_runtime_settings().map_err(|error| error.to_string())?;
+            audio.play(&project, settings.active())?;
+        }
+        SessionCommand::Pause => audio.pause(true),
+        SessionCommand::Stop => audio.stop()?,
+        _ => unreachable!("el adaptador sólo acepta play/pause/stop"),
+    }
     application
         .execute(DomainCommand::Session(session_command), CommandAuthor::User)
         .map_err(|e| e.to_string())?;
-    Ok(summarize(application))
+    Ok(summarize(application, audio.is_connected()))
 }
 
 #[tauri::command]
@@ -251,19 +289,39 @@ fn history_action(action: String, state: State<'_, DesktopState>) -> Result<UiSn
         _ => return Err(format!("acción de historial desconocida: {action}")),
     }
     .map_err(|e| e.to_string())?;
-    Ok(summarize(application))
+    let connected = state
+        .audio
+        .lock()
+        .map_err(|_| "el estado del motor de audio quedó bloqueado".to_owned())?
+        .is_connected();
+    Ok(summarize(application, connected))
 }
 
 #[tauri::command]
-fn audio_runtime_settings() -> Result<AudioRuntimeView, String> {
+fn audio_runtime_settings(state: State<'_, DesktopState>) -> Result<AudioRuntimeView, String> {
     let settings = load_audio_runtime_settings().map_err(|error| error.to_string())?;
-    Ok(AudioRuntimeView::from_settings(settings, 48_000))
+    let mut view = AudioRuntimeView::from_settings(settings, 48_000);
+    view.engine_connected = state
+        .audio
+        .lock()
+        .map_err(|_| "el estado del motor de audio quedó bloqueado".to_owned())?
+        .is_connected();
+    Ok(view)
 }
 
 #[tauri::command]
-fn save_audio_settings(settings: AudioRuntimeSettings) -> Result<AudioRuntimeView, String> {
+fn save_audio_settings(
+    settings: AudioRuntimeSettings,
+    state: State<'_, DesktopState>,
+) -> Result<AudioRuntimeView, String> {
     save_audio_runtime_settings(&settings).map_err(|error| error.to_string())?;
-    Ok(AudioRuntimeView::from_settings(settings, 48_000))
+    let mut view = AudioRuntimeView::from_settings(settings, 48_000);
+    view.engine_connected = state
+        .audio
+        .lock()
+        .map_err(|_| "el estado del motor de audio quedó bloqueado".to_owned())?
+        .is_connected();
+    Ok(view)
 }
 
 fn main() {
@@ -271,6 +329,7 @@ fn main() {
         .plugin(tauri_plugin_dialog::init())
         .manage(DesktopState {
             application: Mutex::new(None),
+            audio: Mutex::new(AudioRuntimeHost::default()),
         })
         .invoke_handler(tauri::generate_handler![
             open_project,
@@ -305,7 +364,7 @@ mod tests {
         )
         .expect("el fixture del contrato UI debe ser un proyecto válido");
         let application = ProjectApplication::new(project);
-        let value = serde_json::to_value(summarize(&application))
+        let value = serde_json::to_value(summarize(&application, false))
             .expect("el snapshot compacto debe serializarse");
 
         assert_eq!(value["projectId"], "ui-contract-test");

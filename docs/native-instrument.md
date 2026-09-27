@@ -87,10 +87,20 @@ la distribución. Estudio DAW no descarga ni redistribuye SoundFonts. Si se
 omite `--soundfont`, se usa SineSynth. Una ruta ilegible, preset inexistente o
 runtime ausente se informa antes de iniciar el audio.
 
-El modelo de proyecto ya puede guardar una referencia portable y un hash
-opcional, sin copiar el banco. El motor y PipeWire exponen intercambio de
-RenderPlan en límite de bloque; la selección interactiva y persistida desde la
-UI queda pendiente.
+El modelo de proyecto guarda una referencia portable y un hash opcional, sin
+copiar el banco. El transporte de escritorio prepara un worker por pista MIDI
+que contiene clips, mezcla las fuentes en scratch preasignado y publica audio
+mediante un RenderPlan en PipeWire. El SoundFont y preset de cada pista se
+cargan antes de iniciar el stream; un error de ruta/preset devuelve un
+diagnóstico al comando Play.
+
+El botón Play reproduce los clips MIDI del proyecto siguiendo `start_tick`, el
+PPQ de cada toma y el tempo del proyecto. Pause silencia el callback y congela
+el scheduler; Play reanuda el mismo stream, y Stop cierra PipeWire y los workers.
+El periodo usa el perfil actualmente seleccionado al abrir un stream. El
+objetivo PCM se aplica por separado a cada worker SoundFont. La ruta actual no
+reproduce todavía `AudioClip`, no graba desde el shell Tauri y no monitoriza MIDI
+entrante desde ese shell.
 
 ## Probar SineSynth
 
@@ -206,14 +216,22 @@ AudioBox.
 medición no aisló deltas por corrida, así que esos totales no se atribuyen a un
 perfil concreto. El quantum volvió al valor idle de 1024 al terminar los
 streams, y `clock.force-quantum` permaneció en 0. Los perfiles se leen al abrir
-cada stream; el shell Tauri todavía no controla un motor/transporte activo.
+cada stream.
 
-El shell todavía no conecta sus botones de transporte con el stream. La ruta
-actual tampoco separa buffers por pista ni conserva una monitorización live de
-baja latencia mientras el resto de una sesión multipista recibe más margen. El
-objetivo PCM de reproducción se aplica al worker SoundFont utilizado por
-`midi-synth-play`; el sinte sinusoidal no tiene esa cola. Sustain CC64 del pedal
-se envía a FluidSynth y se aplica también al instrumento sinusoidal de prueba.
+El shell Tauri ahora conecta Play/Pause/Stop con un stream PipeWire. Play compila
+los clips MIDI del proyecto, respeta posición de clip, PPQ y tempo, asigna un
+instrumento por pista MIDI y mezcla las fuentes con scratch preasignado. El
+periodo solicitado y el margen PCM del perfil seleccionado se usan al abrir el
+stream y los workers SoundFont. Se direcciona al sink AudioBox cuando está
+enumerado; de otro modo se usa la ruta automática de PipeWire. Pause silencia
+la salida y suspende el scheduler sin bloquear el callback; Play reanuda y Stop
+cierra el stream y los workers.
+
+Este corte no reproduce `AudioClip`, no graba ni monitoriza entradas live desde
+Tauri y no reporta el quantum efectivo. La captura WAV y MIDI live siguen
+disponibles mediante CLI y respetan el perfil Live/Grabar. El margen PCM se
+aplica a la cola de cada worker SoundFont; SineSynth no mantiene esa cola.
+Sustain CC64 de los takes se entrega a FluidSynth y SineSynth.
 
 ## Pruebas y límites
 

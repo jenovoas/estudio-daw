@@ -70,12 +70,12 @@
           <span>Búfer extra <strong id="audio-safety-duration">—</strong></span>
         </div>
         <p class="audio-help">Un periodo menor puede reducir el tiempo de bloque y aumentar la exigencia de CPU y scheduling. El búfer extra agrega margen al audio que procesa; puede añadir demora a esa ruta. PipeWire puede negociar un periodo efectivo distinto al solicitado.</p>
-        <p id="audio-engine-note" class="audio-help audio-warning">Este shell todavía no conecta el motor al transporte. El cambio se guarda para el siguiente inicio del stream. El margen PCM actual configura el worker SoundFont; el motor aún no separa buffers de reproducción por pista ni del monitoreo live.</p>
+        <p id="audio-engine-note" class="audio-help audio-warning">El transporte ya reproduce clips MIDI del proyecto con el instrumento asignado a cada pista; Live/Grabar y la grabación de audio desde esta UI aún no están conectados. El periodo y el margen se toman al iniciar el siguiente stream. El margen PCM se aplica a pistas SoundFont; SineSynth no mantiene una cola PCM independiente.</p>
       </section>
 
       <section class="notice panel">
         <span class="notice-icon">i</span>
-        <div><strong id="notice-title">Shell de escritorio experimental</strong><p id="notice-text">El transporte actual modifica el estado de sesión; todavía no inicia el motor de audio.</p></div>
+        <div><strong id="notice-title">Shell de escritorio experimental</strong><p id="notice-text">Abre un proyecto con clips MIDI y usa Play para reproducirlo por PipeWire.</p></div>
       </section>
     </main>
 

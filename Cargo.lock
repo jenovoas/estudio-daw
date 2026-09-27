@@ -1158,7 +1158,12 @@ name = "estudio-daw-ui-shell"
 version = "0.1.0"
 dependencies = [
  "estudio-daw-application",
+ "estudio-daw-audio-engine",
+ "estudio-daw-audio-platform",
+ "estudio-daw-midi-engine",
  "estudio-daw-project-model",
+ "estudio-daw-runtime-diagnostics",
+ "estudio-daw-synth",
  "serde",
  "serde_json",
  "tauri",

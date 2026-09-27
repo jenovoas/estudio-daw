@@ -255,6 +255,19 @@ impl SineSynthNode {
                     }
                 }
             }
+            SynthMidiEvent::ControlChange {
+                channel,
+                controller: 123,
+                ..
+            } if usize::from(channel) < self.sustain.len() => {
+                let sustained = self.sustain[channel as usize];
+                for voice in &mut self.voices {
+                    if voice.active && voice.channel == channel {
+                        voice.sustained = sustained;
+                        voice.releasing = !sustained;
+                    }
+                }
+            }
             SynthMidiEvent::ControlChange { .. } => {}
         }
     }
@@ -296,6 +309,40 @@ impl AudioNode for SineSynthNode {
             }
             for sample in frame {
                 *sample = mixed;
+            }
+        }
+        Ok(())
+    }
+}
+
+/// Mezcla varias fuentes de instrumento con scratch preasignado. El wrapper se
+/// construye antes del stream y no reserva ni cambia capacidad en el callback.
+pub struct InstrumentMixerNode {
+    sources: Vec<Box<dyn AudioNode>>,
+    scratch: Vec<f32>,
+}
+
+impl InstrumentMixerNode {
+    pub fn new(sources: Vec<Box<dyn AudioNode>>, max_samples: usize) -> Self {
+        Self {
+            sources,
+            scratch: vec![0.0; max_samples],
+        }
+    }
+}
+
+impl AudioNode for InstrumentMixerNode {
+    fn process(&mut self, interleaved: &mut [f32]) -> Result<(), AudioNodeError> {
+        if interleaved.len() > self.scratch.len() {
+            return Err(AudioNodeError::InvalidBlockLength);
+        }
+        interleaved.fill(0.0);
+        let scratch = &mut self.scratch[..interleaved.len()];
+        for source in &mut self.sources {
+            scratch.fill(0.0);
+            source.process(scratch)?;
+            for (mixed, sample) in interleaved.iter_mut().zip(scratch.iter()) {
+                *mixed += *sample;
             }
         }
         Ok(())
@@ -376,6 +423,40 @@ mod tests {
             .expect("el envelope sigue sonando durante el release");
         assert!(!released_voice.sustained);
         assert!(released_voice.releasing);
+    }
+
+    #[test]
+    fn all_notes_off_releases_only_the_selected_channel() {
+        let (mut sender, receiver) = midi_event_queue();
+        let mut synth = SineSynthNode::new(48_000, 2, receiver).unwrap();
+        let mut block = [0.0; 512];
+        for (channel, note) in [(0, 60), (1, 67)] {
+            assert!(sender.try_send(SynthMidiEvent::NoteOn {
+                channel,
+                note,
+                velocity: 100,
+            }));
+        }
+        synth.process(&mut block).unwrap();
+        assert!(sender.try_send(SynthMidiEvent::ControlChange {
+            channel: 0,
+            controller: 123,
+            value: 0,
+        }));
+        synth.process(&mut block).unwrap();
+
+        let channel_zero = synth
+            .voices
+            .iter()
+            .find(|voice| voice.active && voice.channel == 0)
+            .unwrap();
+        let channel_one = synth
+            .voices
+            .iter()
+            .find(|voice| voice.active && voice.channel == 1)
+            .unwrap();
+        assert!(channel_zero.releasing);
+        assert!(!channel_one.releasing);
     }
 
     #[test]

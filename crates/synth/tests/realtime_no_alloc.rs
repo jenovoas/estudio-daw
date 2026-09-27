@@ -6,7 +6,7 @@ use std::{
 
 use estudio_daw_audio_engine::{AudioBlock, RenderPlanBuilder};
 use estudio_daw_synth::{
-    midi_event_queue, SineSynthNode, SoundFontInstrumentWorker, SynthMidiEvent,
+    midi_event_queue, InstrumentMixerNode, SineSynthNode, SoundFontInstrumentWorker, SynthMidiEvent,
 };
 
 thread_local! {
@@ -91,6 +91,41 @@ fn soundfont_pcm_callback_source_does_not_allocate() {
     builder.add_node(source);
     let mut plan = builder.build().unwrap();
     let mut block = AudioBlock::new(2, 64).unwrap();
+    plan.process_block(&mut block).unwrap();
+
+    ALLOCATIONS.with(|count| count.set(0));
+    TRACKING.with(|enabled| enabled.set(true));
+    for _ in 0..1_000 {
+        block.clear();
+        plan.process_block(&mut block).unwrap();
+    }
+    TRACKING.with(|enabled| enabled.set(false));
+
+    assert_eq!(ALLOCATIONS.with(Cell::get), 0);
+}
+
+#[test]
+fn mixing_multiple_instrument_tracks_does_not_allocate() {
+    let (mut first_sender, first_receiver) = midi_event_queue();
+    let (mut second_sender, second_receiver) = midi_event_queue();
+    let sources: Vec<Box<dyn estudio_daw_audio_engine::AudioNode>> = vec![
+        Box::new(SineSynthNode::new(48_000, 2, first_receiver).unwrap()),
+        Box::new(SineSynthNode::new(48_000, 2, second_receiver).unwrap()),
+    ];
+    let mut builder = RenderPlanBuilder::new();
+    builder.add_node(InstrumentMixerNode::new(sources, 128));
+    let mut plan = builder.build().unwrap();
+    let mut block = AudioBlock::new(2, 64).unwrap();
+    assert!(first_sender.try_send(SynthMidiEvent::NoteOn {
+        channel: 0,
+        note: 60,
+        velocity: 96,
+    }));
+    assert!(second_sender.try_send(SynthMidiEvent::NoteOn {
+        channel: 0,
+        note: 67,
+        velocity: 96,
+    }));
     plan.process_block(&mut block).unwrap();
 
     ALLOCATIONS.with(|count| count.set(0));

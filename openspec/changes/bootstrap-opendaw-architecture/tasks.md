@@ -170,6 +170,11 @@
   medios; visualizar waveform/espectrograma desde artefactos derivados sin asumir
   memoria GPU compartida entre `wgpu` nativo y WebView. (Contratos v1 definidos;
   endpoints, jobs de artefactos y renderer quedan como implementación posterior.)
+- [x] Conectar Play/Pause/Stop de Tauri al stream PipeWire y al scheduler MIDI
+  del proyecto; compilar clips de varias pistas con su instrumento por pista,
+  aplicar el perfil seleccionado al iniciar el stream y mantener pausa/parada
+  fuera del callback. El corte reproduce clips MIDI; los clips de audio y la
+  captura live desde Tauri permanecen fuera de este alcance.
 
 ## Verificación
 

@@ -12,7 +12,7 @@ use spa::pod::Pod;
 use std::fs::File;
 use std::io::Cursor;
 use std::io::{self, Seek, SeekFrom, Write};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
@@ -354,6 +354,100 @@ pub fn run_pipewire_output_controlled(
         &mut params,
     )?;
     main_loop.run();
+    Ok(())
+}
+
+/// Ejecuta una salida PipeWire hasta que el control plane solicita detenerla.
+/// `ready` confirma que PipeWire aceptó el stream; el callback sólo consulta
+/// buffers y el RenderPlan, nunca este canal ni el flag de parada.
+pub fn run_pipewire_output_until(
+    config: PipeWireStreamConfig,
+    mut processor: RenderPlanProcessor,
+    playback_node: Option<String>,
+    stop: Arc<AtomicBool>,
+    paused: Arc<AtomicBool>,
+    ready: std::sync::mpsc::SyncSender<Result<(), String>>,
+) -> Result<(), PipeWireError> {
+    let config = config.validate()?;
+    pw::init();
+
+    let main_loop = pw::main_loop::MainLoopRc::new(None)?;
+    let context = pw::context::ContextRc::new(&main_loop, None)?;
+    let core = context.connect_rc(None)?;
+    let mut stream_properties = properties! {
+        *pw::keys::MEDIA_TYPE => "Audio",
+        *pw::keys::MEDIA_CATEGORY => "Playback",
+        *pw::keys::MEDIA_ROLE => "Music",
+        *pw::keys::AUDIO_CHANNELS => config.channels.to_string(),
+        *pw::keys::NODE_LATENCY => format!("{}/{}", config.period_frames, config.sample_rate),
+    };
+    if let Some(node) = playback_node {
+        stream_properties.insert(*pw::keys::TARGET_OBJECT, node);
+    }
+    let stream = pw::stream::StreamBox::new(&core, "estudio-daw-output", stream_properties)?;
+    let paused_in_callback = Arc::clone(&paused);
+    let _listener = stream
+        .add_local_listener_with_user_data(())
+        .process(move |stream, _| {
+            let Some(mut buffer) = stream.dequeue_buffer() else {
+                return;
+            };
+            let requested_frames = buffer.requested();
+            let Some(data) = buffer.datas_mut().first_mut() else {
+                return;
+            };
+            let sample_count = {
+                let Some(bytes) = data.data() else {
+                    return;
+                };
+                let valid_bytes = output_buffer_bytes(
+                    requested_frames,
+                    config.period_frames,
+                    config.channels as usize,
+                    bytes.len(),
+                );
+                let (_, samples, _) = unsafe { bytes[..valid_bytes].align_to_mut::<f32>() };
+                let process_ok = processor.process(samples).is_ok();
+                if paused_in_callback.load(Ordering::Acquire) || !process_ok {
+                    samples.fill(0.0);
+                }
+                samples.len()
+            };
+            let chunk = data.chunk_mut();
+            *chunk.offset_mut() = 0;
+            *chunk.stride_mut() = (config.channels as usize * std::mem::size_of::<f32>()) as _;
+            *chunk.size_mut() = (sample_count * std::mem::size_of::<f32>()) as _;
+        })
+        .register()?;
+
+    let mut params = audio_params(config);
+    stream.connect(
+        spa::utils::Direction::Output,
+        None,
+        pw::stream::StreamFlags::AUTOCONNECT
+            | pw::stream::StreamFlags::MAP_BUFFERS
+            | pw::stream::StreamFlags::RT_PROCESS,
+        &mut params,
+    )?;
+    let _ = ready.send(Ok(()));
+
+    let stop_check = Arc::clone(&stop);
+    let loop_to_quit = main_loop.clone();
+    let timer = main_loop.loop_().add_timer(move |_| {
+        if stop_check.load(Ordering::Acquire) {
+            loop_to_quit.quit();
+        }
+    });
+    timer
+        .update_timer(
+            Some(Duration::from_millis(2)),
+            Some(Duration::from_millis(2)),
+        )
+        .into_result()
+        .map_err(|error| PipeWireError::Timer(format!("{error:?}")))?;
+    main_loop.run();
+    drop(_listener);
+    drop(stream);
     Ok(())
 }
 
