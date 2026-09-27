@@ -68,6 +68,8 @@ struct AudioClipSummary {
     source_id: Option<String>,
     start_beats: f64,
     duration_beats: f64,
+    source_start_samples: u64,
+    duration_samples: u64,
     sample_rate_hz: u32,
     channels: u16,
     source_name: Option<String>,
@@ -267,6 +269,8 @@ fn summarize(application: &ProjectApplication, audio_engine_connected: bool) -> 
                 duration_beats: clip.duration_samples as f64 / f64::from(clip.sample_rate.max(1))
                     * project.transport.tempo_bpm
                     / 60.0,
+                source_start_samples: clip.source_start_samples,
+                duration_samples: clip.duration_samples,
                 sample_rate_hz: clip.sample_rate,
                 channels: clip.channels,
                 source_name: source
@@ -301,6 +305,49 @@ fn summarize(application: &ProjectApplication, audio_engine_connected: bool) -> 
         can_redo,
         audio_engine_connected,
     }
+}
+
+#[tauri::command]
+fn edit_audio_region(
+    action: String,
+    clip_id: String,
+    start_tick: Option<u64>,
+    source_start_samples: Option<u64>,
+    duration_samples: Option<u64>,
+    state: State<'_, DesktopState>,
+) -> Result<UiSnapshot, String> {
+    let mut application = state
+        .application
+        .lock()
+        .map_err(|_| "el estado de la aplicación quedó bloqueado".to_owned())?;
+    let application = application
+        .as_mut()
+        .ok_or_else(|| "primero crea o abre un proyecto".to_owned())?;
+    let command = match action.as_str() {
+        "move" => ProjectCommand::MoveAudioClip {
+            clip_id,
+            start_tick: start_tick.ok_or_else(|| "falta la posición de la región".to_owned())?,
+        },
+        "trim" => ProjectCommand::TrimAudioClip {
+            clip_id,
+            source_start_samples: source_start_samples
+                .ok_or_else(|| "falta el desplazamiento de fuente".to_owned())?,
+            duration_samples: duration_samples
+                .ok_or_else(|| "falta la duración de la región".to_owned())?,
+            start_tick,
+        },
+        "remove" => ProjectCommand::RemoveAudioClip { clip_id },
+        _ => return Err(format!("acción de región desconocida: {action}")),
+    };
+    application
+        .execute_project(command)
+        .map_err(|error| error.to_string())?;
+    let connected = state
+        .audio
+        .lock()
+        .map_err(|_| "el estado del motor de audio quedó bloqueado".to_owned())?
+        .is_connected();
+    Ok(summarize(application, connected))
 }
 
 fn summarize_midi_notes(clip: &MidiClip) -> Vec<MidiNoteSummary> {
@@ -893,6 +940,7 @@ fn main() {
             new_project,
             add_track,
             import_audio,
+            edit_audio_region,
             audio_waveform,
             audio_preview,
             audio_preview_file,

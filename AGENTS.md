@@ -277,3 +277,9 @@ de evidencia descritos en el handoff.
 
 - `workstation-arrangement-surface-v2` está en 9/35. La tarea 2.1 añade ruteo interno al Master, instantánea de pistas con canales/destino y superficies de sólo lectura en Session y Mezclador; no implica ruteo físico ni reproducción de audio.
 - Siguiente: tarea 2.2, importación y procedencia de medios. Revisar el handoff actualizado. La bitácora externa sigue append-only.
+
+## Estado de continuación — edición de regiones 2.2
+
+- HEAD publicado inicial de este corte: `57f0e5f` (`feat: previsualiza e importa canales de audio`). 2.2 sigue abierta y el cambio en curso conecta mover, recortar hacia dentro y quitar regiones desde el Arreglo, preservando la fuente y usando comandos reversibles.
+- Verificación de código: `cargo check --workspace`, `cargo fmt --all -- --check`, `node --check crates/ui-shell/frontend/main.js` y `git diff --check`. No se ejecutó la suite ni se hizo QA visual/auditiva en la aplicación.
+- Pendientes de 2.2: colocar regiones con el cursor de edición, QA en ejecución y cotejo auditivo. No inferir que la selección de canales ya enruta audio. Ver `docs/HANDOFF_CONTINUACION_2026-09-27.md` y `tasks.md`.

@@ -351,7 +351,7 @@ function renderSnapshot(snapshot) {
     for (const clip of audioClips) {
       const block = document.createElement("div");
       block.className = "audio-clip";
-      block.title = `${clip.name} · ${clip.sourceName ?? "fuente"} · ${clip.sampleRateHz} Hz · ${clip.channels} canales · ${clip.durationBeats.toFixed(2)} pulsos`;
+      block.title = `${clip.name} · ${clip.sourceName ?? "fuente"} · ${clip.sampleRateHz} Hz · ${clip.channels} canales · ${clip.durationBeats.toFixed(2)} pulsos. Arrastra para mover; usa los bordes para recortar.`;
       const left = Math.max(0, Number(clip.startBeats) || 0);
       const width = Math.max(0.25, Number(clip.durationBeats) || 0.25);
       block.style.left = `${left / (snapshot.beatsPerBar * 16) * 100}%`;
@@ -366,9 +366,29 @@ function renderSnapshot(snapshot) {
       preview.title = "Preescucha aislada · hasta 30 segundos";
       preview.textContent = "▶";
       preview.addEventListener("click", () => previewAudio(clip.sourceId, preview));
+      const remove = document.createElement("button");
+      remove.type = "button";
+      remove.className = "audio-region-remove";
+      remove.setAttribute("aria-label", `Borrar región ${clip.name}`);
+      remove.title = "Quitar región del proyecto; conservar archivo fuente";
+      remove.textContent = "×";
+      remove.addEventListener("click", async () => {
+        await whileBusy([remove], async () => {
+          try {
+            const snapshot = await platform.editAudioRegion({ action: "remove", clipId: clip.id });
+            renderSnapshot(snapshot);
+            setNotice("Región quitada", "La región salió del proyecto y la fuente de audio se conservó.");
+          } catch (error) {
+            setNotice("No se pudo quitar la región", String(error));
+          }
+        });
+      });
+      const leftHandle = makeAudioTrimHandle("left", clip.name);
+      const rightHandle = makeAudioTrimHandle("right", clip.name);
       const wave = document.createElement("div");
       wave.className = "audio-waveform";
-      block.append(label, preview, wave);
+      block.append(label, remove, preview, leftHandle, rightHandle, wave);
+      bindAudioRegionEditing(block, lane, clip, snapshot.beatsPerBar, snapshot.tempoBpm);
       lane.append(block);
       if (clip.sourceId) loadWaveform(clip.sourceId, clip.sourceDigest, wave);
     }
@@ -380,6 +400,126 @@ function renderSnapshot(snapshot) {
     }
     elements.lanes.append(lane);
   }
+}
+
+function makeAudioTrimHandle(edge, name) {
+  const handle = document.createElement("button");
+  handle.type = "button";
+  handle.className = `audio-region-handle audio-region-handle-${edge}`;
+  handle.dataset.edge = edge;
+  handle.setAttribute("aria-label", `Recortar ${edge === "left" ? "inicio" : "final"} de ${name}`);
+  handle.title = "Arrastra hacia dentro para recortar sin modificar el archivo";
+  return handle;
+}
+
+function bindAudioRegionEditing(block, lane, clip, beatsPerBar, tempoBpm) {
+  const timelineBeats = Math.max(1, Number(beatsPerBar) || 4) * 16;
+  const originalLeft = Math.max(0, Number(clip.startBeats) || 0);
+  const originalWidth = Math.max(0.25, Number(clip.durationBeats) || 0.25);
+  let gesture = null;
+
+  block.addEventListener("pointerdown", (event) => {
+    const handle = event.target.closest(".audio-region-handle");
+    if (event.target.closest("button") && !handle) return;
+    if (event.button !== 0) return;
+    const bounds = lane.getBoundingClientRect();
+    if (bounds.width <= 0) return;
+    gesture = {
+      pointerId: event.pointerId,
+      edge: handle?.dataset.edge ?? "move",
+      startX: event.clientX,
+      laneWidth: bounds.width,
+    };
+    block.setPointerCapture(event.pointerId);
+    block.classList.add("is-editing");
+    event.preventDefault();
+  });
+
+  block.addEventListener("pointermove", (event) => {
+    if (!gesture || gesture.pointerId !== event.pointerId) return;
+    const delta = event.clientX - gesture.startX;
+    const deltaPercent = delta / gesture.laneWidth * 100;
+    if (gesture.edge === "move") {
+      const originalLeftPercent = originalLeft / timelineBeats * 100;
+      const widthPercent = originalWidth / timelineBeats * 100;
+      block.style.left = `${Math.max(0, Math.min(100 - widthPercent, originalLeftPercent + deltaPercent))}%`;
+    } else if (gesture.edge === "left") {
+      const trim = Math.max(0, Math.min(deltaPercent, originalWidth / timelineBeats * 100 - 0.3));
+      block.style.left = `${originalLeft / timelineBeats * 100 + trim}%`;
+      block.style.width = `${originalWidth / timelineBeats * 100 - trim}%`;
+    } else {
+      const trim = Math.min(0, Math.max(deltaPercent, -originalWidth / timelineBeats * 100 + 0.3));
+      block.style.width = `${originalWidth / timelineBeats * 100 + trim}%`;
+    }
+  });
+
+  const finish = async (event) => {
+    if (!gesture || gesture.pointerId !== event.pointerId) return;
+    const current = gesture;
+    gesture = null;
+    block.classList.remove("is-editing");
+    if (event.type === "pointercancel") {
+      block.style.left = `${originalLeft / timelineBeats * 100}%`;
+      block.style.width = `${originalWidth / timelineBeats * 100}%`;
+      return;
+    }
+    const delta = event.clientX - current.startX;
+    if (Math.abs(delta) < 2) {
+      block.style.left = `${originalLeft / timelineBeats * 100}%`;
+      block.style.width = `${originalWidth / timelineBeats * 100}%`;
+      return;
+    }
+    const deltaBeats = delta / current.laneWidth * timelineBeats;
+    const samplesPerBeat = clip.sampleRateHz * 60 / Math.max(1, Number(tempoBpm) || 120);
+    let edit;
+    if (current.edge === "move") {
+      edit = {
+        action: "move",
+        clipId: clip.id,
+        startTick: Math.round(Math.max(0, Math.min(timelineBeats - originalWidth, originalLeft + deltaBeats)) * 480),
+      };
+    } else {
+      const trimBeats = current.edge === "left" ? Math.max(0, deltaBeats) : Math.max(0, -deltaBeats);
+      if (trimBeats === 0) {
+        block.style.left = `${originalLeft / timelineBeats * 100}%`;
+        block.style.width = `${originalWidth / timelineBeats * 100}%`;
+        return;
+      }
+      const trimSamples = Math.max(0, Math.round(trimBeats * samplesPerBeat));
+      const boundedSamples = Math.min(trimSamples, Math.max(0, clip.durationSamples - 1));
+      if (current.edge === "left") {
+        const appliedBeats = boundedSamples / samplesPerBeat;
+        edit = {
+          action: "trim",
+          clipId: clip.id,
+          startTick: Math.round((originalLeft + appliedBeats) * 480),
+          sourceStartSamples: clip.sourceStartSamples + boundedSamples,
+          durationSamples: clip.durationSamples - boundedSamples,
+        };
+      } else {
+        edit = {
+          action: "trim",
+          clipId: clip.id,
+          sourceStartSamples: clip.sourceStartSamples,
+          durationSamples: clip.durationSamples - boundedSamples,
+        };
+      }
+    }
+    try {
+      const snapshot = await platform.editAudioRegion(edit);
+      renderSnapshot(snapshot);
+      setNotice("Región actualizada", "El archivo fuente permanece intacto. Puedes deshacer el cambio desde el historial.");
+    } catch (error) {
+      try {
+        renderSnapshot(await platform.projectSnapshot());
+      } catch {
+        // La vista actual queda como referencia si el refresco también falla.
+      }
+      setNotice("No se pudo editar la región", String(error));
+    }
+  };
+  block.addEventListener("pointerup", finish);
+  block.addEventListener("pointercancel", finish);
 }
 
 function stopPreview() {

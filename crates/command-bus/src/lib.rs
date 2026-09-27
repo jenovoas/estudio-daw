@@ -105,6 +105,7 @@ pub enum ProjectCommand {
         clip_id: String,
         source_start_samples: u64,
         duration_samples: u64,
+        start_tick: Option<u64>,
     },
     SetAudioClipGain {
         clip_id: String,
@@ -118,6 +119,9 @@ pub enum ProjectCommand {
     MoveAudioClip {
         clip_id: String,
         start_tick: u64,
+    },
+    RemoveAudioClip {
+        clip_id: String,
     },
     AddScene {
         scene: Scene,
@@ -726,10 +730,23 @@ impl CommandRuntime {
                 clip_id,
                 source_start_samples,
                 duration_samples,
+                start_tick,
             } => self
                 .project_history
-                .transact("trim audio clip", |project| {
+                .transact("trim audio clip", |project| -> Result<(), String> {
                     trim_audio_clip(project, &clip_id, source_start_samples, duration_samples)
+                        .map_err(|error| error.to_string())?;
+                    if let Some(start_tick) = start_tick {
+                        let clip = project
+                            .audio_clips
+                            .iter_mut()
+                            .find(|clip| clip.id == clip_id)
+                            .ok_or_else(|| format!("unknown audio clip: {clip_id}"))?;
+                        clip.start_tick = start_tick;
+                    }
+                    project
+                        .validate_persisted_contracts()
+                        .map_err(|error| error.to_string())
                 })
                 .map_err(|error| CommandError::Project(error.to_string()))?,
             ProjectCommand::SetAudioClipGain { clip_id, gain_db } => self
@@ -760,6 +777,27 @@ impl CommandRuntime {
                         .find(|clip| clip.id == clip_id)
                         .ok_or_else(|| format!("unknown audio clip: {clip_id}"))?;
                     clip.start_tick = start_tick;
+                    project
+                        .validate_persisted_contracts()
+                        .map_err(|error| error.to_string())
+                })
+                .map_err(|error| CommandError::Project(error.to_string()))?,
+            ProjectCommand::RemoveAudioClip { clip_id } => self
+                .project_history
+                .transact("remove audio clip", |project| -> Result<(), String> {
+                    let index = project
+                        .audio_clips
+                        .iter()
+                        .position(|clip| clip.id == clip_id)
+                        .ok_or_else(|| format!("unknown audio clip: {clip_id}"))?;
+                    let clip = project.audio_clips.remove(index);
+                    for playlist in &mut project.audio_playlists {
+                        if playlist.track_id == clip.track_id {
+                            playlist
+                                .region_ids
+                                .retain(|region_id| region_id != &clip_id);
+                        }
+                    }
                     project
                         .validate_persisted_contracts()
                         .map_err(|error| error.to_string())
@@ -1549,6 +1587,7 @@ mod tests {
                     clip_id: "audio-clip-2".into(),
                     source_start_samples: 4_800,
                     duration_samples: 24_000,
+                    start_tick: None,
                 }),
             ))
             .unwrap();

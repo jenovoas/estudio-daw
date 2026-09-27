@@ -19,6 +19,9 @@ window.estudioPlatform = {
   importAudio({ path, trackId, copyIntoProject, startTick, sourceChannelSelection }) {
     return invoke("import_audio", { path, trackId, copyIntoProject, startTick, sourceChannelSelection });
   },
+  editAudioRegion({ action, clipId, startTick, sourceStartSamples, durationSamples }) {
+    return invoke("edit_audio_region", { action, clipId, startTick, sourceStartSamples, durationSamples });
+  },
   audioWaveform: (sourceId) => invoke("audio_waveform", { sourceId }),
   audioPreview: (sourceId) => invoke("audio_preview", { sourceId }),
   audioPreviewFile: (path) => invoke("audio_preview_file", { path }),

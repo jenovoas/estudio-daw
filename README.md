@@ -691,7 +691,8 @@ es de sólo lectura. Se pueden importar archivos de audio a pistas existentes,
 copiándolos a la carpeta `media` junto al proyecto o vinculando el original,
 con metadatos básicos, preescucha corta antes de confirmar la importación,
 selección mono/estéreo de canales de origen, posición inicial por compás y
-forma de onda real reducida.
+forma de onda real reducida. En Arreglo se pueden mover, recortar hacia dentro
+y quitar regiones sin reescribir la fuente; los cambios son reversibles.
 Es un prototipo de capacidades parciales: su composición
 visual actual no satisface todavía el flujo creativo de Ableton Live 12; no
 incluye lanzamiento de clips en Session, edición de clips/notas, reproducción

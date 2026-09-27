@@ -145,10 +145,17 @@ button:disabled { opacity: .4; cursor: not-allowed !important; }
 .lane-empty-label { position: absolute; top: 31px; left: 12px; color: #777e82; font-size: 8px; }
 .midi-clip { position: absolute; top: 8px; height: 59px; min-width: 27px; overflow: hidden; padding: 6px 8px; border: 1px solid hsl(var(--clip-hue, 28) 80% 72%); border-radius: 4px; background: linear-gradient(155deg, hsl(var(--clip-hue, 28) 60% 52%), hsl(var(--clip-hue, 28) 52% 35%) 72%); color: #fff4e9; box-shadow: 0 1px hsl(var(--clip-hue, 28) 90% 85% / .55) inset, 0 2px 4px #1118; font-size: 9px; font-weight: 650; white-space: nowrap; text-overflow: ellipsis; }
 .audio-clip { position: absolute; top: 8px; height: 59px; min-width: 27px; overflow: hidden; padding: 6px 8px; border: 1px solid #72c6a4; border-radius: 4px; background: linear-gradient(155deg, #286f5d, #1d5148 72%); color: #e7fff3; box-shadow: 0 1px #a0e9c8 inset, 0 2px 4px #1118; font-size: 9px; font-weight: 650; white-space: nowrap; text-overflow: ellipsis; }
+.audio-clip:not(.is-editing) { cursor: grab; }
+.audio-clip.is-editing { z-index: 5; cursor: grabbing; opacity: .86; }
 .audio-waveform { position: absolute; inset: 20px 3px 3px; overflow: hidden; opacity: .9; }
 .audio-waveform svg { width: 100%; height: 100%; display: block; }
 .audio-waveform polygon { fill: #a4f0ca; }
 .audio-preview-button { position: absolute; z-index: 3; top: 3px; right: 4px; width: 17px; height: 17px; padding: 0; border: 1px solid #9de3c2; border-radius: 3px; background: #12382e; color: #d6ffeb; font-size: 8px; cursor: pointer; }
+.audio-region-remove { position: absolute; z-index: 4; top: 3px; right: 25px; width: 17px; height: 17px; padding: 0; border: 1px solid #d89589; border-radius: 3px; background: #492b29; color: #ffe2dc; font: inherit; font-size: 13px; line-height: 14px; cursor: pointer; }
+.audio-region-handle { position: absolute; z-index: 4; top: 0; bottom: 0; width: 6px; padding: 0; border: 0; background: #d0ffe4aa; cursor: ew-resize; touch-action: none; }
+.audio-region-handle-left { left: 0; border-right: 1px solid #edfff4; }
+.audio-region-handle-right { right: 0; border-left: 1px solid #edfff4; }
+.audio-region-remove:hover, .audio-preview-button:hover:not(:disabled) { filter: brightness(1.2); }
 .audio-preview-button:hover:not(:disabled) { background: #286f5d; }
 .clip-label { position: relative; z-index: 2; }
 .clip-note-layer { position: absolute; inset: 0; pointer-events: none; }

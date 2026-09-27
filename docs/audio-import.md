@@ -24,16 +24,19 @@ forma de onda limita la duración procesada a diez minutos y produce como máxim
   importadas conservan el mismo control de preescucha; no mueve el transporte.
 - La ubicación elegible es el compás inicial; todavía no hay cursor de edición
   ni colocación por tiempo absoluto.
+- En Arreglo se arrastra una región para moverla y sus bordes para recortarla
+  hacia dentro. El botón × quita sólo la región; conserva la fuente registrada
+  y el archivo original. Los cambios entran en el historial deshacer/rehacer.
 - La waveform representa el primer canal convertido a mono para visualización;
   no altera la fuente ni decide cómo sonará la pista.
 - La preescucha está disponible después de seleccionar el archivo, antes de
   confirmarlo, pero todavía no hay una biblioteca para buscar/filtrar archivos
-  ya importados. No hay edición visual de recorte/desplazamiento ni reproducción
-  de regiones en el transporte. La forma de onda no implica que el audio se
-  esté reproduciendo.
+  ya importados. El recorte sólo reduce los límites actuales; no permite
+  extenderlos otra vez con el ratón. Tampoco hay reproducción de regiones en el
+  transporte. La forma de onda no implica que el audio se esté reproduciendo.
 - Los procesos externos `ffmpeg` y `ffprobe` deben estar instalados. Un fallo se
   presenta como error de importación/forma de onda, sin registrar una región
   incompleta.
 
-La tarea OpenSpec 2.2 permanece abierta hasta cubrir controles de
-límite/desplazamiento, borrado, cursor de edición y validar el flujo visual.
+La tarea OpenSpec 2.2 permanece abierta hasta cubrir colocación con cursor de
+edición y validar visualmente el flujo en la aplicación en ejecución.

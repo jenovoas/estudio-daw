@@ -1,12 +1,12 @@
 # Handoff de continuación — 2026-09-27
 
-## Reanudación actualizada — flujo parcial de importación 2.2
+## Reanudación actualizada — edición de regiones de audio 2.2
 
-- Publicación anterior: commit `f1fdf43` (`feat: crea pistas de audio con destino master`) en `main`, sincronizado con `origin/main`. El trabajo siguiente en 2.2 está en curso; consultar `git status` para el diff local y su SHA inicial/final en Git.
-- Progreso OpenSpec: 9/35. 2.2 sigue abierta. Ya hay diálogo de selección de audio, opción de copiar a `media/` junto al proyecto o vincular, metadatos técnicos por `ffprobe`, posición por compás, una transacción reversible que registra fuente/región, waveform min/max vía `ffmpeg` (hasta 10 minutos y 512 bins solicitados por la UI), y preescucha Opus/WebAudio de hasta 30 segundos sobre regiones ya importadas, separada del transporte.
-- Límites: falta preescuchar desde el selector antes de incorporar; la asignación es por cantidad compatible con la pista, sin mapeo/downmix; no hay cursor de edición ni controles visuales para mover/recortar/eliminar regiones; falta inspección visual de la app en ejecución. No marcar 2.2 completa.
-- Documento específico: `docs/audio-import.md`. En el workspace pasaron la suite completa, check, fmt, sintaxis de JS, diff check y validación OpenSpec normal (ocho avisos normativos de idioma ya conocidos). Repetir luego de cualquier cambio antes de publicar.
-- Siguiente: terminar 2.2 empezando por un diseño de preescucha acotada y fuera del transporte, luego mapeo de canales y edición visual de región; revisar seguridad/rendimiento del comando de waveform síncrono antes de pulir UI. No volver a alterar los artefactos generados de `.codebase-memory/` en commits de producto.
+- HEAD de partida: `57f0e5f` (`feat: previsualiza e importa canales de audio`), publicado en `main`; esta continuación añade interacción de mover/recortar/quitar región.
+- Progreso OpenSpec: 9/35. 2.2 sigue abierta. Importación, copia/vínculo, metadatos, preescucha previa, elección mono/estéreo, waveform y ubicación por compás están implementados. Los gestos de edición usan comandos reversibles; quitar una región conserva el registro y los bytes de la fuente.
+- Límites: recorte sólo hacia dentro; no se puede reextender con ratón. Falta cursor de edición y QA visual/auditiva de la app en ejecución. La selección de canal aún no dirige la reproducción. No marcar 2.2 completa.
+- Documento específico: `docs/audio-import.md`. Esta continuación pasó `cargo check --workspace`, fmt check, sintaxis de JS y diff check; no se ejecutó la suite de pruebas ni QA visual/auditiva.
+- Siguiente: QA del flujo y colocar regiones usando el cursor de edición, preservando los límites de evidencia. No volver a alterar los artefactos generados de `.codebase-memory/` en commits de producto.
 
 ## Punto exacto de reanudación
 
