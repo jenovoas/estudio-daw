@@ -16,6 +16,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
+use std::time::Instant;
 use thiserror::Error;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -222,6 +223,8 @@ pub struct PipeWireDuplexReport {
     pub output_last_samples: u64,
     pub capture_dropped_samples: u64,
     pub output_silence_samples: u64,
+    /// Microsegundos desde el inicio de la función hasta el primer callback de captura.
+    pub capture_start_delay_micros: u64,
 }
 
 impl PipeWireStreamConfig {
@@ -415,6 +418,7 @@ fn run_pipewire_duplex_internal(
     targets: PipeWireTargets,
 ) -> Result<(PipeWireDuplexReport, Option<WavCaptureReport>), PipeWireError> {
     let config = config.validate()?;
+    let stream_started_at = Instant::now();
     let recorder = recorder.map(Arc::new);
     pw::init();
     let main_loop = pw::main_loop::MainLoopRc::new(None)?;
@@ -427,6 +431,7 @@ fn run_pipewire_duplex_internal(
     let capture_total_samples = Arc::new(AtomicU64::new(0));
     let capture_last_samples = Arc::new(AtomicU64::new(0));
     let capture_dropped_samples = Arc::new(AtomicU64::new(0));
+    let capture_start_delay_micros = Arc::new(AtomicU64::new(0));
     let output_callbacks = Arc::new(AtomicU64::new(0));
     let output_total_samples = Arc::new(AtomicU64::new(0));
     let output_last_samples = Arc::new(AtomicU64::new(0));
@@ -449,6 +454,7 @@ fn run_pipewire_duplex_internal(
     let capture_total_counter = Arc::clone(&capture_total_samples);
     let capture_last_counter = Arc::clone(&capture_last_samples);
     let capture_dropped_counter = Arc::clone(&capture_dropped_samples);
+    let capture_start_delay_counter = Arc::clone(&capture_start_delay_micros);
     let capture_recorder = recorder.as_ref().map(Arc::clone);
     let _capture_listener = capture_stream
         .add_local_listener_with_user_data(())
@@ -465,6 +471,13 @@ fn run_pipewire_duplex_internal(
             };
             let valid_bytes = valid_bytes.min(bytes.len());
             let (_, samples, _) = unsafe { bytes[..valid_bytes].align_to::<f32>() };
+            let elapsed_micros = stream_started_at.elapsed().as_micros() as u64;
+            let _ = capture_start_delay_counter.compare_exchange(
+                0,
+                elapsed_micros.saturating_add(1),
+                Ordering::Relaxed,
+                Ordering::Relaxed,
+            );
             capture_callbacks_counter.fetch_add(1, Ordering::Relaxed);
             capture_total_counter.fetch_add(samples.len() as u64, Ordering::Relaxed);
             capture_last_counter.store(samples.len() as u64, Ordering::Relaxed);
@@ -574,6 +587,9 @@ fn run_pipewire_duplex_internal(
             output_last_samples: output_last_samples.load(Ordering::Relaxed),
             capture_dropped_samples: capture_dropped_samples.load(Ordering::Relaxed),
             output_silence_samples: output_silence_samples.load(Ordering::Relaxed),
+            capture_start_delay_micros: capture_start_delay_micros
+                .load(Ordering::Relaxed)
+                .saturating_sub(1),
         },
         capture_report,
     ))

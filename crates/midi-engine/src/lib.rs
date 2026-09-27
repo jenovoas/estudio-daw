@@ -461,11 +461,16 @@ impl MidiRecorder {
     }
 
     pub fn start(&mut self) -> Result<(), RecorderError> {
+        self.start_at(Instant::now())
+    }
+
+    /// Inicia la toma respecto de un origen monotónico compartido con otra captura.
+    pub fn start_at(&mut self, origin: Instant) -> Result<(), RecorderError> {
         if self.started_at.is_some() {
             return Err(RecorderError::AlreadyRecording);
         }
         self.events.clear();
-        self.started_at = Some(Instant::now());
+        self.started_at = Some(origin);
         Ok(())
     }
 

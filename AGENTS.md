@@ -126,6 +126,30 @@ riesgos y decisiones concretas; no repetir acuerdos ya asentados.
 - Preferencia de colaboración del usuario: avanzar en flujo continuo, sin pedir
   confirmación para cada paso y ejecutar las pruebas que el agente puede hacer.
 
+## Handoff para Neovim — 2026-09-26
+
+- Estado guardado en el commit que acompaña este handoff (consultar `git log`);
+  rama `main`, sin push solicitado. Revisar `git status` al abrir el proyecto.
+- Se añadió captura WAV sincronizada con el origen monotónico MIDI en
+  `midi-synth-live` y `midi-synth-play`, más el reporte del primer callback de
+  captura. La comprobación de compilación/fmt/diff pasó. No se afirma una
+  latencia tecla→sonido: los offsets observados son de inicio de captura y los
+  análisis de onset acústico fueron demasiado variables.
+- AudioBox USB 96: Input 1 es micrófono; Input 2 es guitarra. No reasignarlos.
+  El sink de salida también expone su propio monitor virtual PipeWire
+  (`alsa_output.…analog-stereo.monitor`). Al intentar capturarlo directamente,
+  PipeWire llamó al callback casi muestra por muestra y FluidSynth acumuló
+  millones de underruns. Se retiró ese experimento; no reintroducirlo sin
+  resolver primero la planificación/quantum y desacoplar la captura.
+- OpenSpec `soundfont-instrument-rendering`, tarea 4.3 continúa `[ ]`. Pendiente:
+  estabilizar una medición KeyLab→monitor PipeWire sin alterar el playback y
+  obtener confirmación auditiva del usuario; no volver a pedir pruebas de
+  secuencia de teclas ya realizadas salvo que haga falta para esa medición.
+- Para continuar: leer README, este archivo, proposal/design/specs/tasks de
+  `soundfont-instrument-rendering` y `docs/native-instrument.md`; comprobar
+  `git status/log`; continuar desde 4.3. El usuario cambia el flujo de edición
+  a Neovim porque VS Code se vuelve pesado.
+
 <!-- codebase-memory-mcp:start -->
 For structural codebase exploration, use the installed `codebase-memory` skill.
 <!-- codebase-memory-mcp:end -->

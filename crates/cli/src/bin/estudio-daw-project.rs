@@ -56,9 +56,9 @@ fn usage() {
             ,
             "\n  estudio-daw-project audio-record <segundos> <salida.wav>"
             ,
-            "\n  estudio-daw-project midi-synth-live <segundos> <salida-toma.json> [entrada] [--soundfont archivo.sf2] [--bank N] [--program N]"
+            "\n  estudio-daw-project midi-synth-live <segundos> <salida-toma.json> [entrada] [--soundfont archivo.sf2] [--bank N] [--program N] [--capture salida.wav]"
             ,
-            "\n  estudio-daw-project midi-synth-play <toma.json> [--soundfont archivo.sf2] [--bank N] [--program N]"
+            "\n  estudio-daw-project midi-synth-play <toma.json> [--soundfont archivo.sf2] [--bank N] [--program N] [--capture salida.wav]"
             ,
             "\n  estudio-daw-project soundfont-presets <archivo.sf2>"
             ,
@@ -109,8 +109,25 @@ fn main() -> ExitCode {
             let trailing: Vec<String> = args
                 .map(|value| value.to_string_lossy().into_owned())
                 .collect();
+            let mut capture_path = None;
+            let mut synth_options = Vec::new();
+            let mut index = 0;
+            while index < trailing.len() {
+                if trailing[index] == "--capture" {
+                    index += 1;
+                    let Some(path) = trailing.get(index) else {
+                        eprintln!("--capture requiere una ruta WAV");
+                        usage();
+                        return ExitCode::from(2);
+                    };
+                    capture_path = Some(PathBuf::from(path));
+                } else {
+                    synth_options.push(trailing[index].clone());
+                }
+                index += 1;
+            }
             let (midi_query, instrument) =
-                match parse_synth_options(&trailing, Some("KeyLab Essential 49 MID".into())) {
+                match parse_synth_options(&synth_options, Some("KeyLab Essential 49 MID".into())) {
                     Ok(parsed) => parsed,
                     Err(error) => {
                         eprintln!("{error}");
@@ -123,6 +140,7 @@ fn main() -> ExitCode {
                 take_output.into(),
                 midi_query.expect("entrada MIDI por defecto"),
                 instrument,
+                capture_path,
             )
         }
         "midi-synth-play" => {
@@ -133,7 +151,24 @@ fn main() -> ExitCode {
             let trailing: Vec<String> = args
                 .map(|value| value.to_string_lossy().into_owned())
                 .collect();
-            let (unexpected_input, instrument) = match parse_synth_options(&trailing, None) {
+            let mut capture_path = None;
+            let mut synth_options = Vec::new();
+            let mut index = 0;
+            while index < trailing.len() {
+                if trailing[index] == "--capture" {
+                    index += 1;
+                    let Some(path) = trailing.get(index) else {
+                        eprintln!("--capture requiere una ruta WAV");
+                        usage();
+                        return ExitCode::from(2);
+                    };
+                    capture_path = Some(PathBuf::from(path));
+                } else {
+                    synth_options.push(trailing[index].clone());
+                }
+                index += 1;
+            }
+            let (unexpected_input, instrument) = match parse_synth_options(&synth_options, None) {
                 Ok(parsed) => parsed,
                 Err(error) => {
                     eprintln!("{error}");
@@ -148,7 +183,7 @@ fn main() -> ExitCode {
                 usage();
                 return ExitCode::from(2);
             }
-            midi_synth_play_command(take.into(), instrument)
+            midi_synth_play_command(take.into(), instrument, capture_path)
         }
         "soundfont-presets" => {
             let Some(soundfont) = args.next() else {
@@ -717,6 +752,7 @@ fn midi_synth_live_command(
     take_output: PathBuf,
     midi_query: String,
     instrument: SynthInstrument,
+    capture_output: Option<PathBuf>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let seconds: f64 = seconds.parse()?;
     if !(seconds.is_finite() && seconds > 0.0) {
@@ -731,6 +767,7 @@ fn midi_synth_live_command(
     let stop = Arc::new(AtomicBool::new(false));
     let dropped_events = Arc::new(AtomicUsize::new(0));
     let (ready_tx, ready_rx) = mpsc::sync_channel::<Result<String, String>>(1);
+    let midi_origin = Instant::now();
     let worker_stop = Arc::clone(&stop);
     let worker_dropped = Arc::clone(&dropped_events);
     let worker_query = midi_query.clone();
@@ -739,7 +776,7 @@ fn midi_synth_live_command(
         .spawn(move || {
             let mut recorder = MidiRecorder::new(120, DEFAULT_PPQ);
             let ready_error_tx = ready_tx.clone();
-            if let Err(error) = recorder.start() {
+            if let Err(error) = recorder.start_at(midi_origin) {
                 let message = error.to_string();
                 let _ = ready_tx.send(Err(message.clone()));
                 return Err(message);
@@ -790,18 +827,44 @@ fn midi_synth_live_command(
     );
     println!("Presiona el KeyLab; audio de salida dirigido a AudioBox si está disponible.");
 
-    let stream_result = run_pipewire_duplex_for_targets(
-        config,
-        render_plan,
-        Duration::from_secs_f64(seconds),
-        targets,
-    );
+    let pipewire_origin = Instant::now();
+    let stream_result: Result<_, Box<dyn std::error::Error>> = (|| {
+        if let Some(path) = capture_output.as_ref() {
+            let frames = (seconds.ceil() as usize)
+                .saturating_add(2)
+                .saturating_mul(config.sample_rate as usize);
+            let recorder = WavCaptureRecorder::new(
+                path.clone(),
+                config.sample_rate,
+                config.channels as u16,
+                frames,
+            )?;
+            let (report, capture) = run_pipewire_duplex_for_targets_with_capture(
+                config,
+                render_plan,
+                Duration::from_secs_f64(seconds),
+                targets,
+                recorder,
+            )?;
+            Ok((report, Some(capture)))
+        } else {
+            Ok((
+                run_pipewire_duplex_for_targets(
+                    config,
+                    render_plan,
+                    Duration::from_secs_f64(seconds),
+                    targets,
+                )?,
+                None,
+            ))
+        }
+    })();
     stop.store(true, Ordering::Release);
     let take_result = listener
         .join()
         .map_err(|_| "el thread de entrada MIDI terminó inesperadamente".to_string())?;
-    let report = stream_result?;
     let take = take_result.map_err(|error| format!("falló la entrada MIDI: {error}"))?;
+    let (report, capture_report) = stream_result?;
     fs::write(&take_output, serde_json::to_vec_pretty(&take)?)?;
 
     println!(
@@ -814,6 +877,19 @@ fn midi_synth_live_command(
     if let Some(worker) = instrument_worker.as_ref() {
         print_soundfont_metrics(worker, config.sample_rate, config.period_frames);
     }
+    if let Some(capture) = capture_report {
+        let origin_to_capture_us = midi_origin
+            .elapsed()
+            .saturating_sub(pipewire_origin.elapsed())
+            .as_micros() as u64
+            + report.capture_start_delay_micros;
+        println!(
+            "AudioBox WAV: {} muestras, descartadas={}; primer callback de captura {} us desde el origen MIDI compartido.",
+            capture.captured_samples,
+            capture.dropped_samples,
+            origin_to_capture_us
+        );
+    }
     Ok(())
 }
 
@@ -821,6 +897,7 @@ fn midi_synth_live_command(
 fn midi_synth_play_command(
     take_path: PathBuf,
     instrument: SynthInstrument,
+    capture_output: Option<PathBuf>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let take: MidiTake = serde_json::from_slice(&fs::read(&take_path)?)?;
     let config = PipeWireStreamConfig::default();
@@ -836,14 +913,15 @@ fn midi_synth_play_command(
         .unwrap_or(0)
         .max(take.duration_micros);
     let duration = Duration::from_micros(scheduled_end).saturating_add(Duration::from_millis(400));
+    let midi_origin = Instant::now();
+    let scheduler_origin = midi_origin;
     let scheduler = thread::Builder::new()
         .name("estudio-midi-scheduler".into())
         .spawn(move || {
-            let started = Instant::now();
             for event in take.events {
                 let target = Duration::from_micros(event.micros_since_start);
                 loop {
-                    let elapsed = started.elapsed();
+                    let elapsed = scheduler_origin.elapsed();
                     if elapsed >= target {
                         break;
                     }
@@ -860,17 +938,56 @@ fn midi_synth_play_command(
         "Reproduciendo {} por el instrumento nativo...",
         take_path.display()
     );
-    let stream_result = run_pipewire_duplex_for_targets(config, render_plan, duration, targets);
+    let pipewire_origin = Instant::now();
+    let stream_result: Result<_, Box<dyn std::error::Error>> = (|| {
+        if let Some(path) = capture_output.as_ref() {
+            let frames = (duration.as_secs() as usize)
+                .saturating_add(2)
+                .saturating_mul(config.sample_rate as usize);
+            let recorder = WavCaptureRecorder::new(
+                path.clone(),
+                config.sample_rate,
+                config.channels as u16,
+                frames,
+            )?;
+            let (report, capture) = run_pipewire_duplex_for_targets_with_capture(
+                config,
+                render_plan,
+                duration,
+                targets,
+                recorder,
+            )?;
+            Ok((report, Some(capture)))
+        } else {
+            Ok((
+                run_pipewire_duplex_for_targets(config, render_plan, duration, targets)?,
+                None,
+            ))
+        }
+    })();
     let dropped_events = scheduler
         .join()
         .map_err(|_| "el scheduler MIDI terminó inesperadamente")?;
-    let report = stream_result?;
+    let (report, capture_report) = stream_result?;
     println!(
         "Reproducción sintetizada finalizada: {} callbacks PipeWire; eventos MIDI descartados={dropped_events}.",
         report.output_callbacks,
     );
     if let Some(worker) = instrument_worker.as_ref() {
         print_soundfont_metrics(worker, config.sample_rate, config.period_frames);
+    }
+    if let Some(capture) = capture_report {
+        let origin_to_capture_us = midi_origin
+            .elapsed()
+            .saturating_sub(pipewire_origin.elapsed())
+            .as_micros() as u64
+            + report.capture_start_delay_micros;
+        println!(
+            "AudioBox WAV: {} muestras, descartadas={}; primer callback de captura {} us desde el origen MIDI compartido.",
+            capture.captured_samples,
+            capture.dropped_samples,
+            origin_to_capture_us
+        );
     }
     Ok(())
 }

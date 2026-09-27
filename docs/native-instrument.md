@@ -58,11 +58,13 @@ cargo run -q -p estudio-daw-cli --bin estudio-daw-project -- \
 ```bash
 cargo run -q -p estudio-daw-cli --bin estudio-daw-project -- \
   midi-synth-live 12 mi-toma.json "KeyLab Essential 49 MID" \
-  --soundfont /usr/share/soundfonts/FluidR3_GM.sf2 --bank 0 --program 0
+  --soundfont /usr/share/soundfonts/FluidR3_GM.sf2 --bank 0 --program 0 \
+  --capture loopback.wav
 
 cargo run -q -p estudio-daw-cli --bin estudio-daw-project -- \
   midi-synth-play mi-toma.json \
-  --soundfont /usr/share/soundfonts/FluidR3_GM.sf2 --bank 0 --program 0
+  --soundfont /usr/share/soundfonts/FluidR3_GM.sf2 --bank 0 --program 0 \
+  --capture loopback.wav
 ```
 
 En Linux se buscan `libfluidsynth.so.3`, `.so.2` y `.so`. Instala la biblioteca
@@ -89,6 +91,27 @@ El runtime selecciona AudioBox para salida cuando está disponible y conserva
 la autoconexión PipeWire como fallback. La prueba de hardware previa capturó
 una toma desde KeyLab y finalizó la reproducción PipeWire sin descartar eventos;
 eso no es una evaluación subjetiva del timbre.
+
+`midi-synth-live --capture salida.wav` graba la entrada física de AudioBox al
+mismo tiempo que la toma MIDI y el render SoundFont. `midi-synth-play --capture
+salida.wav` captura la reproducción de una toma guardada. Ambos informes dan el
+tiempo del primer callback de captura respecto del origen monotónico de los
+eventos MIDI.
+
+Para una medición acústica, el micrófono puede conectarse a Input 1 y colocarse
+frente a los parlantes alimentados por AudioBox. La captura registra entonces
+DAC, amplificación, altavoz, propagación por el aire, micrófono y ADC; distancia,
+ganancia y sala afectan el resultado.
+
+La AudioBox USB 96 expone un source monitor virtual de PipeWire para el sink de
+salida (`alsa_output.…analog-stereo.monitor`). Es un puerto digital separado de
+las entradas físicas: Input 1 conserva el micrófono e Input 2 la guitarra. El
+CLI `--capture` todavía captura la entrada física, no el monitor. Un intento de
+capturar el monitor como stream nativo llevó el callback PipeWire a procesar
+casi muestra por muestra y causó underruns de FluidSynth; esa ruta experimental
+se retiró. Hace falta desacoplar esa captura o corregir la configuración de
+latencia antes de medirla. El monitor representa la señal digital del sink y no
+incluye DAC, amplificación, parlantes, aire ni ADC.
 
 ## Pruebas y límites
 
