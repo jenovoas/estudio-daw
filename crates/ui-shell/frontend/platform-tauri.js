@@ -30,6 +30,7 @@ window.estudioPlatform = {
   quantizeMidiClip: (clipId, gridTicks) => invoke("quantize_midi_clip", { clipId, gridTicks }),
   moveMidiClip: (clipId, startTick) => invoke("move_midi_clip", { clipId, startTick }),
   duplicateMidiClip: (clipId) => invoke("duplicate_midi_clip", { clipId }),
+  splitMidiClip: (clipId, splitTick) => invoke("split_midi_clip", { clipId, splitTick }),
   audioWaveform: (sourceId) => invoke("audio_waveform", { sourceId }),
   audioPreview: (sourceId) => invoke("audio_preview", { sourceId }),
   audioPreviewFile: (path) => invoke("audio_preview_file", { path }),

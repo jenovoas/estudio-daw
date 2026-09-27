@@ -8,9 +8,9 @@ use estudio_daw_midi_types::MidiTake;
 use estudio_daw_project_model::{
     add_audio_clip, add_audio_clip_for_source, append_media_source, attach_media_source,
     attach_midi_take, quantize_midi_clip, set_audio_clip_fades, set_audio_clip_gain,
-    trim_audio_clip, AudioClip, ClipReference, ClipSlot, MediaSource, Project, ProjectEvent,
-    ProjectHistory, ProjectSnapshot, ProxyAsset, Scene, Track, TrackInputRoute, TrackKind,
-    TrackMixerState, TrackRole, TransportLoopRange,
+    split_midi_clip, trim_audio_clip, AudioClip, ClipReference, ClipSlot, MediaSource, Project,
+    ProjectEvent, ProjectHistory, ProjectSnapshot, ProxyAsset, Scene, Track, TrackInputRoute,
+    TrackKind, TrackMixerState, TrackRole, TransportLoopRange,
 };
 use estudio_daw_session::{Session, SessionCommand, TransportSnapshot, TransportState};
 use serde::{Deserialize, Serialize};
@@ -145,6 +145,10 @@ pub enum ProjectCommand {
     },
     DuplicateMidiClip {
         clip_id: String,
+    },
+    SplitMidiClip {
+        clip_id: String,
+        split_tick: u64,
     },
     RemoveAudioClip {
         clip_id: String,
@@ -986,6 +990,25 @@ impl CommandRuntime {
                     duplicate.name = format!("{} (copia)", source.name);
                     duplicate.start_tick = source.start_tick.saturating_add(source.duration_ticks);
                     project.midi_clips.insert(source_index + 1, duplicate);
+                    project
+                        .validate_persisted_contracts()
+                        .map_err(|error| error.to_string())
+                })
+                .map_err(|error| CommandError::Project(error.to_string()))?,
+            ProjectCommand::SplitMidiClip {
+                clip_id,
+                split_tick,
+            } => self
+                .project_history
+                .transact("split MIDI clip", |project| -> Result<(), String> {
+                    let mut suffix = 2_u32;
+                    let mut new_clip_id = format!("{clip_id}-split");
+                    while project.midi_clips.iter().any(|clip| clip.id == new_clip_id) {
+                        new_clip_id = format!("{clip_id}-split-{suffix}");
+                        suffix = suffix.saturating_add(1);
+                    }
+                    split_midi_clip(project, &clip_id, split_tick, &new_clip_id)
+                        .map_err(|error| error.to_string())?;
                     project
                         .validate_persisted_contracts()
                         .map_err(|error| error.to_string())
@@ -2100,6 +2123,37 @@ mod tests {
             runtime.snapshot().project.project.midi_clips,
             vec![original]
         );
+    }
+
+    #[test]
+    fn splitting_midi_clip_is_a_reversible_project_command() {
+        let mut runtime = CommandRuntime::new(project());
+        let original = runtime.snapshot().project.project;
+        let clip = original.midi_clips[0].clone();
+        runtime
+            .apply(envelope(
+                "split-midi-1",
+                DomainCommand::Project(ProjectCommand::SplitMidiClip {
+                    clip_id: clip.id.clone(),
+                    split_tick: clip.duration_ticks / 2,
+                }),
+            ))
+            .unwrap();
+        let split = runtime.snapshot().project.project;
+        assert_eq!(split.midi_clips.len(), original.midi_clips.len() + 1);
+        assert_eq!(split.midi_clips[0].duration_ticks, clip.duration_ticks / 2);
+        assert_eq!(
+            split.midi_clips[1].start_tick,
+            clip.start_tick + clip.duration_ticks / 2
+        );
+
+        runtime
+            .apply(envelope(
+                "undo-split-midi-1",
+                DomainCommand::Project(ProjectCommand::Undo),
+            ))
+            .unwrap();
+        assert_eq!(runtime.snapshot().project.project, original);
     }
 
     #[test]

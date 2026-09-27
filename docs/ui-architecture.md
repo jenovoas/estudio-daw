@@ -155,10 +155,14 @@ ubicación y duración. Para audio también permite cambiar numéricamente posic
 ganancia y desvanecimientos; las regiones se pueden mover y recortar por sus
 bordes con la rejilla seleccionada (1/16, 1/8, negra, compás o libre). El recorte
 del inicio avanza también el desplazamiento de fuente y las modificaciones usan
-el historial del proyecto. Los clips MIDI aún son de sólo lectura en
-Arrangement. En Arreglo, los clips MIDI se pueden arrastrar para moverlos con
-la rejilla seleccionada; la posición se convierte usando el PPQ del clip y el
-comando conserva eventos y toma. Deshacer/rehacer restaura la posición.
+el historial del proyecto. En Arreglo, los clips MIDI se pueden mover con la
+rejilla seleccionada y duplicar desde su menú contextual. «Dividir en cursor»
+aparece sólo cuando el cursor cae dentro del clip. El corte crea dos clips
+contiguos, cierra notas activas y las rearticula al comienzo de la segunda parte;
+restaura allí el último CC, pitch bend, presión y programa. Esto puede producir
+un nuevo ataque en notas sostenidas, y SysEx previo no se copia. Los cambios
+usan el historial y el plan activo se actualiza si el motor está conectado. Aún
+no hay piano roll ni edición directa de notas.
 
 El navegador también enumera las regiones de audio importadas del proyecto y
 permite filtrarlas por nombre, fuente, pista y disposición de canales. Cada

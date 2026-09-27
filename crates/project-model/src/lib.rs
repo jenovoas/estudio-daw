@@ -3,7 +3,7 @@
 //! DAWproject sólo es una frontera de intercambio. El modelo interno conserva
 //! información adicional como escala, procedencia y estado de proxies.
 
-use estudio_daw_midi_types::{MidiTake, RecordedMidiMessage};
+use estudio_daw_midi_types::{MidiTake, RecordedMidiEvent, RecordedMidiMessage};
 use quick_xml::{de::from_str, escape::escape};
 use serde::{Deserialize, Serialize};
 use std::{
@@ -1096,6 +1096,10 @@ pub enum MidiEditError {
     ClipNotFound(String),
     #[error("la rejilla de cuantización debe ser mayor que cero")]
     InvalidGrid,
+    #[error("el punto de división debe estar dentro del clip")]
+    InvalidSplitPosition,
+    #[error("el identificador del nuevo clip MIDI no es válido o ya existe")]
+    DuplicateClipId,
 }
 
 #[derive(Debug, Error, PartialEq, Eq)]
@@ -1686,6 +1690,258 @@ pub fn quantize_midi_clip(
         }
     }
     Ok(changed)
+}
+
+/// Divide un clip en un tick relativo a su toma, manteniendo ambos fragmentos
+/// en el mismo proyecto. Las notas que cruzan el corte se cierran y rearticulan
+/// en el segundo fragmento; se copia allí el estado MIDI de canal recuperable.
+pub fn split_midi_clip(
+    project: &mut Project,
+    clip_id: &str,
+    split_tick: u64,
+    new_clip_id: &str,
+) -> Result<(), MidiEditError> {
+    let index = project
+        .midi_clips
+        .iter()
+        .position(|clip| clip.id == clip_id)
+        .ok_or_else(|| MidiEditError::ClipNotFound(clip_id.into()))?;
+    let mut source = project.midi_clips[index].clone();
+    if split_tick == 0 || split_tick >= source.duration_ticks {
+        return Err(MidiEditError::InvalidSplitPosition);
+    }
+    if new_clip_id.trim().is_empty() || project.midi_clips.iter().any(|clip| clip.id == new_clip_id)
+    {
+        return Err(MidiEditError::DuplicateClipId);
+    }
+    source.take.events.sort_by_key(|event| event.tick);
+
+    let mut active_notes = Vec::<(u8, u8, u8, estudio_daw_midi_types::MidiSource)>::new();
+    let mut channel_state = Vec::<RecordedMidiEvent>::new();
+    let mut key_pressure_state = Vec::<RecordedMidiEvent>::new();
+    let mut left_events = Vec::new();
+    let mut right_events = Vec::new();
+    let mut boundary_events = Vec::new();
+    for event in source
+        .take
+        .events
+        .iter()
+        .filter(|event| event.tick < split_tick)
+    {
+        match &event.message {
+            RecordedMidiMessage::NoteOn {
+                channel,
+                note,
+                velocity,
+            } if *velocity > 0 => {
+                active_notes.push((*channel, *note, *velocity, event.source.clone()));
+            }
+            RecordedMidiMessage::NoteOff { channel, note, .. }
+            | RecordedMidiMessage::NoteOn {
+                channel,
+                note,
+                velocity: 0,
+            } => {
+                if let Some(index) =
+                    active_notes
+                        .iter()
+                        .rposition(|(active_channel, active_note, _, _)| {
+                            active_channel == channel && active_note == note
+                        })
+                {
+                    active_notes.remove(index);
+                }
+            }
+            _ => {}
+        }
+
+        let state_key = match &event.message {
+            RecordedMidiMessage::ControlChange {
+                channel,
+                controller,
+                ..
+            } => Some((0_u8, *channel, *controller, 0_u8)),
+            RecordedMidiMessage::PitchBend { channel, .. } => Some((1, *channel, 0, 0)),
+            RecordedMidiMessage::ChannelPressure { channel, .. } => Some((2, *channel, 0, 0)),
+            RecordedMidiMessage::ProgramChange { channel, .. } => Some((3, *channel, 0, 0)),
+            RecordedMidiMessage::KeyPressure { channel, note, .. } => {
+                Some((4, *channel, u32::from(*note), 0))
+            }
+            _ => None,
+        };
+        if let Some(key) = state_key {
+            let state_events = if matches!(event.message, RecordedMidiMessage::KeyPressure { .. }) {
+                &mut key_pressure_state
+            } else {
+                &mut channel_state
+            };
+            if let Some(previous) = state_events.iter_mut().find(|previous| {
+                let previous_key = match &previous.message {
+                    RecordedMidiMessage::ControlChange {
+                        channel,
+                        controller,
+                        ..
+                    } => Some((0_u8, *channel, *controller, 0_u8)),
+                    RecordedMidiMessage::PitchBend { channel, .. } => Some((1, *channel, 0, 0)),
+                    RecordedMidiMessage::ChannelPressure { channel, .. } => {
+                        Some((2, *channel, 0, 0))
+                    }
+                    RecordedMidiMessage::ProgramChange { channel, .. } => Some((3, *channel, 0, 0)),
+                    RecordedMidiMessage::KeyPressure { channel, note, .. } => {
+                        Some((4, *channel, u32::from(*note), 0))
+                    }
+                    _ => None,
+                };
+                previous_key == Some(key)
+            }) {
+                *previous = event.clone();
+            } else {
+                state_events.push(event.clone());
+            }
+        }
+        left_events.push(event.clone());
+    }
+    let notes_to_close_left = active_notes.clone();
+
+    // NoteOff exactly at the cut closes the left side and is not replayed on
+    // the right. Other events at that tick belong to the right fragment.
+    for event in source
+        .take
+        .events
+        .iter()
+        .filter(|event| event.tick == split_tick)
+    {
+        let closes_prior_note = match &event.message {
+            RecordedMidiMessage::NoteOff { channel, note, .. }
+            | RecordedMidiMessage::NoteOn {
+                channel,
+                note,
+                velocity: 0,
+            } => {
+                if let Some(index) =
+                    active_notes
+                        .iter()
+                        .rposition(|(active_channel, active_note, _, _)| {
+                            active_channel == channel && active_note == note
+                        })
+                {
+                    active_notes.remove(index);
+                    true
+                } else {
+                    false
+                }
+            }
+            _ => false,
+        };
+        if !closes_prior_note {
+            boundary_events.push(rebase_midi_event(
+                event.clone(),
+                split_tick,
+                source.take.ppq,
+                source.take.tempo_bpm,
+            ));
+        }
+    }
+
+    for (channel, note, _, source_port) in &notes_to_close_left {
+        left_events.push(RecordedMidiEvent {
+            tick: split_tick,
+            micros_since_start: midi_ticks_to_micros(
+                split_tick,
+                source.take.ppq,
+                source.take.tempo_bpm,
+            ),
+            source: source_port.clone(),
+            message: RecordedMidiMessage::NoteOff {
+                channel: *channel,
+                note: *note,
+                release_velocity: 0,
+            },
+        });
+    }
+    for event in channel_state {
+        right_events.push(rebase_midi_event(
+            event.clone(),
+            event.tick,
+            source.take.ppq,
+            source.take.tempo_bpm,
+        ));
+    }
+    for (channel, note, velocity, source_port) in &active_notes {
+        right_events.push(RecordedMidiEvent {
+            tick: 0,
+            micros_since_start: 0,
+            source: source_port.clone(),
+            message: RecordedMidiMessage::NoteOn {
+                channel: *channel,
+                note: *note,
+                velocity: *velocity,
+            },
+        });
+    }
+    right_events.extend(boundary_events);
+    for event in key_pressure_state {
+        right_events.push(rebase_midi_event(
+            event.clone(),
+            event.tick,
+            source.take.ppq,
+            source.take.tempo_bpm,
+        ));
+    }
+    for event in source
+        .take
+        .events
+        .iter()
+        .filter(|event| event.tick > split_tick)
+    {
+        right_events.push(rebase_midi_event(
+            event.clone(),
+            split_tick,
+            source.take.ppq,
+            source.take.tempo_bpm,
+        ));
+    }
+    left_events.sort_by_key(|event| event.tick);
+    right_events.sort_by_key(|event| event.tick);
+
+    let left_duration_micros =
+        midi_ticks_to_micros(split_tick, source.take.ppq, source.take.tempo_bpm);
+    let mut left = source.clone();
+    left.duration_ticks = split_tick;
+    left.take.events = left_events;
+    left.take.duration_micros = left_duration_micros;
+
+    let mut right = source;
+    right.id = new_clip_id.into();
+    right.name = format!("{} (parte 2)", right.name);
+    right.start_tick = right.start_tick.saturating_add(split_tick);
+    right.duration_ticks = right.duration_ticks.saturating_sub(split_tick);
+    right.take.events = right_events;
+    right.take.duration_micros = right
+        .take
+        .duration_micros
+        .saturating_sub(left_duration_micros);
+
+    project.midi_clips[index] = left;
+    project.midi_clips.insert(index + 1, right);
+    Ok(())
+}
+
+fn rebase_midi_event(
+    mut event: RecordedMidiEvent,
+    offset_tick: u64,
+    ppq: u32,
+    tempo_bpm: u32,
+) -> RecordedMidiEvent {
+    let micros_offset = midi_ticks_to_micros(offset_tick, ppq, tempo_bpm);
+    event.tick = event.tick.saturating_sub(offset_tick);
+    event.micros_since_start = event.micros_since_start.saturating_sub(micros_offset);
+    event
+}
+
+fn midi_ticks_to_micros(ticks: u64, ppq: u32, tempo_bpm: u32) -> u64 {
+    (u128::from(ticks) * 60_000_000 / u128::from(ppq.max(1)) / u128::from(tempo_bpm.max(1)))
+        .min(u128::from(u64::MAX)) as u64
 }
 
 /// Exporta el modelo interno como un contenedor `.dawproject` mínimo.
@@ -2401,5 +2657,136 @@ mod tests {
         assert_eq!(quantize_midi_clip(&mut project, "midi-clip-1", 120), Ok(1));
         assert_eq!(project.midi_clips[0].take.events[0].tick, 120);
         assert_eq!(project.midi_clips[0].take.events[1].tick, 117);
+    }
+
+    #[test]
+    fn splits_midi_clip_and_rearticulates_notes_with_channel_state() {
+        let mut project = import_fixture().unwrap().project;
+        let track_id = project
+            .tracks
+            .iter()
+            .find(|track| track.kind == TrackKind::Midi)
+            .unwrap()
+            .id
+            .clone();
+        let source = MidiSource { client: 2, port: 1 };
+        project.midi_clips.push(MidiClip {
+            id: "split-source".into(),
+            name: "Frase".into(),
+            track_id,
+            start_tick: 960,
+            duration_ticks: 960,
+            take: MidiTake {
+                ppq: 960,
+                tempo_bpm: 120,
+                duration_micros: 500_000,
+                events: vec![
+                    RecordedMidiEvent {
+                        tick: 120,
+                        micros_since_start: 62_500,
+                        source: source.clone(),
+                        message: RecordedMidiMessage::NoteOn {
+                            channel: 0,
+                            note: 60,
+                            velocity: 90,
+                        },
+                    },
+                    RecordedMidiEvent {
+                        tick: 240,
+                        micros_since_start: 125_000,
+                        source: source.clone(),
+                        message: RecordedMidiMessage::ControlChange {
+                            channel: 0,
+                            controller: 64,
+                            value: 127,
+                        },
+                    },
+                    RecordedMidiEvent {
+                        tick: 360,
+                        micros_since_start: 187_500,
+                        source: source.clone(),
+                        message: RecordedMidiMessage::NoteOn {
+                            channel: 0,
+                            note: 62,
+                            velocity: 75,
+                        },
+                    },
+                    RecordedMidiEvent {
+                        tick: 480,
+                        micros_since_start: 250_000,
+                        source: source.clone(),
+                        message: RecordedMidiMessage::NoteOff {
+                            channel: 0,
+                            note: 62,
+                            release_velocity: 8,
+                        },
+                    },
+                    RecordedMidiEvent {
+                        tick: 720,
+                        micros_since_start: 375_000,
+                        source: source.clone(),
+                        message: RecordedMidiMessage::NoteOff {
+                            channel: 0,
+                            note: 60,
+                            release_velocity: 12,
+                        },
+                    },
+                ],
+            },
+        });
+
+        split_midi_clip(&mut project, "split-source", 480, "split-source-right").unwrap();
+        let left = &project.midi_clips[0];
+        let right = &project.midi_clips[1];
+        assert_eq!(left.id, "split-source");
+        assert_eq!(left.start_tick, 960);
+        assert_eq!(left.duration_ticks, 480);
+        assert_eq!(right.id, "split-source-right");
+        assert_eq!(right.start_tick, 1_440);
+        assert_eq!(right.duration_ticks, 480);
+        assert!(left.take.events.iter().any(|event| {
+            event.tick == 480
+                && matches!(event.message, RecordedMidiMessage::NoteOff { note: 60, .. })
+        }));
+        assert!(left.take.events.iter().any(|event| {
+            event.tick == 480
+                && matches!(event.message, RecordedMidiMessage::NoteOff { note: 62, .. })
+        }));
+        assert!(!right.take.events.iter().any(|event| {
+            matches!(event.message, RecordedMidiMessage::NoteOn { note: 62, .. })
+        }));
+        assert!(right.take.events.iter().any(|event| {
+            event.tick == 0
+                && matches!(
+                    event.message,
+                    RecordedMidiMessage::NoteOn {
+                        note: 60,
+                        velocity: 90,
+                        ..
+                    }
+                )
+        }));
+        assert!(right.take.events.iter().any(|event| {
+            event.tick == 0
+                && matches!(
+                    event.message,
+                    RecordedMidiMessage::ControlChange {
+                        controller: 64,
+                        value: 127,
+                        ..
+                    }
+                )
+        }));
+        assert!(right.take.events.iter().any(|event| {
+            event.tick == 240
+                && matches!(
+                    event.message,
+                    RecordedMidiMessage::NoteOff {
+                        note: 60,
+                        release_velocity: 12,
+                        ..
+                    }
+                )
+        }));
     }
 }

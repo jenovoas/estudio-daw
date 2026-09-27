@@ -51,7 +51,7 @@ mutación.
 - medios: asociar una fuente original o proxy a una pista de audio mediante un
   comando reversible; validar que la firma y el hash del proxy correspondan a
   la fuente;
-- MIDI: adjuntar una toma y cuantizar eventos de activación/desactivación de nota de un clip;
+- MIDI: adjuntar una toma, mover/dividir/duplicar clips y cuantizar eventos de activación/desactivación de nota; la división parte eventos en el cursor y conserva el estado de canal recuperable al comenzar el segundo fragmento;
 - historial: deshacer y rehacer transacciones del proyecto.
 
 Las operaciones se validan contra las relaciones del proyecto antes de
@@ -61,7 +61,7 @@ tenía ese destino. Por ejemplo, una casilla no puede enlazar un clip MIDI a una
 de audio. Duplicar una pista crea identidades nuevas para sus clips, fuentes,
 lista de reproducción y casillas; no copia los archivos fuente. Mover una región
 de audio cambia su posición musical y conserva el desplazamiento/duración de la
-fuente. Cuantizar mantiene intactos los controladores. Estas modificaciones
+fuente. Cuantizar mantiene intactos los controladores. Dividir un clip MIDI cierra al corte las notas activas del primer fragmento y las rearticula con estado CC/pitch bend/presión/programa al inicio del segundo; SysEx anterior no se vuelve a emitir. Estas modificaciones
 quedan cubiertas por el mismo historial reversible. Las mutaciones del proyecto
 generan `ProjectEvent` dentro de `DomainEventPayload::ProjectChanged`.
 

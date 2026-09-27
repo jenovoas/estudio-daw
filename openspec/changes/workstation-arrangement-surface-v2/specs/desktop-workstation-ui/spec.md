@@ -76,6 +76,14 @@ La selección actual de pistas DEBE permanecer coherente al alternar entre Sessi
 - **ENTONCES** Arrangement muestra la forma de onda real o el contenido de notas MIDI en su posición musical
 - **Y** selección, movimiento, recorte, división, duplicación, bucle y ajuste a rejilla actualizan el proyecto mediante comandos y se pueden deshacer
 
+#### Scenario: dividir un clip MIDI en el cursor
+
+- **CUANDO** el cursor de edición cae estrictamente dentro de un clip MIDI y la persona elige «Dividir en cursor»
+- **ENTONCES** el sistema crea dos clips contiguos mediante una transacción reversible, conservando pista, PPQ, tempo y los eventos de cada lado
+- **Y** las notas activas se cierran al final del primero y se rearticulan al inicio del segundo; el estado previo recuperable de CC, pitch bend, presión y programa se restablece en el segundo
+- **Y** un Note Off que coincide con el corte cierra la nota del primer clip, y SysEx anterior al corte no se vuelve a emitir desde el segundo
+- **Y** el comando no se ofrece cuando el cursor está en un extremo o fuera del clip
+
 ### Requirement: las casillas y escenas de Session producen reproducción real
 
 El lanzamiento de clips/escenas en Session DEBE (MUST) compartir el reloj de transporte, tempo y compás del proyecto. La cuantización, sustitución/parada por pista y lanzamiento de escena completa DEBEN planificarse fuera de la devolución de audio mediante mensajes de control acotados; cambiar de casilla NO DEBE reconstruir ni reiniciar el dispositivo. Las notas MIDI y regiones de audio DEBEN detenerse/liberarse correctamente al terminar el clip, al sustituirlo, pausar o detener el transporte. Los ajustes de lanzamiento —cuantización, modo de repetición/lanzamiento y acciones posteriores— sólo se muestran si su comportamiento está implementado con exactitud.

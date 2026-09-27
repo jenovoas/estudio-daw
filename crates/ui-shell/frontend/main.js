@@ -140,6 +140,7 @@ const UI_ACTIONS = [
   { id: "transport.loopB", label: "Fijar fin del rango B", menu: "Transporte", target: "loopPointB", requiresProject: true },
   { id: "transport.loopClear", label: "Limpiar rango A/B", menu: "Transporte", target: "loopRangeClear", requiresProject: true },
   { id: "clip.select", label: "Seleccionar clip o región", menu: "Contexto", contexts: ["clip", "audio", "midi"] },
+  { id: "midi.splitAtCursor", label: "Dividir en cursor", menu: "Contexto", contexts: ["midi"] },
   { id: "midi.duplicate", label: "Duplicar clip MIDI", menu: "Contexto", contexts: ["midi"] },
   { id: "midi.quantize", label: "Cuantizar clip MIDI a rejilla actual", menu: "Contexto", contexts: ["midi"] },
   { id: "audio.preview", label: "Preescuchar región", menu: "Contexto", contexts: ["audio"] },
@@ -177,6 +178,13 @@ function executeUiAction(action, context = null) {
   } else if (action.id === "midi.duplicate") {
     const clipId = context?.clip?.dataset.clipId;
     if (clipId) void runCommand("Clip MIDI duplicado", () => platform.duplicateMidiClip(clipId));
+  } else if (action.id === "midi.splitAtCursor") {
+    const clip = lastSnapshot?.midiClips.find((item) => item.id === context?.clip?.dataset.clipId);
+    if (clip) {
+      const absoluteTick = Math.round(editCursorTick * clip.ppq / 480);
+      const splitTick = absoluteTick - clip.startTick;
+      void runCommand("Clip MIDI dividido", () => platform.splitMidiClip(clip.id, splitTick));
+    }
   } else if (action.id === "track.moveUp") {
     context?.track?.querySelector('[data-track-order="up"]:not(:disabled)')?.click();
   } else if (action.id === "track.moveDown") {
@@ -269,6 +277,13 @@ function showContextMenu(event) {
   const kind = clip?.classList.contains("audio-clip") ? "audio" : clip?.classList.contains("midi-clip") ? "midi" : track ? "track" : null;
   if (!kind) return;
   const actions = UI_ACTIONS.filter((action) => action.menu === "Contexto" && action.contexts.includes(kind)).filter((action) => {
+    if (action.id === "midi.splitAtCursor") {
+      const midiClip = lastSnapshot?.midiClips.find((item) => item.id === clip?.dataset.clipId);
+      if (!midiClip) return false;
+      const absoluteTick = Math.round(editCursorTick * midiClip.ppq / 480);
+      const relativeTick = absoluteTick - midiClip.startTick;
+      return relativeTick > 0 && relativeTick < midiClip.durationTicks;
+    }
     if (action.id === "audio.preview") return Boolean(clip?.querySelector(".audio-preview-button:not(:disabled)"));
     if (action.id === "audio.remove") return Boolean(clip?.querySelector(".audio-region-remove:not(:disabled)"));
     if (action.id === "midi.quantize") return Boolean(clip?.dataset.ppq && elements.gridSnap.value !== "0");
