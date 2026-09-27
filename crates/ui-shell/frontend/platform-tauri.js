@@ -48,6 +48,7 @@ window.estudioPlatform = {
   },
   setTransport: (command, positionTicks = null) => invoke("set_transport", { command, positionTicks }),
   setTrackMixer: (trackId, mixer) => invoke("set_track_mixer", { trackId, ...mixer }),
+  setTracksGroup: (trackIds, groupName) => invoke("set_tracks_group", { trackIds, groupName }),
   transportPosition: () => invoke("transport_position"),
   trackMeters: () => invoke("track_meters"),
   setLoopRange: (startTick, endTick) => invoke("set_loop_range", { startTick, endTick }),

@@ -75,6 +75,8 @@ let transportLoopErrorReported = false;
 let metronomeEnabled = false;
 let loopRange = null;
 let pendingLoopStartTick = null;
+let selectedTrackIds = new Set();
+let trackGroupDraft = "";
 let pendingAudioPath = null;
 let editCursorTick = 0;
 let editCursorProjectId = null;
@@ -247,6 +249,75 @@ function createTrackMeter(track) {
   return meter;
 }
 
+function syncTrackSelectionUi() {
+  for (const checkbox of document.querySelectorAll("[data-track-select]")) {
+    checkbox.checked = selectedTrackIds.has(checkbox.dataset.trackSelect);
+    checkbox.closest(".track-row, .session-track-card, .mixer-channel")
+      ?.classList.toggle("is-track-selected", checkbox.checked);
+  }
+  const count = document.querySelector(".track-group-selection-count");
+  if (count) count.textContent = `${selectedTrackIds.size} seleccionadas`;
+  const canApply = selectedTrackIds.size > 0;
+  for (const button of document.querySelectorAll("[data-track-group-action]")) {
+    button.disabled = !canApply || (button.dataset.trackGroupAction === "assign" && !trackGroupDraft.trim());
+  }
+}
+
+function createTrackSelectionControl(track) {
+  const label = document.createElement("label");
+  label.className = "track-select";
+  label.title = `Seleccionar pista ${track.name}`;
+  const checkbox = document.createElement("input");
+  checkbox.type = "checkbox";
+  checkbox.dataset.trackSelect = track.id;
+  checkbox.checked = selectedTrackIds.has(track.id);
+  checkbox.setAttribute("aria-label", `Seleccionar pista ${track.name}`);
+  checkbox.addEventListener("change", () => {
+    if (checkbox.checked) selectedTrackIds.add(track.id);
+    else selectedTrackIds.delete(track.id);
+    syncTrackSelectionUi();
+  });
+  label.append(checkbox);
+  return label;
+}
+
+function createTrackGroupToolbar() {
+  const toolbar = document.createElement("div");
+  toolbar.className = "track-group-toolbar";
+  const input = document.createElement("input");
+  input.type = "text";
+  input.maxLength = 64;
+  input.placeholder = "Nombre del grupo";
+  input.value = trackGroupDraft;
+  input.setAttribute("aria-label", "Nombre del grupo de pistas");
+  input.addEventListener("input", () => {
+    trackGroupDraft = input.value;
+    syncTrackSelectionUi();
+  });
+  const assign = document.createElement("button");
+  assign.type = "button";
+  assign.textContent = "Agrupar selección";
+  assign.dataset.trackGroupAction = "assign";
+  assign.addEventListener("click", () => updateSelectedTrackGroup(trackGroupDraft.trim() || null));
+  const clear = document.createElement("button");
+  clear.type = "button";
+  clear.textContent = "Quitar del grupo";
+  clear.dataset.trackGroupAction = "clear";
+  clear.addEventListener("click", () => updateSelectedTrackGroup(null));
+  const count = document.createElement("span");
+  count.className = "track-group-selection-count";
+  toolbar.append(input, assign, clear, count);
+  return toolbar;
+}
+
+async function updateSelectedTrackGroup(groupName) {
+  if (selectedTrackIds.size === 0) return;
+  await runCommand(
+    groupName ? "Grupo de pistas actualizado" : "Pistas desagrupadas",
+    () => platform.setTracksGroup([...selectedTrackIds], groupName),
+  );
+}
+
 function updateTrackMeters(meters) {
   for (const meter of document.querySelectorAll(".track-meter")) {
     const reading = meters[meter.dataset.trackId];
@@ -284,10 +355,11 @@ function renderSessionSurface(tracks) {
     type.textContent = track.role === "master" ? "MASTER" : track.kind.toUpperCase();
     const channels = document.createElement("small");
     channels.textContent = trackChannelDescription(track);
+    if (track.groupName) channels.textContent += ` · Grupo: ${track.groupName}`;
     const emptySlot = document.createElement("div");
     emptySlot.className = "session-empty-slot";
     emptySlot.textContent = "Sin escena";
-    column.append(name, type, channels, emptySlot);
+    column.append(createTrackSelectionControl(track), name, type, channels, emptySlot);
     const meter = createTrackMeter(track);
     if (meter) column.append(meter);
     const controls = createTrackMixerControls(track, true);
@@ -328,7 +400,8 @@ function renderMixerSurface(tracks) {
     const mix = document.createElement("span");
     mix.className = "mixer-values";
     mix.textContent = `${Number(track.gainDb).toFixed(1)} dB · Pan ${Number(track.pan).toFixed(2)}${track.mute ? " · Silencio" : ""}${track.solo ? " · Solo" : ""}${track.active ? "" : " · Inactiva"}`;
-    channel.append(title, role, routing, mix);
+    if (track.groupName) role.textContent += ` · ${track.groupName}`;
+    channel.append(createTrackSelectionControl(track), title, role, routing, mix);
     const meter = createTrackMeter(track);
     if (meter) channel.append(meter);
     const controls = createTrackMixerControls(track);
@@ -353,10 +426,14 @@ function updateTrackMixer(track, changes, title) {
 function renderSnapshot(snapshot) {
   setProjectEnabled(true);
   if (snapshot.projectId !== editCursorProjectId) {
+    selectedTrackIds = new Set();
+    trackGroupDraft = "";
     editCursorTick = 0;
     transportPositionTick = 0;
     editCursorProjectId = snapshot.projectId;
   }
+  const validTrackIds = new Set(snapshot.tracks.map((track) => track.id));
+  selectedTrackIds = new Set([...selectedTrackIds].filter((trackId) => validTrackIds.has(trackId)));
   projectTransportState = snapshot.transportState;
   elements.panic.disabled = !snapshot.audioEngineConnected || !["playing", "paused"].includes(projectTransportState);
   loopRange = snapshot.loopRange ?? null;
@@ -386,6 +463,12 @@ function renderSnapshot(snapshot) {
     : "Core listo · motor de audio aún no conectado";
   elements.undo.disabled = !snapshot.canUndo;
   elements.redo.disabled = !snapshot.canRedo;
+  if (!document.querySelector(".track-group-toolbar")) {
+    document.querySelector(".editor-heading").append(createTrackGroupToolbar());
+  }
+  const groupInput = document.querySelector(".track-group-toolbar input");
+  if (groupInput && groupInput.value !== trackGroupDraft) groupInput.value = trackGroupDraft;
+  syncTrackSelectionUi();
   renderSessionSurface(snapshot.tracks);
   renderMixerSurface(snapshot.tracks);
   const previousTrack = elements.importTrack.value;
@@ -431,10 +514,10 @@ function renderSnapshot(snapshot) {
     const details = document.createElement("span");
     details.className = "track-meta";
     const mixState = [track.mute ? "MUTE" : null, track.solo ? "SOLO" : null, !track.active ? "OFF" : null].filter(Boolean).join(" · ");
-    details.textContent = `${track.role === "master" ? "MASTER" : track.kind === "audio" ? "AUDIO" : "MIDI"}${track.kind === "midi" ? ` · ${track.noteCount} notas` : track.kind === "audio" ? ` · ${track.outputChannels} ch` : ""}${mixState ? ` · ${mixState}` : ""}`;
+    details.textContent = `${track.role === "master" ? "MASTER" : track.kind === "audio" ? "AUDIO" : "MIDI"}${track.kind === "midi" ? ` · ${track.noteCount} notas` : track.kind === "audio" ? ` · ${track.outputChannels} ch` : ""}${track.groupName ? ` · GRUPO ${track.groupName}` : ""}${mixState ? ` · ${mixState}` : ""}`;
     const name = document.createElement("div");
     name.className = "track-name";
-    name.append(icon, label);
+    name.append(createTrackSelectionControl(track), icon, label);
     row.append(name, details);
     const meter = createTrackMeter(track);
     if (meter) row.append(meter);
@@ -547,6 +630,7 @@ function renderSnapshot(snapshot) {
   }
   renderEditCursor();
   renderTransportPosition(transportPositionTick);
+  syncTrackSelectionUi();
 }
 
 function makeAudioTrimHandle(edge, name) {

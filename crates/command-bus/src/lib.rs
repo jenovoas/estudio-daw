@@ -82,6 +82,10 @@ pub enum ProjectCommand {
         track_id: String,
         mixer: TrackMixerState,
     },
+    SetTracksGroup {
+        track_ids: Vec<String>,
+        group_name: Option<String>,
+    },
     SetTransportLoopRange {
         range: Option<TransportLoopRange>,
     },
@@ -655,6 +659,37 @@ impl CommandRuntime {
                     Ok(())
                 })
                 .map_err(|error| CommandError::Project(error.to_string()))?,
+            ProjectCommand::SetTracksGroup {
+                track_ids,
+                group_name,
+            } => self
+                .project_history
+                .transact("set track group", |project| -> Result<(), String> {
+                    if track_ids.is_empty() {
+                        return Err(String::from("selecciona al menos una pista"));
+                    }
+                    if group_name.as_ref().is_some_and(|name| {
+                        name.trim().is_empty() || name.trim().chars().count() > 64
+                    }) {
+                        return Err(String::from(
+                            "el nombre del grupo debe tener entre 1 y 64 caracteres",
+                        ));
+                    }
+                    let mut unique_ids = std::collections::HashSet::new();
+                    if track_ids.iter().any(|id| !unique_ids.insert(id)) {
+                        return Err(String::from("la selección contiene pistas duplicadas"));
+                    }
+                    for track_id in &track_ids {
+                        let track = project
+                            .tracks
+                            .iter_mut()
+                            .find(|track| track.id == *track_id)
+                            .ok_or_else(|| format!("no existe la pista: {track_id}"))?;
+                        track.group_name = group_name.as_ref().map(|name| name.trim().to_owned());
+                    }
+                    Ok(())
+                })
+                .map_err(|error| CommandError::Project(error.to_string()))?,
             ProjectCommand::SetTransportLoopRange { range } => self
                 .project_history
                 .transact("set transport loop range", |project| {
@@ -1066,6 +1101,7 @@ mod tests {
                     output_track_id: None,
                     channel_config: TrackChannelConfig::default(),
                     color: "#58a6b8".into(),
+                    group_name: None,
                     mixer: TrackMixerState::default(),
                     notes: Vec::new(),
                     audio_channels: None,
@@ -1083,6 +1119,7 @@ mod tests {
                         output_channels: 2,
                     },
                     color: "#58a6b8".into(),
+                    group_name: None,
                     mixer: TrackMixerState::default(),
                     notes: Vec::new(),
                     audio_channels: Some(2),

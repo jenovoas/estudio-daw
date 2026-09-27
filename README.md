@@ -691,7 +691,8 @@ compartidos de mezcla; Arrangement y Mezclador exponen los mismos conmutadores
 ACT/M/S y deslizadores de ganancia/panorama para pistas no master. Esos valores se
 guardan mediante comandos y se aplican a la reproducción. Los medidores de
 pista muestran pico y RMS de bloque para pistas MIDI y audio en las tres
-superficies; el bus Master aún no tiene medición independiente. Se pueden
+superficies; la selección y los grupos organizativos se comparten, pero no enlazan
+los valores de mezcla. El bus Master aún no tiene medición independiente. Se pueden
 importar archivos de audio a pistas existentes,
 copiándolos a la carpeta `media` junto al proyecto o vinculando el original,
 con metadatos básicos, preescucha corta antes de confirmar la importación,

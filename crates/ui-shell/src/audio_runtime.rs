@@ -1867,6 +1867,7 @@ mod tests {
             output_track_id: None,
             channel_config: TrackChannelConfig::default(),
             color: "#58a6b8".into(),
+            group_name: None,
             mixer: TrackMixerState::default(),
             notes: Vec::new(),
             audio_channels: None,

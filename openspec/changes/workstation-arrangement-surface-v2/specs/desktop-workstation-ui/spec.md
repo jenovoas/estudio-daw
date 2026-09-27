@@ -48,6 +48,8 @@ El proyecto DEBE modelar las pistas de audio por separado de las pistas MIDI/ins
 
 La estación DEBE ofrecer una vista Session de clips/escenas y una vista Arrangement de línea de tiempo sobre las mismas pistas ordenadas, medios, estado de mezcla y transporte del proyecto. Session organiza columnas de pistas y filas de escenas; Arrangement organiza las mismas pistas verticalmente contra el tiempo musical. Cambiar de vista DEBE conservar el contenido del proyecto y el estado de reproducción. Ableton Live 12 DEBE ser la referencia visual y de interacción principal para la jerarquía creativa, densidad y relación entre ambas vistas. Ardour PUEDE consultarse únicamente para detalles técnicos de ingeniería de audio; NO DEBE definir la jerarquía visual ni el flujo creativo. El estilo visual por sí solo no satisface este requisito.
 
+La selección actual de pistas DEBE permanecer coherente al alternar entre Session, Arrangement y Mezclador. La pertenencia a un grupo organizativo DEBE persistir en el proyecto y poder asignarse o quitarse mediante una operación reversible. Agrupar pistas no DEBE enlazar ni propagar activa/silencio/solo/ganancia/panorama: cada pista conserva su propio estado de mezcla.
+
 #### Scenario: abrir un proyecto en Session
 
 - **CUANDO** un proyecto aparece en la vista creativa principal
@@ -60,6 +62,13 @@ La estación DEBE ofrecer una vista Session de clips/escenas y una vista Arrange
 - **CUANDO** la persona cambia de vista durante un proyecto
 - **ENTONCES** ambas representan las mismas pistas, clips, referencias de fuentes, controles de pista y cursor de reproducción
 - **Y** la reproducción no se detiene ni reinicia sólo por cambiar de vista
+
+#### Scenario: seleccionar y agrupar pistas manteniendo mezclas independientes
+
+- **CUANDO** la persona selecciona pistas en cualquiera de las superficies y les asigna o quita un grupo
+- **ENTONCES** la selección visible se mantiene al alternar entre Session, Arrangement y Mezclador
+- **Y** el nombre de grupo se guarda para cada pista seleccionada y la operación puede deshacerse
+- **Y** cambiar la mezcla de una pista no modifica los valores de mezcla de las demás pistas del grupo
 
 #### Scenario: revisar audio y MIDI en Arrangement
 

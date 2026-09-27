@@ -40,6 +40,7 @@ struct TrackSummary {
     input_channels: Option<u32>,
     output_channels: u32,
     output_track_id: Option<String>,
+    group_name: Option<String>,
     active: bool,
     mute: bool,
     solo: bool,
@@ -232,6 +233,7 @@ fn summarize(application: &ProjectApplication, audio_engine_connected: bool) -> 
             input_channels: track.channel_config.input_channels,
             output_channels: track.channel_config.output_channels,
             output_track_id: track.output_track_id.clone(),
+            group_name: track.group_name.clone(),
             active: track.mixer.active,
             mute: track.mixer.mute,
             solo: track.mixer.solo,
@@ -452,6 +454,7 @@ fn add_track(kind: String, state: State<'_, DesktopState>) -> Result<UiSnapshot,
             output_channels: 2,
         },
         color: "#58a6b8".into(),
+        group_name: None,
         mixer: TrackMixerState::default(),
         notes: Vec::new(),
         audio_channels: if kind == "audio" { Some(2) } else { None },
@@ -739,6 +742,7 @@ fn new_project_model() -> Project {
             output_track_id: None,
             channel_config: TrackChannelConfig::default(),
             color: "#58a6b8".into(),
+            group_name: None,
             mixer: TrackMixerState::default(),
             notes: Vec::new(),
             audio_channels: None,
@@ -1033,6 +1037,33 @@ fn set_track_mixer(
 }
 
 #[tauri::command]
+fn set_tracks_group(
+    track_ids: Vec<String>,
+    group_name: Option<String>,
+    state: State<'_, DesktopState>,
+) -> Result<UiSnapshot, String> {
+    let mut application = state
+        .application
+        .lock()
+        .map_err(|_| "el estado de la aplicación quedó bloqueado".to_owned())?;
+    let application = application
+        .as_mut()
+        .ok_or_else(|| "primero abre un proyecto".to_owned())?;
+    application
+        .execute_project(ProjectCommand::SetTracksGroup {
+            track_ids,
+            group_name,
+        })
+        .map_err(|error| error.to_string())?;
+    let connected = state
+        .audio
+        .lock()
+        .map_err(|_| "el estado del motor de audio quedó bloqueado".to_owned())?
+        .is_connected();
+    Ok(summarize(application, connected))
+}
+
+#[tauri::command]
 fn history_action(action: String, state: State<'_, DesktopState>) -> Result<UiSnapshot, String> {
     let mut application = state
         .application
@@ -1108,6 +1139,7 @@ fn main() {
             save_project_as,
             set_transport,
             set_track_mixer,
+            set_tracks_group,
             history_action,
             audio_runtime_settings,
             save_audio_settings

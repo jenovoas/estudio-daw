@@ -799,6 +799,9 @@ pub struct Track {
     /// Color belongs to the project so Session and Arrangement remain visually linked.
     #[serde(default = "default_track_color")]
     pub color: String,
+    /// Grupo organizativo persistente; no vincula el estado del mezclador.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub group_name: Option<String>,
     /// Mixer state is shared by all views; it is not presentation-only state.
     #[serde(default)]
     pub mixer: TrackMixerState,
@@ -868,6 +871,8 @@ pub enum TrackValidationError {
     InvalidChannels,
     #[error("gain must be between -60 and +12 dB and pan between -1 and +1")]
     InvalidMixer,
+    #[error("track group name must contain between 1 and 64 characters")]
+    InvalidGroupName,
     #[error("a project can contain at most one master track")]
     MultipleMasterTracks,
     #[error("track output must reference a different existing audio track; the master has no project output")]
@@ -903,6 +908,7 @@ impl Track {
                 output_channels: 2,
             },
             color: default_track_color(),
+            group_name: None,
             mixer: TrackMixerState::default(),
             notes: Vec::new(),
             audio_channels,
@@ -941,6 +947,13 @@ impl Track {
             || !(-1.0..=1.0).contains(&self.mixer.pan)
         {
             return Err(TrackValidationError::InvalidMixer);
+        }
+        if self
+            .group_name
+            .as_ref()
+            .is_some_and(|name| name.trim().is_empty() || name.trim().chars().count() > 64)
+        {
+            return Err(TrackValidationError::InvalidGroupName);
         }
         match &self.kind {
             TrackKind::Midi
@@ -1264,6 +1277,7 @@ pub fn import_project_xml(xml: &str) -> Result<ImportResult, ProjectError> {
                     output_channels: 2,
                 },
                 color: default_track_color(),
+                group_name: None,
                 mixer: TrackMixerState::default(),
                 notes,
                 audio_channels: is_audio_track

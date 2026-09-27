@@ -39,7 +39,9 @@ mutación.
 
 - transporte: los comandos `SessionCommand` existentes;
 - pistas: agregar, duplicar, renombrar, reordenar, activar y quitar; ajustar
-  silencio, solo, ganancia y panorama;
+  silencio, solo, ganancia y panorama; asignar/quitar un nombre de grupo a una
+  selección de pistas en una sola operación reversible, sin vincular sus valores
+  de mezcla;
 - escenas/casillas: crear, renombrar, reordenar y quitar escenas; asignar o
   quitar casillas que referencian clips existentes sin copiarlos;
 - audio: agregar, recortar, mover, ajustar ganancia y desvanecimientos de clips;
