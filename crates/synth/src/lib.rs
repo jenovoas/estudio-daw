@@ -45,6 +45,23 @@ pub enum SynthMidiEvent {
         controller: u8,
         value: u8,
     },
+    PitchBend {
+        channel: u8,
+        value: i16,
+    },
+    KeyPressure {
+        channel: u8,
+        note: u8,
+        pressure: u8,
+    },
+    ChannelPressure {
+        channel: u8,
+        pressure: u8,
+    },
+    ProgramChange {
+        channel: u8,
+        program: u8,
+    },
 }
 
 #[derive(Debug, Error, PartialEq, Eq)]
@@ -269,7 +286,11 @@ impl SineSynthNode {
                     }
                 }
             }
-            SynthMidiEvent::ControlChange { .. } => {}
+            SynthMidiEvent::ControlChange { .. }
+            | SynthMidiEvent::PitchBend { .. }
+            | SynthMidiEvent::KeyPressure { .. }
+            | SynthMidiEvent::ChannelPressure { .. }
+            | SynthMidiEvent::ProgramChange { .. } => {}
         }
     }
 }

@@ -399,6 +399,18 @@ fn apply_midi_event(
             controller,
             value,
         } => engine.control_change(channel, controller, value),
+        SynthMidiEvent::PitchBend { channel, value } => engine.pitch_bend(channel, value),
+        SynthMidiEvent::KeyPressure {
+            channel,
+            note,
+            pressure,
+        } => engine.key_pressure(channel, note, pressure),
+        SynthMidiEvent::ChannelPressure { channel, pressure } => {
+            engine.channel_pressure(channel, pressure)
+        }
+        SynthMidiEvent::ProgramChange { channel, program } => {
+            engine.program_change(channel, program)
+        }
     }
 }
 

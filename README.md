@@ -716,7 +716,7 @@ el rango después de iniciar el transporte no altera la vuelta activa; detén y
 vuelve a iniciar para aplicar el nuevo rango. Al mover, recortar o quitar una
 región durante Play, el plan activo se recompila en un límite de bloque sin
 cerrar PipeWire; si la edición ocurre en pausa, se aplica al reanudar. Faltan
-restauración de Pitch Bend, presión y cambio de programa al navegar, selección de salidas físicas,
+validación funcional/acústica de los cambios de transporte, selección de salidas físicas,
 grabación live y monitorización de entrada. El scheduler MIDI compara los ticks
 de evento con la posición del plan después de cada bloque; el sondeo es de 1 ms
 y no ofrece precisión sample-accurate. No

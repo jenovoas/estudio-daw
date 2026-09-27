@@ -102,3 +102,9 @@
 - Al reconstruir el plan desde el cursor, se envía el último valor previo de cada CC 0–127 de los clips MIDI activos antes de NoteOn restaurados y eventos futuros. CC64 conserva su lógica de sustain y CC123 vacía las notas activas del canal.
 - Pitch Bend, Key/Channel Pressure y Program Change aún no forman parte de `SynthMidiEvent` ni del estado restaurado al buscar. No declarar restauración completa de todos los tipos MIDI.
 - Verificación: `cargo check -p estudio-daw-ui-shell`, fmt/fmt check y `git diff --check`; no se ejecutaron pruebas ni QA auditiva/visual. OpenSpec sigue 9/35.
+
+## Actualización — restauración de más estados MIDI
+
+- `SynthMidiEvent` ahora transporta Pitch Bend firmado, Key Pressure, Channel Pressure y Program Change además de notas/CC. FluidSynth los aplica en su worker; el sinte sinusoidal los acepta sin efecto. La biblioteca local exporta los cuatro símbolos FFI requeridos.
+- Al buscar/iniciar a mitad de clip se restaura Pitch Bend, presión de canal, programa y presión por tecla para notas aún activas, además de CC 0–127 y notas sostenidas. SysEx permanece sin implementar.
+- Verificación: `cargo check -p estudio-daw-synth -p estudio-daw-ui-shell`, formato y `nm -D /usr/lib/libfluidsynth.so` confirmó los símbolos requeridos. No se ejecutaron pruebas ni QA visual/auditiva. OpenSpec sigue 9/35.

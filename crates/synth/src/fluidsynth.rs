@@ -31,6 +31,8 @@ type ProgramSelect = unsafe extern "C" fn(*mut c_void, c_int, c_int, c_int, c_in
 type NoteOn = unsafe extern "C" fn(*mut c_void, c_int, c_int, c_int) -> c_int;
 type NoteOff = unsafe extern "C" fn(*mut c_void, c_int, c_int) -> c_int;
 type ControlChange = unsafe extern "C" fn(*mut c_void, c_int, c_int, c_int) -> c_int;
+type ChannelValue = unsafe extern "C" fn(*mut c_void, c_int, c_int) -> c_int;
+type KeyValue = unsafe extern "C" fn(*mut c_void, c_int, c_int, c_int) -> c_int;
 type WriteFloat = unsafe extern "C" fn(
     *mut c_void,
     c_int,
@@ -123,6 +125,10 @@ struct FluidSynthApi {
     note_on: NoteOn,
     note_off: NoteOff,
     control_change: ControlChange,
+    pitch_bend: ChannelValue,
+    channel_pressure: ChannelValue,
+    program_change: ChannelValue,
+    key_pressure: KeyValue,
     write_float: WriteFloat,
 }
 
@@ -171,6 +177,10 @@ impl FluidSynthApi {
             note_on: symbol!("fluid_synth_noteon", NoteOn),
             note_off: symbol!("fluid_synth_noteoff", NoteOff),
             control_change: symbol!("fluid_synth_cc", ControlChange),
+            pitch_bend: symbol!("fluid_synth_pitch_bend", ChannelValue),
+            channel_pressure: symbol!("fluid_synth_channel_pressure", ChannelValue),
+            program_change: symbol!("fluid_synth_program_change", ChannelValue),
+            key_pressure: symbol!("fluid_synth_key_pressure", KeyValue),
             write_float: symbol!("fluid_synth_write_float", WriteFloat),
             _library: library,
         };
@@ -367,6 +377,66 @@ impl FluidSynthEngine {
         }
         let result = unsafe {
             (self.api.control_change)(self.synth, channel as i32, controller as i32, value as i32)
+        };
+        if result == 0 {
+            Ok(())
+        } else {
+            Err(FluidSynthError::MidiEvent)
+        }
+    }
+
+    pub fn pitch_bend(&mut self, channel: u8, value: i16) -> Result<(), FluidSynthError> {
+        if channel >= 16 || !(-8_192..=8_191).contains(&value) {
+            return Err(FluidSynthError::MidiEvent);
+        }
+        // El proyecto guarda el centro firmado MIDI (-8192..8191); FluidSynth
+        // recibe el valor crudo no firmado (0..16383, centro 8192).
+        let result =
+            unsafe { (self.api.pitch_bend)(self.synth, channel as i32, i32::from(value) + 8_192) };
+        if result == 0 {
+            Ok(())
+        } else {
+            Err(FluidSynthError::MidiEvent)
+        }
+    }
+
+    pub fn channel_pressure(&mut self, channel: u8, pressure: u8) -> Result<(), FluidSynthError> {
+        if channel >= 16 || pressure >= 128 {
+            return Err(FluidSynthError::MidiEvent);
+        }
+        let result =
+            unsafe { (self.api.channel_pressure)(self.synth, channel as i32, pressure as i32) };
+        if result == 0 {
+            Ok(())
+        } else {
+            Err(FluidSynthError::MidiEvent)
+        }
+    }
+
+    pub fn program_change(&mut self, channel: u8, program: u8) -> Result<(), FluidSynthError> {
+        if channel >= 16 || program >= 128 {
+            return Err(FluidSynthError::MidiEvent);
+        }
+        let result =
+            unsafe { (self.api.program_change)(self.synth, channel as i32, program as i32) };
+        if result == 0 {
+            Ok(())
+        } else {
+            Err(FluidSynthError::MidiEvent)
+        }
+    }
+
+    pub fn key_pressure(
+        &mut self,
+        channel: u8,
+        note: u8,
+        pressure: u8,
+    ) -> Result<(), FluidSynthError> {
+        if channel >= 16 || note >= 128 || pressure >= 128 {
+            return Err(FluidSynthError::MidiEvent);
+        }
+        let result = unsafe {
+            (self.api.key_pressure)(self.synth, channel as i32, note as i32, pressure as i32)
         };
         if result == 0 {
             Ok(())

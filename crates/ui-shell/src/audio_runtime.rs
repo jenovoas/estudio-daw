@@ -842,6 +842,8 @@ fn build_project_playback_with_end(
             prior_events.sort_by_key(|event| event.tick);
             let mut active_notes = Vec::<(u8, u8, u8, bool)>::new();
             let mut prior_controllers = Vec::<(u8, u8, u8)>::new();
+            let mut prior_channel_state = Vec::<SynthMidiEvent>::new();
+            let mut prior_key_pressure = Vec::<(u8, u8, u8)>::new();
             for event in prior_events {
                 match &event.message {
                     RecordedMidiMessage::NoteOn {
@@ -878,7 +880,7 @@ fn build_project_playback_with_end(
                         channel,
                         controller,
                         value,
-                    } if *controller <= 127 => {
+                    } if *channel < 16 && *controller <= 127 => {
                         let controller_id = *controller as u8;
                         let value = (*value).clamp(0, 127) as u8;
                         if let Some((_, _, previous)) =
@@ -903,6 +905,54 @@ fn build_project_playback_with_end(
                             _ => {}
                         }
                     }
+                    RecordedMidiMessage::PitchBend { channel, value }
+                        if *channel < 16 && (-8_192..=8_191).contains(value) =>
+                    {
+                        prior_channel_state.retain(|state| {
+                            !matches!(state, SynthMidiEvent::PitchBend { channel: active, .. } if active == channel)
+                        });
+                        prior_channel_state.push(SynthMidiEvent::PitchBend {
+                            channel: *channel,
+                            value: *value as i16,
+                        });
+                    }
+                    RecordedMidiMessage::ChannelPressure { channel, pressure }
+                        if *channel < 16 && (0..=127).contains(pressure) =>
+                    {
+                        prior_channel_state.retain(|state| {
+                            !matches!(state, SynthMidiEvent::ChannelPressure { channel: active, .. } if active == channel)
+                        });
+                        prior_channel_state.push(SynthMidiEvent::ChannelPressure {
+                            channel: *channel,
+                            pressure: *pressure as u8,
+                        });
+                    }
+                    RecordedMidiMessage::ProgramChange { channel, program }
+                        if *channel < 16 && (0..=127).contains(program) =>
+                    {
+                        prior_channel_state.retain(|state| {
+                            !matches!(state, SynthMidiEvent::ProgramChange { channel: active, .. } if active == channel)
+                        });
+                        prior_channel_state.push(SynthMidiEvent::ProgramChange {
+                            channel: *channel,
+                            program: *program as u8,
+                        });
+                    }
+                    RecordedMidiMessage::KeyPressure {
+                        channel,
+                        note,
+                        pressure,
+                    } if *channel < 16 && *note < 128 && *pressure < 128 => {
+                        if let Some((_, _, current)) = prior_key_pressure.iter_mut().find(
+                            |(active_channel, active_note, _)| {
+                                active_channel == channel && active_note == note
+                            },
+                        ) {
+                            *current = *pressure;
+                        } else {
+                            prior_key_pressure.push((*channel, *note, *pressure));
+                        }
+                    }
                     _ => {}
                 }
             }
@@ -921,7 +971,18 @@ fn build_project_playback_with_end(
                 sequence = sequence.saturating_add(1);
                 has_events = true;
             }
-            for (channel, note, velocity, key_down) in active_notes {
+            for midi in prior_channel_state {
+                schedule.push(ScheduledEvent {
+                    at: Duration::ZERO,
+                    at_tick: start_position_ticks,
+                    sequence,
+                    sender: sender_index,
+                    midi,
+                });
+                sequence = sequence.saturating_add(1);
+                has_events = true;
+            }
+            for &(channel, note, velocity, key_down) in &active_notes {
                 schedule.push(ScheduledEvent {
                     at: Duration::ZERO,
                     at_tick: start_position_ticks,
@@ -945,6 +1006,28 @@ fn build_project_playback_with_end(
                     sequence = sequence.saturating_add(1);
                 }
                 has_events = true;
+            }
+            for (channel, note, pressure) in prior_key_pressure {
+                if active_notes
+                    .iter()
+                    .any(|(active_channel, active_note, _, _)| {
+                        *active_channel == channel && *active_note == note
+                    })
+                {
+                    schedule.push(ScheduledEvent {
+                        at: Duration::ZERO,
+                        at_tick: start_position_ticks,
+                        sequence,
+                        sender: sender_index,
+                        midi: SynthMidiEvent::KeyPressure {
+                            channel,
+                            note,
+                            pressure,
+                        },
+                    });
+                    sequence = sequence.saturating_add(1);
+                    has_events = true;
+                }
             }
             for event in &clip.take.events {
                 // Include events exactly at the clip boundary (notably a
@@ -1277,11 +1360,44 @@ fn synth_event(message: &RecordedMidiMessage) -> Option<SynthMidiEvent> {
             channel,
             controller,
             value,
-        } if *controller <= 127 => Some(SynthMidiEvent::ControlChange {
+        } if *channel < 16 && *controller <= 127 => Some(SynthMidiEvent::ControlChange {
             channel: *channel,
             controller: *controller as u8,
             value: (*value).clamp(0, 127) as u8,
         }),
+        RecordedMidiMessage::PitchBend { channel, value }
+            if *channel < 16 && (-8_192..=8_191).contains(value) =>
+        {
+            Some(SynthMidiEvent::PitchBend {
+                channel: *channel,
+                value: *value as i16,
+            })
+        }
+        RecordedMidiMessage::KeyPressure {
+            channel,
+            note,
+            pressure,
+        } if *channel < 16 && *note < 128 && *pressure < 128 => Some(SynthMidiEvent::KeyPressure {
+            channel: *channel,
+            note: *note,
+            pressure: *pressure,
+        }),
+        RecordedMidiMessage::ChannelPressure { channel, pressure }
+            if *channel < 16 && (0..=127).contains(pressure) =>
+        {
+            Some(SynthMidiEvent::ChannelPressure {
+                channel: *channel,
+                pressure: *pressure as u8,
+            })
+        }
+        RecordedMidiMessage::ProgramChange { channel, program }
+            if *channel < 16 && (0..=127).contains(program) =>
+        {
+            Some(SynthMidiEvent::ProgramChange {
+                channel: *channel,
+                program: *program as u8,
+            })
+        }
         _ => None,
     }
 }

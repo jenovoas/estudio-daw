@@ -46,8 +46,8 @@ forma de onda limita la duración procesada a diez minutos y produce como máxim
   se prepara antes de abrir el stream y las siguientes fuera del callback. Si
   falla la preparación o el intercambio, la consulta de posición devuelve un
   error. Al buscar/iniciar dentro de un clip MIDI se restauran sus notas activas,
-  CC64 y el último valor previo de cada CC 0–127. Pitch Bend, presión y Program
-  Change todavía no se reconstruyen. Los cambios del rango durante la reproducción aplican al siguiente
+  el último valor previo de CC 0–127, Pitch Bend, presión de canal, Program
+  Change y presión por tecla activa. SysEx no se reproduce. Los cambios del rango durante la reproducción aplican al siguiente
   inicio. Al mover, recortar o quitar una región durante Play, el runtime
   recompila el plan desde la posición actual y lo publica en el siguiente límite
   de bloque sin cerrar PipeWire. En pausa, el proyecto se actualiza y el plan
@@ -59,7 +59,7 @@ forma de onda limita la duración procesada a diez minutos y produce como máxim
 
 La tarea OpenSpec 2.2 permanece abierta hasta completar QA visual del flujo de
 importación y edición en la aplicación. La tarea 2.3 también sigue abierta por
-QA funcional/acústica, posicionamiento compartido del transporte, restauración
-de Pitch Bend/presión/programa y ajuste sample-accurate del scheduler; los cambios de
+QA funcional/acústica, posicionamiento compartido del transporte y ajuste
+sample-accurate del scheduler; los cambios de
 región durante Play ya reconstruyen el plan activo. No se ejecutó suite de
 pruebas en esta intervención.
