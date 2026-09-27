@@ -444,7 +444,9 @@ function renderMixerSurface(tracks) {
     title.textContent = track.name;
     const role = document.createElement("span");
     role.className = "mixer-role";
-    role.textContent = track.role === "master" ? "MASTER" : track.kind.toUpperCase();
+    role.textContent = track.role === "master"
+      ? "MASTER"
+      : track.role === "bus" ? "BUS" : track.kind.toUpperCase();
     const routing = document.createElement("small");
     routing.className = "mixer-flow";
     routing.textContent = trackSignalFlow(track, tracks);
