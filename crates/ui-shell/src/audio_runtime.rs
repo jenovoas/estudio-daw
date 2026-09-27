@@ -502,6 +502,51 @@ fn build_project_playback(
             .iter()
             .filter(|clip| clip.track_id == track.id)
         {
+            let clip_start_micros = ticks_to_micros(clip.start_tick, clip.take.ppq, bpm);
+            let clip_duration_micros = ticks_to_micros(clip.duration_ticks, clip.take.ppq, bpm);
+            let cursor_inside_clip = start_position_micros >= clip_start_micros
+                && start_position_micros < clip_start_micros.saturating_add(clip_duration_micros);
+            let mut prior_events: Vec<_> = if cursor_inside_clip {
+                clip.take
+                    .events
+                    .iter()
+                    .filter(|event| {
+                        event.tick <= clip.duration_ticks
+                            && ticks_to_micros(event.tick, clip.take.ppq, bpm)
+                                < start_position_micros - clip_start_micros
+                    })
+                    .collect()
+            } else {
+                Vec::new()
+            };
+            prior_events.sort_by_key(|event| event.tick);
+            let mut active_notes = Vec::<(u8, u8, u8)>::new();
+            for event in prior_events {
+                match &event.message {
+                    RecordedMidiMessage::NoteOn {
+                        channel,
+                        note,
+                        velocity,
+                    } if *velocity > 0 => active_notes.push((*channel, *note, *velocity)),
+                    RecordedMidiMessage::NoteOff { channel, note, .. }
+                    | RecordedMidiMessage::NoteOn {
+                        channel,
+                        note,
+                        velocity: 0,
+                    } => {
+                        if let Some(index) =
+                            active_notes
+                                .iter()
+                                .rposition(|(active_channel, active_note, _)| {
+                                    active_channel == channel && active_note == note
+                                })
+                        {
+                            active_notes.remove(index);
+                        }
+                    }
+                    _ => {}
+                }
+            }
             for event in &clip.take.events {
                 // Include events exactly at the clip boundary (notably a
                 // NoteOff at the final tick), but never schedule beyond it.
@@ -521,6 +566,20 @@ fn build_project_playback(
                     sequence,
                     sender: sender_index,
                     midi,
+                });
+                sequence = sequence.saturating_add(1);
+                has_events = true;
+            }
+            for (channel, note, velocity) in active_notes {
+                schedule.push(ScheduledEvent {
+                    at: Duration::ZERO,
+                    sequence,
+                    sender: sender_index,
+                    midi: SynthMidiEvent::NoteOn {
+                        channel,
+                        note,
+                        velocity,
+                    },
                 });
                 sequence = sequence.saturating_add(1);
                 has_events = true;

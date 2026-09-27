@@ -7,6 +7,7 @@
 - Pause congela el plan; Stop libera los workers/cancela `ffmpeg`. Cambiar regiones mientras corre guarda el proyecto pero no reconstruye el plan activo; detener e iniciar carga los cambios. Al iniciar desde detenido se puede reproducir desde el cursor de Arreglo; todavía no existe búsqueda en caliente ni bucle.
 - `workstation-arrangement-surface-v2` permanece en 9/35; 2.2 sigue abierta por QA visual y 2.3 sigue abierta por las capacidades de transporte ausentes y QA acústica. No marcar ninguna completa por esta implementación parcial.
 - Avance publicado de 4.3: `TransportPositionNode` publica la posición musical calculada por `TransportClock` a partir de los frames procesados por PipeWire; la UI dibuja y muestra el cabezal. Play desde detenido usa el cursor. Sigue pendiente búsqueda durante reproducción y loop; la implementación no usa reloj de pared para mover el cabezal.
+- Al iniciar desde el cursor, el scheduler restaura NoteOn aún activos por clip antes de abrir el flujo. Los controladores previos (incluido sustain) no se reconstruyen todavía.
 - Verificación del corte local: `cargo check -p estudio-daw-ui-shell`, `cargo fmt --all -- --check`, `node --check` para `main.js` y `platform-tauri.js`, `git diff --check` y validación OpenSpec pasan; no se ejecutaron pruebas ni QA física.
 - Próximo paso aprobado: terminar la búsqueda inicial desde el cursor y continuar con loop/seek en ejecución y actualización del plan según 2.3/4.3; después abrir 2.4/2.5 según OpenSpec. Mantener el callback libre de asignación, bloqueo e I/O.
 
