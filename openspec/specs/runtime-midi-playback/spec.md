@@ -4,7 +4,7 @@
 
 Defines reliable MIDI clip playback, pause/resume behavior, and fail-safe handling across the desktop audio runtime.
 
-## ADDED Requirements
+## Requirements
 
 ### Requirement: Pause freezes rendered instrument state
 When desktop playback is paused, the audio callback MUST output silence without advancing render-plan node state or consuming queued instrument PCM. SoundFont workers MUST stop rendering further PCM and advancing their instrument voices while paused. The MIDI scheduler MUST preserve event timing relative to the resumed transport.

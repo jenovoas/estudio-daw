@@ -188,3 +188,17 @@ For structural codebase exploration, use the installed `codebase-memory` skill.
   check, fmt, `openspec validate --strict` y diff check pasaron.
 - Continúa pendiente una propuesta OpenSpec separada para dependencias del
   Portable Domain y el reloj/recompilación de transporte Tauri.
+
+## Pause FluidSynth y revisión OpenSpec — 2026-09-27
+
+- El seguimiento `268cb9a` conecta la bandera Pause del transporte al worker
+  SoundFont: el worker sigue atendiendo control MIDI/Stop, pero no genera PCM ni
+  avanza voces mientras está pausado. La cola queda estacionaria; la prueba
+  focal pasó con FluidR3 instalado.
+- `runtime-transport-correctness` queda completa (12/12); la suite workspace,
+  check, fmt, validación OpenSpec estricta de ambos cambios y diff check pasan.
+- `render-plan-chain-contract` queda completa (6/6): RenderPlan es cadena
+  serial in-place y mezcla paralela explícita. Los dos commits locales desde
+  `b3a6fad` están listos para push.
+- La bitácora append-only fue actualizada. Restan Portable Domain y reloj/
+  posición/rebuild de Tauri, que requieren su propio diseño OpenSpec.

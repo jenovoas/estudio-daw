@@ -4,7 +4,7 @@
 
 Defines deterministic in-place DSP chain behavior and the explicit contract for mixing parallel instrument sources.
 
-## ADDED Requirements
+## Requirements
 
 ### Requirement: Render plans have explicit in-place chain semantics
 The current RenderPlan MUST process nodes in insertion order on one shared in-place audio block. The builder MUST NOT expose a connection API that implies independent graph branches or automatic summing.

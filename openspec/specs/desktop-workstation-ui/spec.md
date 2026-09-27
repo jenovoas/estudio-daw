@@ -4,7 +4,7 @@
 
 Defines the Tauri desktop shell's DAW arrangement hierarchy and truthful presentation of implemented workflows.
 
-## ADDED Requirements
+## Requirements
 
 ### Requirement: Arrangement is the primary workspace
 The Tauri desktop UI MUST present the project as a DAW workspace, with transport, tempo, track headers, a musical timeline, and visible MIDI clip content. Visual hierarchy MUST follow the approved Ableton Live 12 inspired direction: compact dark chrome, high-contrast arrangement grid, and distinct clip colors.
