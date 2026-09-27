@@ -7,7 +7,7 @@
 
 ## 1. Project model and commands
 
-- [ ] 1.1 Define versioned track state for MIDI, instrument, audio, bus/return and master roles, with stable identity/order, name/color, active/mute/solo, gain/pan and channel configuration. Add serde defaults/migrations and fixtures proving existing v1/v2 projects preserve identity, order and content.
+- [x] 1.1 Define versioned track state for MIDI, instrument, audio, bus/return and master roles, with stable identity/order, name/color, active/mute/solo, gain/pan and channel configuration. Add serde defaults/migrations and fixtures proving existing v1/v2 projects preserve identity, order and content. v4 roles/channels are data contracts; bus/return/master runtime routing remains in 4.2/4.5.
 - [ ] 1.2 Define audio source, region/clip and playlist ownership explicitly: source path/signature/hash/channel/rate; source offset; timeline position; duration; gain/fades; non-destructive edit semantics. Define scenes and clip-slot identity without duplicating the same musical clip between Session and Arrangement.
 - [ ] 1.3 Add typed, validated and undoable commands for add/duplicate/rename/reorder/remove/activate tracks; set supported mixer state; create/edit/delete scenes and slots; and add/trim/move/gain/fade audio regions. Define undo/redo behavior and test command rejection for incompatible track/clip types.
 - [ ] 1.4 Keep Portable Domain independent of PipeWire, ALSA, GUI and media-decoding processes. Put device, file-dialog and media inspection/decode operations behind appropriate adapters/workers; document command boundaries and prevent UI-side model mutation.

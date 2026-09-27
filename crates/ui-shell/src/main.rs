@@ -12,8 +12,8 @@ use estudio_daw_application::{
 };
 use estudio_daw_midi_engine::{MidiSource, MidiTake, RecordedMidiEvent, RecordedMidiMessage};
 use estudio_daw_project_model::{
-    ImportProvenance, InstrumentConfig, MidiClip, Project, TimeSignature, Track, TrackKind,
-    TrackMixerState, Transport,
+    ImportProvenance, InstrumentConfig, MidiClip, Project, TimeSignature, Track,
+    TrackChannelConfig, TrackKind, TrackMixerState, TrackRole, Transport,
 };
 use serde::Serialize;
 use std::{path::PathBuf, sync::Mutex};
@@ -303,6 +303,15 @@ fn add_track(kind: String, state: State<'_, DesktopState>) -> Result<UiSnapshot,
         id: format!("track-{}-{index}", unix_timestamp_millis()),
         name: format!("{name} {}", index + 1),
         kind: track_kind,
+        role: if kind == "audio" {
+            TrackRole::Audio
+        } else {
+            TrackRole::Instrument
+        },
+        channel_config: TrackChannelConfig {
+            input_channels: if kind == "audio" { Some(2) } else { None },
+            output_channels: 2,
+        },
         color: "#58a6b8".into(),
         mixer: TrackMixerState::default(),
         notes: Vec::new(),
@@ -401,7 +410,7 @@ fn demo_midi_take() -> MidiTake {
 
 fn new_project_model() -> Project {
     Project {
-        schema_version: "estudio-daw.project.v3".into(),
+        schema_version: "estudio-daw.project.v4".into(),
         project_id: format!("proyecto-{}", unix_timestamp_millis()),
         transport: Transport {
             tempo_bpm: 120.0,
@@ -414,6 +423,8 @@ fn new_project_model() -> Project {
             id: "midi-1".into(),
             name: "MIDI 1".into(),
             kind: TrackKind::Midi,
+            role: TrackRole::Instrument,
+            channel_config: TrackChannelConfig::default(),
             color: "#58a6b8".into(),
             mixer: TrackMixerState::default(),
             notes: Vec::new(),

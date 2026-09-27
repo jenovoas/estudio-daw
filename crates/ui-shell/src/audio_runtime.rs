@@ -380,7 +380,8 @@ mod tests {
     use super::*;
     use estudio_daw_midi_engine::{MidiSource, MidiTake, RecordedMidiEvent};
     use estudio_daw_project_model::{
-        ImportProvenance, MidiClip, TimeSignature, Track, TrackMixerState, Transport,
+        ImportProvenance, MidiClip, TimeSignature, Track, TrackChannelConfig, TrackMixerState,
+        TrackRole, Transport,
     };
 
     fn midi_track(id: &str) -> Track {
@@ -388,6 +389,8 @@ mod tests {
             id: id.into(),
             name: id.into(),
             kind: TrackKind::Midi,
+            role: TrackRole::Instrument,
+            channel_config: TrackChannelConfig::default(),
             color: "#58a6b8".into(),
             mixer: TrackMixerState::default(),
             notes: Vec::new(),
@@ -427,7 +430,7 @@ mod tests {
             ],
         };
         Project {
-            schema_version: "estudio-daw.project.v3".into(),
+            schema_version: "estudio-daw.project.v4".into(),
             project_id: "playback-test".into(),
             transport: Transport {
                 tempo_bpm: 120.0,

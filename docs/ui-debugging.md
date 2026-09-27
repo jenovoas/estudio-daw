@@ -18,7 +18,8 @@ en la consola de desarrollo del webview y en el aviso inferior de la ventana.
 El texto del aviso incluye la cadena de error devuelta por el comando Tauri.
 
 Para comprobar persistencia, guarda como JSON y abre ese mismo archivo en un
-editor de texto. El formato es portable; buscar `"tracks"`, `"mixer"` y el
+editor de texto. El formato portable actual es `estudio-daw.project.v4`; buscar
+`"tracks"`, `"role"`, `"channel_config"`, `"mixer"` y el
 identificador de pista permite confirmar el estado escrito sin depender del
 render de la ventana.
 

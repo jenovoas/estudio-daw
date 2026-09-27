@@ -8,7 +8,7 @@ use estudio_daw_midi_engine::MidiTake;
 use estudio_daw_project_model::{
     add_audio_clip, attach_media_source, attach_midi_take, quantize_midi_clip,
     set_audio_clip_fades, set_audio_clip_gain, trim_audio_clip, MediaSource, Project, ProjectEvent,
-    ProjectHistory, ProjectSnapshot, Track, TrackMixerState,
+    ProjectHistory, ProjectSnapshot, Track, TrackMixerState, TrackRole,
 };
 use estudio_daw_session::{Session, SessionCommand, TransportSnapshot, TransportState};
 use serde::{Deserialize, Serialize};
@@ -299,6 +299,31 @@ impl CommandRuntime {
                     if project.tracks.iter().any(|item| item.id == track.id) {
                         return Err(format!("track id already exists: {}", track.id));
                     }
+                    let role_matches_kind = matches!(
+                        (&track.kind, track.role),
+                        (
+                            estudio_daw_project_model::TrackKind::Midi,
+                            TrackRole::Midi | TrackRole::Instrument
+                        ) | (
+                            estudio_daw_project_model::TrackKind::Audio,
+                            TrackRole::Audio
+                                | TrackRole::Bus
+                                | TrackRole::Return
+                                | TrackRole::Master
+                        )
+                    );
+                    if !role_matches_kind {
+                        return Err(String::from(
+                            "track role is incompatible with its media kind",
+                        ));
+                    }
+                    if track.channel_config.output_channels == 0
+                        || track.channel_config.input_channels == Some(0)
+                    {
+                        return Err(String::from(
+                            "track channel counts must be greater than zero",
+                        ));
+                    }
                     match &track.kind {
                         estudio_daw_project_model::TrackKind::Audio
                             if track.instrument.is_some() || !track.notes.is_empty() =>
@@ -536,8 +561,8 @@ mod tests {
     use super::*;
     use estudio_daw_midi_engine::{MidiSource, RecordedMidiEvent, RecordedMidiMessage};
     use estudio_daw_project_model::{
-        AudioClip, ImportProvenance, InstrumentConfig, MidiClip, TimeSignature, Track, TrackKind,
-        TrackMixerState, Transport,
+        AudioClip, ImportProvenance, InstrumentConfig, MidiClip, TimeSignature, Track,
+        TrackChannelConfig, TrackKind, TrackMixerState, TrackRole, Transport,
     };
 
     fn project() -> Project {
@@ -556,6 +581,8 @@ mod tests {
                     id: "track-midi".into(),
                     name: "MIDI".into(),
                     kind: TrackKind::Midi,
+                    role: TrackRole::Instrument,
+                    channel_config: TrackChannelConfig::default(),
                     color: "#58a6b8".into(),
                     mixer: TrackMixerState::default(),
                     notes: Vec::new(),
@@ -567,6 +594,11 @@ mod tests {
                     id: "track-audio".into(),
                     name: "Audio".into(),
                     kind: TrackKind::Audio,
+                    role: TrackRole::Audio,
+                    channel_config: TrackChannelConfig {
+                        input_channels: Some(2),
+                        output_channels: 2,
+                    },
                     color: "#58a6b8".into(),
                     mixer: TrackMixerState::default(),
                     notes: Vec::new(),

@@ -513,6 +513,11 @@ mod tests {
                 id: "track-audio".into(),
                 name: "Audio".into(),
                 kind: TrackKind::Audio,
+                role: estudio_daw_project_model::TrackRole::Audio,
+                channel_config: estudio_daw_project_model::TrackChannelConfig {
+                    input_channels: Some(2),
+                    output_channels: 2,
+                },
                 color: "#58a6b8".into(),
                 mixer: estudio_daw_project_model::TrackMixerState::default(),
                 notes: Vec::new(),
@@ -626,7 +631,7 @@ mod tests {
 
         let application = ProjectApplication::open(&project_path).unwrap();
         let project = application.snapshot().project.project;
-        assert_eq!(project.schema_version, "estudio-daw.project.v3");
+        assert_eq!(project.schema_version, "estudio-daw.project.v4");
         assert!(project.midi_clips.is_empty());
         assert!(project.audio_clips.is_empty());
     }
