@@ -117,6 +117,7 @@ const UI_ACTIONS = [
   { id: "project.new", label: "Nuevo proyecto", menu: "Proyecto", target: "newProject" },
   { id: "project.open", label: "Abrir proyecto…", menu: "Proyecto", target: "open" },
   { id: "project.demo", label: "Cargar Demo MIDI", menu: "Proyecto", target: "demoProject" },
+  { id: "project.importAudio", label: "Importar audio…", menu: "Proyecto", target: "importAudio", requiresProject: true },
   { id: "project.save", label: "Guardar", menu: "Proyecto", shortcut: "Ctrl+S", target: "save", requiresProject: true },
   { id: "project.saveAs", label: "Guardar como…", menu: "Proyecto", shortcut: "Ctrl+Mayús+S", target: "saveAs", requiresProject: true },
   { id: "edit.undo", label: "Deshacer", menu: "Edición", shortcut: "Ctrl+Z", target: "undo", requiresProject: true },
@@ -124,6 +125,7 @@ const UI_ACTIONS = [
   { id: "track.addMidi", label: "Añadir pista MIDI", menu: "Crear", target: "addMidiTrack", requiresProject: true },
   { id: "track.addAudio", label: "Añadir pista de audio", menu: "Crear", target: "addAudioTrack", requiresProject: true },
   { id: "track.addBus", label: "Añadir bus", menu: "Crear", target: "addBusTrack", requiresProject: true },
+  { id: "scene.add", label: "Añadir escena", menu: "Sesión", requiresProject: true, handler: () => runCommand("Escena añadida", () => platform.addScene()) },
   { id: "view.arrangement", label: "Arreglo", menu: "Vista", shortcut: "Ctrl+1", target: "showArrangement" },
   { id: "view.session", label: "Sesión", menu: "Vista", shortcut: "Ctrl+2", target: "showSession" },
   { id: "view.mixer", label: "Mezclador", menu: "Vista", shortcut: "Ctrl+3", target: "showMixer" },
@@ -147,7 +149,9 @@ function actionTarget(action) {
 }
 
 function executeUiAction(action, context = null) {
-  if (action.id === "clip.select") {
+  if (typeof action.handler === "function") {
+    action.handler(context);
+  } else if (action.id === "clip.select") {
     context?.clip?.focus();
     context?.clip?.click();
   } else if (action.id === "audio.preview") {
@@ -169,7 +173,7 @@ function executeUiAction(action, context = null) {
 
 function renderApplicationMenu() {
   if (!elements.applicationMenu) return;
-  const groups = [...new Set(UI_ACTIONS.filter((action) => action.target).map((action) => action.menu))];
+  const groups = [...new Set(UI_ACTIONS.filter((action) => action.target || action.handler).map((action) => action.menu))];
   elements.applicationMenu.replaceChildren();
   for (const group of groups) {
     const wrapper = document.createElement("div");
@@ -183,7 +187,7 @@ function renderApplicationMenu() {
     const popup = document.createElement("div");
     popup.className = "application-menu-popup";
     popup.setAttribute("role", "menu");
-    for (const action of UI_ACTIONS.filter((item) => item.menu === group && item.target)) {
+    for (const action of UI_ACTIONS.filter((item) => item.menu === group && (item.target || item.handler))) {
       const item = document.createElement("button");
       item.type = "button";
       item.className = "application-menu-item";
@@ -226,7 +230,7 @@ function refreshActionAvailability() {
   for (const action of UI_ACTIONS) {
     const target = actionTarget(action);
     const item = elements.applicationMenu?.querySelector(`[data-action-id="${action.id}"]`);
-    if (item) item.disabled = !target || target.disabled || (action.requiresProject && !hasProject);
+    if (item) item.disabled = (target ? target.disabled : typeof action.handler !== "function") || (action.requiresProject && !hasProject);
   }
 }
 

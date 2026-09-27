@@ -122,11 +122,12 @@ Los controles arriba/abajo reordenan pistas mediante `MoveTrack` en las tres
 superficies y conservan al Master en su mismo lado de la lista; el comando
 refresca el plan si el motor está conectado.
 
-La barra superior ofrece menús de Proyecto, Edición, Crear, Vista y Transporte a
+La barra superior ofrece menús de Proyecto, Edición, Crear, Sesión, Vista y Transporte a
 partir de un registro único de acciones, que también aporta las etiquetas y los
 atajos de navegación, guardado e historial. Los menús contextuales de clips y
 pistas filtran acciones existentes: seleccionar, preescuchar/quitar una región y
-quitar una pista cuando esa pista lo permite. Sus acciones reutilizan los
+quitar una pista cuando esa pista lo permite. Proyecto abre el flujo de
+importación de audio ya conectado y Sesión añade una escena. Sus acciones reutilizan los
 manejadores visibles y sus comandos reversibles. El catálogo todavía no cubre
 las familias completas de Proyecto, edición de clips, preferencias ni ayuda.
 
