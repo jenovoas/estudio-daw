@@ -78,6 +78,7 @@ struct MidiClipSummary {
     id: String,
     name: String,
     track_id: String,
+    ppq: u32,
     start_beats: f64,
     duration_beats: f64,
     note_count: usize,
@@ -291,6 +292,7 @@ fn summarize(application: &ProjectApplication, audio_engine_connected: bool) -> 
                 id: clip.id.clone(),
                 name: clip.name.clone(),
                 track_id: clip.track_id.clone(),
+                ppq: clip.take.ppq,
                 start_beats: clip.start_tick as f64 / ppq,
                 duration_beats: clip.duration_ticks as f64 / ppq,
                 note_count: clip
@@ -450,6 +452,45 @@ fn edit_audio_region(
         audio
             .refresh_project(&project, settings.active())
             .map_err(|error| format!("la edición del proyecto quedó aplicada, pero no se pudo actualizar el plan de audio: {error}"))?;
+    }
+    Ok(summarize(application, connected))
+}
+
+#[tauri::command]
+fn quantize_midi_clip(
+    clip_id: String,
+    grid_ticks: u64,
+    state: State<'_, DesktopState>,
+) -> Result<UiSnapshot, String> {
+    if grid_ticks == 0 {
+        return Err("la rejilla de cuantización debe ser mayor que cero".into());
+    }
+    let mut application = state
+        .application
+        .lock()
+        .map_err(|_| "el estado de la aplicación quedó bloqueado".to_owned())?;
+    let application = application
+        .as_mut()
+        .ok_or_else(|| "primero abre un proyecto".to_owned())?;
+    application
+        .execute_project(ProjectCommand::QuantizeMidiClip {
+            clip_id,
+            grid_ticks,
+        })
+        .map_err(|error| error.to_string())?;
+    let project = application.snapshot().project.project;
+    let mut audio = state
+        .audio
+        .lock()
+        .map_err(|_| "el estado del motor de audio quedó bloqueado".to_owned())?;
+    let connected = audio.is_connected();
+    if connected {
+        let settings = load_audio_runtime_settings().map_err(|error| error.to_string())?;
+        audio
+            .refresh_project(&project, settings.active())
+            .map_err(|error| {
+                format!("el clip se cuantizó, pero no se pudo actualizar el plan de audio: {error}")
+            })?;
     }
     Ok(summarize(application, connected))
 }
@@ -1718,6 +1759,7 @@ fn main() {
             remove_track,
             import_audio,
             edit_audio_region,
+            quantize_midi_clip,
             audio_waveform,
             audio_preview,
             audio_preview_file,
@@ -1784,6 +1826,7 @@ mod tests {
         assert_eq!(snapshot.midi_clips.len(), 1);
         assert_eq!(snapshot.midi_clips[0].note_count, 7);
         assert_eq!(snapshot.midi_clips[0].notes.len(), 7);
+        assert_eq!(snapshot.midi_clips[0].ppq, demo_midi_take().ppq);
         assert_eq!(snapshot.midi_clips[0].notes[0].key, 60);
         assert_eq!(snapshot.midi_clips[0].notes[0].duration_beats, 0.75);
         assert!((snapshot.midi_clips[0].duration_beats - 6.75).abs() < f64::EPSILON);
@@ -1818,6 +1861,8 @@ mod tests {
         ];
         let snapshot = summarize(&ProjectApplication::new(project), false);
 
+        assert_eq!(snapshot.midi_clips[0].ppq, 480);
+        assert_eq!(snapshot.midi_clips[1].ppq, 960);
         assert_eq!(snapshot.midi_clips[0].start_beats, 1.0);
         assert_eq!(snapshot.midi_clips[0].duration_beats, 2.0);
         assert_eq!(snapshot.midi_clips[1].start_beats, 2.0);

@@ -139,7 +139,8 @@ const UI_ACTIONS = [
   { id: "transport.loopA", label: "Fijar inicio del rango A", menu: "Transporte", target: "loopPointA", requiresProject: true },
   { id: "transport.loopB", label: "Fijar fin del rango B", menu: "Transporte", target: "loopPointB", requiresProject: true },
   { id: "transport.loopClear", label: "Limpiar rango A/B", menu: "Transporte", target: "loopRangeClear", requiresProject: true },
-  { id: "clip.select", label: "Seleccionar clip o región", menu: "Contexto", contexts: ["clip", "audio"] },
+  { id: "clip.select", label: "Seleccionar clip o región", menu: "Contexto", contexts: ["clip", "audio", "midi"] },
+  { id: "midi.quantize", label: "Cuantizar clip MIDI a rejilla actual", menu: "Contexto", contexts: ["midi"] },
   { id: "audio.preview", label: "Preescuchar región", menu: "Contexto", contexts: ["audio"] },
   { id: "audio.remove", label: "Quitar región", menu: "Contexto", contexts: ["audio"] },
   { id: "track.moveUp", label: "Mover pista antes", menu: "Contexto", contexts: ["track"] },
@@ -162,6 +163,16 @@ function executeUiAction(action, context = null) {
     context?.clip?.querySelector(".audio-preview-button")?.click();
   } else if (action.id === "audio.remove") {
     context?.clip?.querySelector(".audio-region-remove")?.click();
+  } else if (action.id === "midi.quantize") {
+    const clip = lastSnapshot?.midiClips.find((item) => item.id === context?.clip?.dataset.clipId);
+    if (clip) {
+      const grid = elements.gridSnap.value;
+      const beatsPerGrid = grid === "bar" ? lastSnapshot.beatsPerBar : Number(grid);
+      if (beatsPerGrid > 0) {
+        const gridTicks = Math.max(1, Math.round(clip.ppq * beatsPerGrid));
+        void runCommand("Clip MIDI cuantizado", () => platform.quantizeMidiClip(clip.id, gridTicks));
+      }
+    }
   } else if (action.id === "track.moveUp") {
     context?.track?.querySelector('[data-track-order="up"]:not(:disabled)')?.click();
   } else if (action.id === "track.moveDown") {
@@ -251,11 +262,12 @@ function showContextMenu(event) {
   const clip = event.target.closest(".audio-clip, .midi-clip");
   const track = event.target.closest("[data-track-id]");
   const context = { clip, track };
-  const kind = clip?.classList.contains("audio-clip") ? "audio" : clip ? "clip" : track ? "track" : null;
+  const kind = clip?.classList.contains("audio-clip") ? "audio" : clip?.classList.contains("midi-clip") ? "midi" : track ? "track" : null;
   if (!kind) return;
   const actions = UI_ACTIONS.filter((action) => action.menu === "Contexto" && action.contexts.includes(kind)).filter((action) => {
     if (action.id === "audio.preview") return Boolean(clip?.querySelector(".audio-preview-button:not(:disabled)"));
     if (action.id === "audio.remove") return Boolean(clip?.querySelector(".audio-region-remove:not(:disabled)"));
+    if (action.id === "midi.quantize") return Boolean(clip?.dataset.ppq && elements.gridSnap.value !== "0");
     if (action.id === "track.moveUp") return Boolean(track?.querySelector('[data-track-order="up"]:not(:disabled)'));
     if (action.id === "track.moveDown") return Boolean(track?.querySelector('[data-track-order="down"]:not(:disabled)'));
     if (action.id === "track.duplicate") return Boolean(track?.querySelector(".track-remove-button"));
@@ -1170,6 +1182,7 @@ function renderSnapshot(snapshot) {
       const block = document.createElement("div");
       block.className = "midi-clip";
       block.dataset.clipId = clip.id;
+      block.dataset.ppq = String(clip.ppq);
       if (selectedClipId === clip.id) block.classList.add("is-inspected");
       block.style.setProperty("--clip-hue", String((trackIndex * 54 + 24) % 360));
       block.title = `${clip.name} · ${clip.noteCount} notas`;

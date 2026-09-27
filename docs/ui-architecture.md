@@ -136,6 +136,10 @@ control que reutiliza.
 En el menú contextual de una pista no Master también se puede duplicar: el
 comando crea IDs nuevos para pista, clips, fuentes y casillas, y conserva la
 procedencia de las fuentes compartidas sin editar sus archivos.
+En el contexto de un clip MIDI, «Cuantizar a rejilla actual» usa su PPQ
+persistido y el valor del selector de rejilla; el comando sólo cuantiza Note
+On/Off y conserva controladores. La acción se oculta cuando la rejilla está en
+modo libre.
 
 La barra de herramientas lateral y las pestañas del encabezado cambian entre
 Arreglo, Session y Mezclador. Session presenta pistas por columnas y escenas
