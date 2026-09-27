@@ -82,6 +82,10 @@ pub enum ProjectCommand {
         track_id: String,
         mixer: TrackMixerState,
     },
+    SetTrackOutput {
+        track_id: String,
+        output_track_id: Option<String>,
+    },
     SetTracksGroup {
         track_ids: Vec<String>,
         group_name: Option<String>,
@@ -371,7 +375,7 @@ impl CommandRuntime {
                         .unwrap_or(project.tracks.len())
                         .min(project.tracks.len());
                     let mut master_to_add = None;
-                    if track.role == TrackRole::Audio {
+                    if matches!(track.role, TrackRole::Audio | TrackRole::Bus) {
                         if track.output_track_id.is_none() {
                             let master = project
                                 .tracks
@@ -403,6 +407,8 @@ impl CommandRuntime {
                             };
                             track.output_track_id = Some(master.id);
                         }
+                    }
+                    if track.role == TrackRole::Audio {
                         project
                             .audio_playlists
                             .push(estudio_daw_project_model::AudioPlaylist {
@@ -621,6 +627,17 @@ impl CommandRuntime {
             ProjectCommand::RemoveTrack { track_id } => self
                 .project_history
                 .transact("remove track", |project| -> Result<(), String> {
+                    let removed = project
+                        .tracks
+                        .iter()
+                        .find(|item| item.id == track_id)
+                        .cloned()
+                        .ok_or_else(|| format!("unknown track: {track_id}"))?;
+                    for item in &mut project.tracks {
+                        if item.output_track_id.as_deref() == Some(track_id.as_str()) {
+                            item.output_track_id = removed.output_track_id.clone();
+                        }
+                    }
                     let before = project.tracks.len();
                     project.tracks.retain(|item| item.id != track_id);
                     if project.tracks.len() == before {
@@ -657,6 +674,48 @@ impl CommandRuntime {
                         .ok_or_else(|| format!("unknown track: {track_id}"))?;
                     track.mixer = mixer;
                     Ok(())
+                })
+                .map_err(|error| CommandError::Project(error.to_string()))?,
+            ProjectCommand::SetTrackOutput {
+                track_id,
+                output_track_id,
+            } => self
+                .project_history
+                .transact("set track output", |project| -> Result<(), String> {
+                    let track = project
+                        .tracks
+                        .iter()
+                        .find(|item| item.id == track_id)
+                        .ok_or_else(|| format!("unknown track: {track_id}"))?;
+                    if track.role == TrackRole::Master {
+                        return Err(String::from("the master track is the final output"));
+                    }
+                    if output_track_id.as_deref() == Some(track_id.as_str()) {
+                        return Err(String::from("a track cannot route to itself"));
+                    }
+                    if let Some(output_id) = output_track_id.as_deref() {
+                        let target = project
+                            .tracks
+                            .iter()
+                            .find(|item| item.id == output_id)
+                            .ok_or_else(|| format!("unknown output track: {output_id}"))?;
+                        if target.kind != estudio_daw_project_model::TrackKind::Audio
+                            || target.role == TrackRole::Return
+                        {
+                            return Err(String::from(
+                                "track output must target an audio, bus, or master channel",
+                            ));
+                        }
+                    }
+                    project
+                        .tracks
+                        .iter_mut()
+                        .find(|item| item.id == track_id)
+                        .ok_or_else(|| format!("unknown track: {track_id}"))?
+                        .output_track_id = output_track_id;
+                    project
+                        .validate_persisted_contracts()
+                        .map_err(|error| error.to_string())
                 })
                 .map_err(|error| CommandError::Project(error.to_string()))?,
             ProjectCommand::SetTracksGroup {

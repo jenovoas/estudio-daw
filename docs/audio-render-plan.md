@@ -61,6 +61,17 @@ Las fuentes simultáneas se agrupan en el nodo explícito
 en scratch reservado antes del stream y suma sus muestras; añadir fuentes
 independientes directamente a la cadena no las mezcla.
 
+El runtime Tauri compila el material del proyecto dentro de un nodo compuesto
+de ruteo. Éste conserva un scratch preasignado por pista, suma sus fuentes,
+aplica ganancia/panorama/activa/mute/solo y actualiza su medidor antes de
+acumular la señal en la pista de salida. El orden de buses se calcula al
+preparar el plan, desde las fuentes hacia Master; el callback sólo procesa la
+lista ya compilada. La estructura sigue siendo una cadena serial de
+`AudioNode`: las ramas y sumas por destino viven dentro de ese nodo compuesto,
+no son topología que `RenderPlanBuilder` resuelva dinámicamente. La selección
+de entradas/salidas de dispositivo, envíos y efectos aún no forma parte de ese
+recorrido interno.
+
 ## Reemplazo seguro del plan
 
 `render_plan_exchange(initial)` entrega dos endpoints: `RenderPlanProcessor`

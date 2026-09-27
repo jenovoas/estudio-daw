@@ -683,17 +683,20 @@ La primera interfaz de escritorio usa Tauri como adaptador sobre
 `estudio-daw-application`; el frontend está separado del bridge Tauri. Esta
 ventana permite abrir/guardar proyectos JSON, inspeccionar pistas y clips,
 crear una sesión vacía, añadir pistas MIDI/audio vacías o cargar una Demo MIDI,
-reproducir clips MIDI de las pistas de instrumento y controlar transporte e
-historial. Una pista de audio nueva persiste su disposición estéreo y su destino
-interno al Master; Arreglo, Session y Mezclador muestran las pistas desde la
-misma instantánea. Session muestra encabezados/casillas vacías y controles
-compartidos de mezcla; Arrangement y Mezclador exponen los mismos conmutadores
-ACT/M/S y deslizadores de ganancia/panorama para pistas no master. Esos valores se
-guardan mediante comandos y se aplican a la reproducción. Los medidores de
-pista muestran pico y RMS de bloque para pistas MIDI y audio en las tres
-superficies; la selección y los grupos organizativos se comparten, pero no enlazan
-los valores de mezcla. El Mezclador añade un canal Master con pico/RMS de la salida
-estéreo final y describe el recorrido MIDI/audio ejecutado; controles de master, entradas en vivo y ruteo siguen pendientes. Se pueden
+reproducir clips MIDI y regiones de audio, y controlar transporte e historial.
+Se pueden añadir pistas MIDI/audio y buses internos. Desde el Mezclador cada
+pista puede enrutar su salida a otra pista de audio, un bus o Master; los buses
+suman sus entradas y pueden continuar hacia otro destino. El cambio es reversible
+y las rutas cíclicas se rechazan. El plan compila este recorrido antes del stream
+y procesa buffers por pista sin asignar ni resolver conexiones en el callback.
+Arreglo, Session y Mezclador muestran las pistas desde la misma instantánea.
+Session muestra encabezados/casillas vacías y controles compartidos de mezcla;
+Arrangement y Mezclador exponen ACT/M/S y ganancia/panorama para pistas no master.
+Los grupos sólo organizan: no enlazan la mezcla de sus pistas. Los medidores de
+pista muestran pico y RMS de bloque; el canal Master aplica activa/silencio/
+ganancia cuando está persistido y mide la salida estéreo final. El ruteo de
+dispositivos, las entradas en vivo, los envíos/retornos y los procesadores siguen
+pendientes. Se pueden
 importar archivos de audio a pistas existentes,
 copiándolos a la carpeta `media` junto al proyecto o vinculando el original,
 con metadatos básicos, preescucha corta antes de confirmar la importación,

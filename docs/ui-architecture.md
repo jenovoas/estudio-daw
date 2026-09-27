@@ -92,7 +92,12 @@ proyecto reversibles. La pertenencia a un grupo sólo organiza pistas: no vincul
 ni propaga activa, silencio, solo, ganancia o panorama. Cuando el proyecto tiene
 un canal Master persistido, activa/silencio/ganancia del Master procesan la suma
 final antes de su medidor; los proyectos legados sin ese canal muestran una
-salida Master informativa sin controles editables.
+salida Master informativa sin controles editables. El selector del Mezclador
+asigna como destino una pista de audio, un bus o Master mediante un comando
+reversible. El runtime compila y valida rutas internas acíclicas (incluidos los
+buses encadenados) antes de publicar el plan y usa buffers por pista reservados
+antes del callback. Esto no selecciona puertos físicos de audio ni implementa
+entradas, envíos, retornos o procesadores.
 
 En modo navegador el dominio portable podrá compartir modelos y comandos, pero el
 backend de audio/compute será otro adaptador (por ejemplo Web Audio/AudioWorklet y

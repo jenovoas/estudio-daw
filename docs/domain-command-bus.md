@@ -41,7 +41,7 @@ mutación.
 - pistas: agregar, duplicar, renombrar, reordenar, activar y quitar; ajustar
   silencio, solo, ganancia y panorama; asignar/quitar un nombre de grupo a una
   selección de pistas en una sola operación reversible, sin vincular sus valores
-  de mezcla;
+  de mezcla; asignar una salida a una pista de audio, bus o Master;
 - escenas/casillas: crear, renombrar, reordenar y quitar escenas; asignar o
   quitar casillas que referencian clips existentes sin copiarlos;
 - audio: agregar, recortar, mover, ajustar ganancia y desvanecimientos de clips;
@@ -52,7 +52,9 @@ mutación.
 - historial: deshacer y rehacer transacciones del proyecto.
 
 Las operaciones se validan contra las relaciones del proyecto antes de
-confirmarse. Por ejemplo, una casilla no puede enlazar un clip MIDI a una pista
+confirmarse. Las rutas de salida deben apuntar a una pista de audio existente y
+no pueden formar ciclos; quitar un destino reasigna sus entradas a la salida que
+tenía ese destino. Por ejemplo, una casilla no puede enlazar un clip MIDI a una pista
 de audio. Duplicar una pista crea identidades nuevas para sus clips, fuentes,
 lista de reproducción y casillas; no copia los archivos fuente. Mover una región
 de audio cambia su posición musical y conserva el desplazamiento/duración de la

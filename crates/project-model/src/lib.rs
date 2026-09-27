@@ -175,6 +175,22 @@ impl Project {
                 }
             }
         }
+        for track in &self.tracks {
+            let mut visited = std::collections::HashSet::new();
+            let mut cursor = track;
+            while let Some(output_id) = cursor.output_track_id.as_deref() {
+                if !visited.insert(cursor.id.as_str()) {
+                    return Err(TrackValidationError::InvalidTrackOutput);
+                }
+                cursor = tracks
+                    .get(output_id)
+                    .copied()
+                    .ok_or(TrackValidationError::InvalidTrackOutput)?;
+            }
+            if !visited.insert(cursor.id.as_str()) {
+                return Err(TrackValidationError::InvalidTrackOutput);
+            }
+        }
         let mut source_ids = std::collections::HashSet::new();
         for source in &self.audio_sources {
             if source.id.trim().is_empty() || !source_ids.insert(source.id.as_str()) {

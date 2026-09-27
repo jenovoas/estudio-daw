@@ -17,6 +17,7 @@ const elements = {
   demoProject: document.querySelector("#demo-project"),
   addMidiTrack: document.querySelector("#add-midi-track"),
   addAudioTrack: document.querySelector("#add-audio-track"),
+  addBusTrack: document.querySelector("#add-bus-track"),
   save: document.querySelector("#save-project"),
   saveAs: document.querySelector("#save-project-as"),
   path: document.querySelector("#project-path"),
@@ -148,7 +149,7 @@ async function whileBusy(buttons, operation) {
 
 function setProjectEnabled(enabled) {
   hasProject = enabled;
-  for (const button of [elements.save, elements.saveAs, elements.play, elements.pause, elements.stop, elements.addMidiTrack, elements.addAudioTrack]) {
+  for (const button of [elements.save, elements.saveAs, elements.play, elements.pause, elements.stop, elements.addMidiTrack, elements.addAudioTrack, elements.addBusTrack]) {
     button.disabled = !enabled;
     if (!enabled) button.title = `${button.getAttribute("aria-label") ?? "Acción"}: abre o crea un proyecto primero`;
   }
@@ -186,14 +187,42 @@ function trackChannelDescription(track) {
   return `${input} · ${track.outputChannels} canales de salida`;
 }
 
-function trackSignalFlow(track) {
+function trackSignalFlow(track, tracks) {
   if (track.virtualMaster || track.role === "master") {
     return "Suma MIDI/audio/metrónomo → ganancia/silencio Master → medidor Master → salida del plan";
   }
-  if (track.kind === "audio") {
-    return "Regiones de audio → ganancia/desvanecimientos de región → ganancia/pan de pista → medidor → suma del plan";
+  const output = tracks.find((candidate) => candidate.id === track.outputTrackId);
+  const destination = output?.name ?? "Master";
+  if (track.role === "bus") {
+    return `Suma de pistas enrutadas → ganancia/pan de bus → medidor → ${destination}`;
   }
-  return "Eventos MIDI → instrumento → ganancia/pan → medidor → suma del plan";
+  if (track.kind === "audio") {
+    return `Regiones de audio → ganancia/desvanecimientos de región → ganancia/pan → medidor → ${destination}`;
+  }
+  return `Eventos MIDI → instrumento → ganancia/pan → medidor → ${destination}`;
+}
+
+function createTrackOutputControl(track, tracks) {
+  if (track.virtualMaster || track.role === "master") return null;
+  const targets = tracks.filter((candidate) => ["audio", "bus", "master"].includes(candidate.role));
+  if (targets.length === 0) return null;
+  const field = document.createElement("label");
+  field.className = "mixer-output-select";
+  const caption = document.createElement("span");
+  caption.textContent = "Salida";
+  const select = document.createElement("select");
+  select.setAttribute("aria-label", `Salida de ${track.name}`);
+  for (const target of targets) {
+    if (target.id === track.id) continue;
+    const option = document.createElement("option");
+    option.value = target.id;
+    option.textContent = target.role === "master" ? "Master" : target.name;
+    select.append(option);
+  }
+  select.value = track.outputTrackId ?? targets.find((target) => target.role === "master")?.id ?? "";
+  select.addEventListener("change", () => updateTrackOutput(track, select.value));
+  field.append(caption, select);
+  return field;
 }
 
 function createTrackMixerControls(track, compact = false) {
@@ -357,7 +386,7 @@ function renderSessionSurface(tracks) {
     const name = document.createElement("strong");
     name.textContent = track.name;
     const type = document.createElement("span");
-    type.textContent = track.role === "master" ? "MASTER" : track.kind.toUpperCase();
+    type.textContent = track.role === "master" ? "MASTER" : track.role === "bus" ? "BUS" : track.kind.toUpperCase();
     const channels = document.createElement("small");
     channels.textContent = trackChannelDescription(track);
     if (track.groupName) channels.textContent += ` · Grupo: ${track.groupName}`;
@@ -415,7 +444,7 @@ function renderMixerSurface(tracks) {
     role.textContent = track.role === "master" ? "MASTER" : track.kind.toUpperCase();
     const routing = document.createElement("small");
     routing.className = "mixer-flow";
-    routing.textContent = trackSignalFlow(track);
+    routing.textContent = trackSignalFlow(track, tracks);
     const mix = document.createElement("span");
     mix.className = "mixer-values";
     mix.textContent = track.virtualMaster
@@ -425,7 +454,9 @@ function renderMixerSurface(tracks) {
         : `${Number(track.gainDb).toFixed(1)} dB · Pan ${Number(track.pan).toFixed(2)}${track.mute ? " · Silencio" : ""}${track.solo ? " · Solo" : ""}${track.active ? "" : " · Inactiva"}`;
     if (track.groupName) role.textContent += ` · ${track.groupName}`;
     const selection = createTrackSelectionControl(track);
+    const outputControl = createTrackOutputControl(track, tracks);
     channel.append(...(selection ? [selection] : []), title, role, routing, mix);
+    if (outputControl) channel.append(outputControl);
     const meter = createTrackMeter(track);
     if (meter) channel.append(meter);
     const controls = createTrackMixerControls(track);
@@ -445,6 +476,13 @@ function updateTrackMixer(track, changes, title) {
     ...changes,
   };
   return runCommand(title, () => platform.setTrackMixer(track.id, mixer));
+}
+
+function updateTrackOutput(track, outputTrackId) {
+  return runCommand("Salida actualizada", () => platform.setTrackOutput(
+    track.id,
+    outputTrackId || null,
+  ));
 }
 
 function renderSnapshot(snapshot) {
@@ -532,13 +570,13 @@ function renderSnapshot(snapshot) {
     row.style.setProperty("--track-color", track.color);
     const icon = document.createElement("span");
     icon.className = `track-icon ${track.kind}`;
-    icon.textContent = track.role === "master" ? "M" : track.kind === "audio" ? "◖" : "♫";
+    icon.textContent = track.role === "master" ? "M" : track.role === "bus" ? "B" : track.kind === "audio" ? "◖" : "♫";
     const label = document.createElement("span");
     label.textContent = track.name;
     const details = document.createElement("span");
     details.className = "track-meta";
     const mixState = [track.mute ? "MUTE" : null, track.solo ? "SOLO" : null, !track.active ? "OFF" : null].filter(Boolean).join(" · ");
-    details.textContent = `${track.role === "master" ? "MASTER" : track.kind === "audio" ? "AUDIO" : "MIDI"}${track.kind === "midi" ? ` · ${track.noteCount} notas` : track.kind === "audio" ? ` · ${track.outputChannels} ch` : ""}${track.groupName ? ` · GRUPO ${track.groupName}` : ""}${mixState ? ` · ${mixState}` : ""}`;
+    details.textContent = `${track.role === "master" ? "MASTER" : track.role === "bus" ? "BUS" : track.kind === "audio" ? "AUDIO" : "MIDI"}${track.kind === "midi" ? ` · ${track.noteCount} notas` : track.role === "audio" ? ` · ${track.outputChannels} ch` : ""}${track.groupName ? ` · GRUPO ${track.groupName}` : ""}${mixState ? ` · ${mixState}` : ""}`;
     const name = document.createElement("div");
     name.className = "track-name";
     name.append(createTrackSelectionControl(track), icon, label);
@@ -1020,7 +1058,8 @@ async function addTrack(kind, button) {
   await whileBusy([button], async () => { try {
     const snapshot = await platform.addTrack(kind);
     renderSnapshot(snapshot);
-    setNotice(`${kind === "audio" ? "Pista de audio" : "Pista MIDI"} creada`, "La pista quedó en el proyecto y su creación puede deshacerse desde el historial.");
+    const label = kind === "audio" ? "Pista de audio" : kind === "bus" ? "Bus" : "Pista MIDI";
+    setNotice(`${label} creada`, "La pista quedó en el proyecto y su creación puede deshacerse desde el historial.");
   } catch (error) {
     setNotice("No se pudo crear la pista", String(error));
   } });
@@ -1028,6 +1067,7 @@ async function addTrack(kind, button) {
 
 elements.addMidiTrack.addEventListener("click", () => addTrack("midi", elements.addMidiTrack));
 elements.addAudioTrack.addEventListener("click", () => addTrack("audio", elements.addAudioTrack));
+elements.addBusTrack.addEventListener("click", () => addTrack("bus", elements.addBusTrack));
 elements.ruler.addEventListener("click", async (event) => {
   setEditCursorFromX(event.clientX, elements.ruler.getBoundingClientRect());
   if (projectTransportState !== "playing") return;

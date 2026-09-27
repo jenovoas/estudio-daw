@@ -420,12 +420,14 @@ fn add_track(kind: String, state: State<'_, DesktopState>) -> Result<UiSnapshot,
     let application = application
         .as_mut()
         .ok_or_else(|| "primero crea o abre un proyecto".to_owned())?;
-    let (track_kind, name, instrument) = match kind.as_str() {
-        "audio" => (TrackKind::Audio, "Audio", None),
+    let (track_kind, name, instrument, role) = match kind.as_str() {
+        "audio" => (TrackKind::Audio, "Audio", None, TrackRole::Audio),
+        "bus" => (TrackKind::Audio, "Bus", None, TrackRole::Bus),
         "midi" => (
             TrackKind::Midi,
             "MIDI",
             Some(estudio_daw_project_model::InstrumentConfig::Sine),
+            TrackRole::Instrument,
         ),
         _ => return Err(format!("tipo de pista desconocido: {kind}")),
     };
@@ -435,7 +437,7 @@ fn add_track(kind: String, state: State<'_, DesktopState>) -> Result<UiSnapshot,
         .tracks
         .iter()
         .filter(|track| match &track.kind {
-            TrackKind::Audio => track.role == TrackRole::Audio,
+            TrackKind::Audio => track.role == role,
             TrackKind::Midi => track.role == TrackRole::Midi || track.role == TrackRole::Instrument,
         })
         .count();
@@ -443,21 +445,25 @@ fn add_track(kind: String, state: State<'_, DesktopState>) -> Result<UiSnapshot,
         id: format!("track-{}-{index}", unix_timestamp_millis()),
         name: format!("{name} {}", same_kind_count + 1),
         kind: track_kind,
-        role: if kind == "audio" {
-            TrackRole::Audio
-        } else {
-            TrackRole::Instrument
-        },
+        role,
         output_track_id: None,
         channel_config: TrackChannelConfig {
-            input_channels: if kind == "audio" { Some(2) } else { None },
+            input_channels: if role == TrackRole::Audio {
+                Some(2)
+            } else {
+                None
+            },
             output_channels: 2,
         },
         color: "#58a6b8".into(),
         group_name: None,
         mixer: TrackMixerState::default(),
         notes: Vec::new(),
-        audio_channels: if kind == "audio" { Some(2) } else { None },
+        audio_channels: if role == TrackRole::Audio {
+            Some(2)
+        } else {
+            None
+        },
         media_source: None,
         instrument,
     };
@@ -1037,6 +1043,42 @@ fn set_track_mixer(
 }
 
 #[tauri::command]
+fn set_track_output(
+    track_id: String,
+    output_track_id: Option<String>,
+    state: State<'_, DesktopState>,
+) -> Result<UiSnapshot, String> {
+    let mut application = state
+        .application
+        .lock()
+        .map_err(|_| "el estado de la aplicación quedó bloqueado".to_owned())?;
+    let application = application
+        .as_mut()
+        .ok_or_else(|| "primero abre un proyecto".to_owned())?;
+    application
+        .execute_project(ProjectCommand::SetTrackOutput {
+            track_id,
+            output_track_id,
+        })
+        .map_err(|error| error.to_string())?;
+    let project = application.snapshot().project.project;
+    let mut audio = state
+        .audio
+        .lock()
+        .map_err(|_| "el estado del motor de audio quedó bloqueado".to_owned())?;
+    let connected = audio.is_connected();
+    if connected {
+        let settings = load_audio_runtime_settings().map_err(|error| error.to_string())?;
+        audio
+            .refresh_project(&project, settings.active())
+            .map_err(|error| {
+                format!("el ruteo quedó guardado, pero no se pudo actualizar el audio: {error}")
+            })?;
+    }
+    Ok(summarize(application, connected))
+}
+
+#[tauri::command]
 fn set_tracks_group(
     track_ids: Vec<String>,
     group_name: Option<String>,
@@ -1139,6 +1181,7 @@ fn main() {
             save_project_as,
             set_transport,
             set_track_mixer,
+            set_track_output,
             set_tracks_group,
             history_action,
             audio_runtime_settings,

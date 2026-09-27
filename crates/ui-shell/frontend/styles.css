@@ -208,6 +208,8 @@ button:disabled { opacity: .4; cursor: not-allowed !important; }
 .mixer-toggle.is-selected { border-color: #c38a55; background: #51402f; color: #ffd4aa; }
 .mixer-slider { display: flex; flex-direction: column; gap: 3px; color: #aeb4b6; font-size: 8px; }
 .mixer-slider input { width: 100%; height: 12px; margin: 0; accent-color: #d89b63; }
+.mixer-output-select { display: flex; flex-direction: column; gap: 3px; color: #aeb4b6; font-size: 8px; }
+.mixer-output-select select { width: 100%; min-width: 0; border: 1px solid #50575a; border-radius: 3px; padding: 3px 4px; background: #25292b; color: #d4d8da; font-size: 8px; }
 .mixer-controls-compact { grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 2px; }
 .mixer-controls-compact .mixer-toggle { grid-column: span 2; min-height: 18px; padding: 1px 2px; font-size: 6px; }
 .mixer-controls-compact .mixer-slider { grid-column: span 3; gap: 2px; font-size: 6px; }

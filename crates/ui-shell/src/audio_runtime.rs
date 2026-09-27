@@ -11,12 +11,12 @@ use estudio_daw_audio_engine::{
 use estudio_daw_audio_platform::{run_pipewire_output_until, PipeWireStreamConfig};
 use estudio_daw_midi_engine::RecordedMidiMessage;
 use estudio_daw_project_model::{
-    AudioClip, InstrumentConfig, Project, TrackKind, TransportLoopRange,
+    AudioClip, InstrumentConfig, Project, TrackKind, TrackRole, TransportLoopRange,
 };
 use estudio_daw_runtime_diagnostics::{audio_devices, DeviceInfo};
 use estudio_daw_synth::{
-    midi_event_queue, InstrumentMixerNode, SineSynthNode, SoundFontEventSender,
-    SoundFontInstrumentWorker, SynthEventSender, SynthMidiEvent,
+    midi_event_queue, SineSynthNode, SoundFontEventSender, SoundFontInstrumentWorker,
+    SynthEventSender, SynthMidiEvent,
 };
 use std::{
     collections::HashMap,
@@ -159,13 +159,6 @@ struct AudioClipStream {
     gain_right: f32,
 }
 
-struct TrackProcessingNode {
-    source: Box<dyn estudio_daw_audio_engine::AudioNode>,
-    gain_left: f32,
-    gain_right: f32,
-    meter: Arc<TrackMeter>,
-}
-
 #[derive(Default)]
 struct TrackMeter {
     peak: AtomicU32,
@@ -176,21 +169,6 @@ const MASTER_METER_ID: &str = "__master__";
 
 struct MasterOutputMeterNode {
     meter: Arc<TrackMeter>,
-}
-
-struct MasterOutputProcessingNode {
-    gain: f32,
-    enabled: bool,
-}
-
-impl AudioNode for MasterOutputProcessingNode {
-    fn process(&mut self, interleaved: &mut [f32]) -> Result<(), AudioNodeError> {
-        let gain = if self.enabled { self.gain } else { 0.0 };
-        for sample in interleaved {
-            *sample *= gain;
-        }
-        Ok(())
-    }
 }
 
 impl AudioNode for MasterOutputMeterNode {
@@ -226,37 +204,20 @@ impl TrackMeter {
     }
 }
 
-impl AudioNode for TrackProcessingNode {
-    fn process(&mut self, interleaved: &mut [f32]) -> Result<(), AudioNodeError> {
-        self.source.process(interleaved)?;
-        if interleaved.len() % 2 != 0 {
-            return Err(AudioNodeError::InvalidBlockLength);
-        }
-        for stereo in interleaved.chunks_exact_mut(2) {
-            stereo[0] *= self.gain_left;
-            stereo[1] *= self.gain_right;
-        }
-        self.meter.update(interleaved);
-        Ok(())
-    }
-}
-
 struct AudioClipMixerNode {
     streams: Vec<AudioClipStream>,
     source_scratch: Vec<f32>,
     mix_scratch: Vec<f32>,
     frame_cursor: u64,
-    meter: Arc<TrackMeter>,
 }
 
 impl AudioClipMixerNode {
-    fn new(streams: Vec<AudioClipStream>, max_samples: usize, meter: Arc<TrackMeter>) -> Self {
+    fn new(streams: Vec<AudioClipStream>, max_samples: usize) -> Self {
         Self {
             streams,
             source_scratch: vec![0.0; max_samples],
             mix_scratch: vec![0.0; max_samples],
             frame_cursor: 0,
-            meter,
         }
     }
 }
@@ -312,7 +273,6 @@ impl AudioNode for AudioClipMixerNode {
                     self.source_scratch[input_offset + 1] * gain * stream.gain_right;
             }
         }
-        self.meter.update(&self.mix_scratch[..interleaved.len()]);
         let sample_count = interleaved.len();
         for (output, track_sample) in interleaved
             .iter_mut()
@@ -323,6 +283,256 @@ impl AudioNode for AudioClipMixerNode {
         self.frame_cursor = self.frame_cursor.saturating_add(frames as u64);
         Ok(())
     }
+}
+
+struct RoutedTrackSignal {
+    sources: Vec<Box<dyn AudioNode>>,
+    scratch: Vec<f32>,
+    output_index: Option<usize>,
+    gain_left: f32,
+    gain_right: f32,
+    enabled: bool,
+    is_master: bool,
+    meter: Arc<TrackMeter>,
+}
+
+struct ProjectRoutingNode {
+    tracks: Vec<RoutedTrackSignal>,
+    order: Vec<usize>,
+    global_sources: Vec<Box<dyn AudioNode>>,
+    source_scratch: Vec<f32>,
+    master_index: Option<usize>,
+}
+
+impl ProjectRoutingNode {
+    fn new(
+        project: &Project,
+        mut sources_by_track: HashMap<String, Vec<Box<dyn AudioNode>>>,
+        mut audio_streams: HashMap<String, Vec<AudioClipStream>>,
+        global_sources: Vec<Box<dyn AudioNode>>,
+        max_samples: usize,
+        route_audibility: &[bool],
+        output_indices: Vec<Option<usize>>,
+        order: Vec<usize>,
+        master_index: Option<usize>,
+        track_meters: &Arc<Mutex<HashMap<String, Arc<TrackMeter>>>>,
+    ) -> Result<Self, String> {
+        let mut tracks = Vec::with_capacity(project.tracks.len());
+        for (index, track) in project.tracks.iter().enumerate() {
+            let mut sources = sources_by_track.remove(&track.id).unwrap_or_default();
+            if let Some(streams) = audio_streams.remove(&track.id) {
+                sources.push(Box::new(AudioClipMixerNode::new(streams, max_samples)));
+            }
+            let audible = route_audibility.get(index).copied().unwrap_or(false);
+            let enabled = if track.role == TrackRole::Master {
+                track.mixer.active && !track.mixer.mute
+            } else {
+                track.mixer.active && audible && (!track.mixer.mute || track.mixer.solo)
+            };
+            let (gain_left, gain_right) = track_gain_pan(track);
+            tracks.push(RoutedTrackSignal {
+                sources,
+                scratch: vec![0.0; max_samples],
+                output_index: output_indices[index],
+                gain_left,
+                gain_right,
+                enabled,
+                is_master: track.role == TrackRole::Master,
+                meter: track_meter_for(track_meters, &track.id)?,
+            });
+        }
+        Ok(Self {
+            tracks,
+            order,
+            global_sources,
+            source_scratch: vec![0.0; max_samples],
+            master_index,
+        })
+    }
+}
+
+impl AudioNode for ProjectRoutingNode {
+    fn process(&mut self, interleaved: &mut [f32]) -> Result<(), AudioNodeError> {
+        if interleaved.len() % 2 != 0 || interleaved.len() > self.source_scratch.len() {
+            return Err(AudioNodeError::InvalidBlockLength);
+        }
+        let sample_count = interleaved.len();
+        interleaved.fill(0.0);
+        for track in &mut self.tracks {
+            track.scratch[..sample_count].fill(0.0);
+            for source in &mut track.sources {
+                self.source_scratch[..sample_count].fill(0.0);
+                source.process(&mut self.source_scratch[..sample_count])?;
+                for (mixed, sample) in track
+                    .scratch
+                    .iter_mut()
+                    .zip(self.source_scratch.iter())
+                    .take(sample_count)
+                {
+                    *mixed += *sample;
+                }
+            }
+        }
+        for source in &mut self.global_sources {
+            self.source_scratch[..sample_count].fill(0.0);
+            source.process(&mut self.source_scratch[..sample_count])?;
+            if let Some(master_index) = self.master_index {
+                for (mixed, sample) in self.tracks[master_index]
+                    .scratch
+                    .iter_mut()
+                    .zip(self.source_scratch.iter())
+                    .take(sample_count)
+                {
+                    *mixed += *sample;
+                }
+            } else {
+                for (output, sample) in interleaved
+                    .iter_mut()
+                    .zip(self.source_scratch[..sample_count].iter())
+                {
+                    *output += *sample;
+                }
+            }
+        }
+        for &index in &self.order {
+            let track = &mut self.tracks[index];
+            let gain_left = if track.enabled { track.gain_left } else { 0.0 };
+            let gain_right = if track.enabled { track.gain_right } else { 0.0 };
+            for stereo in track.scratch[..sample_count].chunks_exact_mut(2) {
+                stereo[0] *= gain_left;
+                stereo[1] *= gain_right;
+            }
+            track.meter.update(&track.scratch[..sample_count]);
+            let destination = track.output_index;
+            let is_master = track.is_master;
+            if is_master || destination.is_none() {
+                for (output, sample) in interleaved
+                    .iter_mut()
+                    .zip(track.scratch[..sample_count].iter())
+                {
+                    *output += *sample;
+                }
+            } else if let Some(destination) = destination {
+                let (source, target) = if index < destination {
+                    let (before, after) = self.tracks.split_at_mut(destination);
+                    (
+                        &before[index].scratch[..sample_count],
+                        &mut after[0].scratch[..sample_count],
+                    )
+                } else {
+                    let (before, after) = self.tracks.split_at_mut(index);
+                    (
+                        &after[0].scratch[..sample_count],
+                        &mut before[destination].scratch[..sample_count],
+                    )
+                };
+                for (output, sample) in target.iter_mut().zip(source.iter()) {
+                    *output += *sample;
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
+fn track_output_topology(
+    project: &Project,
+) -> Result<(Vec<Option<usize>>, Vec<usize>, Option<usize>), String> {
+    let track_indices: HashMap<&str, usize> = project
+        .tracks
+        .iter()
+        .enumerate()
+        .map(|(index, track)| (track.id.as_str(), index))
+        .collect();
+    let master_index = project
+        .tracks
+        .iter()
+        .position(|track| track.role == TrackRole::Master);
+    let mut output_indices = Vec::with_capacity(project.tracks.len());
+    for track in &project.tracks {
+        let destination = if track.role == TrackRole::Master {
+            None
+        } else if let Some(output_id) = track.output_track_id.as_deref() {
+            Some(*track_indices.get(output_id).ok_or_else(|| {
+                format!("la pista '{}' apunta a una salida inexistente", track.name)
+            })?)
+        } else {
+            master_index
+        };
+        output_indices.push(destination);
+    }
+    let mut depths = vec![0_usize; project.tracks.len()];
+    for start in 0..project.tracks.len() {
+        let mut current = start;
+        let mut seen = std::collections::HashSet::new();
+        while let Some(destination) = output_indices[current] {
+            if !seen.insert(current) {
+                return Err("el ruteo interno contiene un ciclo".into());
+            }
+            depths[start] = depths[start].saturating_add(1);
+            current = destination;
+        }
+        if !seen.insert(current) {
+            return Err("el ruteo interno contiene un ciclo".into());
+        }
+    }
+    let mut order: Vec<_> = (0..project.tracks.len()).collect();
+    order.sort_by(|left, right| depths[*right].cmp(&depths[*left]));
+    Ok((output_indices, order, master_index))
+}
+
+fn route_audibility(project: &Project, outputs: &[Option<usize>]) -> Vec<bool> {
+    let mut audible = vec![false; project.tracks.len()];
+    let solos: Vec<_> = project
+        .tracks
+        .iter()
+        .enumerate()
+        .filter(|(_, track)| {
+            track.role != TrackRole::Master && track.mixer.active && track.mixer.solo
+        })
+        .map(|(index, _)| index)
+        .collect();
+    if solos.is_empty() {
+        audible.fill(true);
+        return audible;
+    }
+    for solo in solos {
+        let mut current = solo;
+        let mut seen = std::collections::HashSet::new();
+        loop {
+            if !seen.insert(current) {
+                break;
+            }
+            audible[current] = true;
+            let Some(destination) = outputs.get(current).copied().flatten() else {
+                break;
+            };
+            current = destination;
+        }
+        for candidate in 0..project.tracks.len() {
+            let mut path = Vec::new();
+            let mut current = candidate;
+            let mut seen = std::collections::HashSet::new();
+            loop {
+                if current == solo {
+                    for index in path {
+                        audible[index] = true;
+                    }
+                    audible[solo] = true;
+                    break;
+                }
+                if !seen.insert(current) {
+                    break;
+                }
+                path.push(current);
+                let Some(destination) = outputs.get(current).copied().flatten() else {
+                    break;
+                };
+                current = destination;
+            }
+        }
+    }
+    audible
 }
 
 /// Publica la posición musical desde los mismos bloques que consume PipeWire.
@@ -1010,8 +1220,8 @@ impl AudioRuntimeHost {
     }
 }
 
-fn track_is_audible(track: &estudio_daw_project_model::Track, has_solo: bool) -> bool {
-    track.mixer.active && (!has_solo || track.mixer.solo) && (!track.mixer.mute || track.mixer.solo)
+fn track_is_audible(track: &estudio_daw_project_model::Track, included_by_solo: bool) -> bool {
+    track.mixer.active && included_by_solo && (!track.mixer.mute || track.mixer.solo)
 }
 
 fn track_gain_pan(track: &estudio_daw_project_model::Track) -> (f32, f32) {
@@ -1127,13 +1337,11 @@ fn build_project_playback_with_end(
     let start_position_frame = ((u128::from(start_position_micros) * u128::from(sample_rate))
         / 1_000_000)
         .min(u128::from(u64::MAX)) as u64;
-    let has_solo = project.tracks.iter().any(|track| {
-        track.role != estudio_daw_project_model::TrackRole::Master
-            && track.mixer.active
-            && track.mixer.solo
-    });
-    let mut sources: Vec<Box<dyn estudio_daw_audio_engine::AudioNode>> = Vec::new();
-    sources.push(Box::new(MetronomeNode::new(
+    let (output_indices, route_order, master_index) = track_output_topology(project)?;
+    let route_audibility = route_audibility(project, &output_indices);
+    let mut sources_by_track: HashMap<String, Vec<Box<dyn AudioNode>>> = HashMap::new();
+    let mut global_sources: Vec<Box<dyn AudioNode>> = Vec::new();
+    global_sources.push(Box::new(MetronomeNode::new(
         metronome_enabled,
         sample_rate,
         bpm,
@@ -1145,14 +1353,13 @@ fn build_project_playback_with_end(
     let mut schedule = Vec::new();
     let mut sequence = 0_u64;
 
-    for track in &project.tracks {
+    for (track_index, track) in project.tracks.iter().enumerate() {
         if !matches!(&track.kind, TrackKind::Midi) {
             continue;
         }
-        if !track_is_audible(track, has_solo) {
+        if !track_is_audible(track, route_audibility[track_index]) {
             continue;
         }
-        let (gain_left, gain_right) = track_gain_pan(track);
         let sender_index = senders.len();
         let mut has_events = false;
         for clip in project
@@ -1402,13 +1609,10 @@ fn build_project_playback_with_end(
                 let (sender, receiver) = midi_event_queue();
                 let node = SineSynthNode::new(sample_rate, channels, receiver)
                     .map_err(|error| error.to_string())?;
-                let meter = track_meter_for(&track_meters, &track.id)?;
-                sources.push(Box::new(TrackProcessingNode {
-                    source: Box::new(node),
-                    gain_left,
-                    gain_right,
-                    meter,
-                }));
+                sources_by_track
+                    .entry(track.id.clone())
+                    .or_default()
+                    .push(Box::new(node));
                 senders.push(EventSender::Sine(sender));
             }
             InstrumentConfig::FluidSynth {
@@ -1427,13 +1631,10 @@ fn build_project_playback_with_end(
                     )
                     .map_err(|error| error.to_string())?;
                 senders.push(EventSender::SoundFont(worker.event_sender()));
-                let meter = track_meter_for(&track_meters, &track.id)?;
-                sources.push(Box::new(TrackProcessingNode {
-                    source: Box::new(node),
-                    gain_left,
-                    gain_right,
-                    meter,
-                }));
+                sources_by_track
+                    .entry(track.id.clone())
+                    .or_default()
+                    .push(Box::new(node));
                 workers.push(worker);
             }
         }
@@ -1477,10 +1678,16 @@ fn build_project_playback_with_end(
                     clip.name
                 )
             })?;
-        if !track_is_audible(track, has_solo) {
+        let Some(track_index) = project
+            .tracks
+            .iter()
+            .position(|candidate| candidate.id == track.id)
+        else {
+            continue;
+        };
+        if !track_is_audible(track, route_audibility[track_index]) {
             continue;
         }
-        let (track_gain_left, track_gain_right) = track_gain_pan(track);
         let source_rate = source.sample_rate_hz.unwrap_or(clip.sample_rate);
         let to_output_frames = |source_samples: u64| -> u64 {
             ((u128::from(source_samples) * u128::from(sample_rate))
@@ -1531,8 +1738,8 @@ fn build_project_playback_with_end(
                 clip_offset_frames,
                 fade_in_frames: to_output_frames(clip.fade_in_samples),
                 fade_out_frames: to_output_frames(clip.fade_out_samples),
-                gain_left: 10.0_f32.powf(clip.gain_db / 20.0) * track_gain_left,
-                gain_right: 10.0_f32.powf(clip.gain_db / 20.0) * track_gain_right,
+                gain_left: 10.0_f32.powf(clip.gain_db / 20.0),
+                gain_right: 10.0_f32.powf(clip.gain_db / 20.0),
             });
         decoder_pumps.push(pump);
     }
@@ -1556,11 +1763,18 @@ fn build_project_playback_with_end(
     }
     schedule.sort_by_key(|event| (event.at_tick, event.sequence));
     let mut builder = RenderPlanBuilder::new();
-    builder.add_node(InstrumentMixerNode::new(sources, max_samples));
-    for (track_id, streams) in audio_streams {
-        let meter = track_meter_for(&track_meters, &track_id)?;
-        builder.add_node(AudioClipMixerNode::new(streams, max_samples, meter));
-    }
+    builder.add_node(ProjectRoutingNode::new(
+        project,
+        sources_by_track,
+        audio_streams,
+        global_sources,
+        max_samples,
+        &route_audibility,
+        output_indices,
+        route_order,
+        master_index,
+        &track_meters,
+    )?);
     if let Some(end_after_frames) = loop_end_frames {
         builder.add_node(LoopBoundaryGateNode {
             frame_cursor: 0,
@@ -1574,15 +1788,6 @@ fn build_project_playback_with_end(
         tempo_bpm: bpm,
         position_ticks,
         end_position_ticks,
-    });
-    let master_mixer = project
-        .tracks
-        .iter()
-        .find(|track| track.role == estudio_daw_project_model::TrackRole::Master)
-        .map(|track| &track.mixer);
-    builder.add_node(MasterOutputProcessingNode {
-        gain: master_mixer.map_or(1.0, |mixer| 10.0_f32.powf(mixer.gain_db / 20.0)),
-        enabled: master_mixer.map_or(true, |mixer| mixer.active && !mixer.mute),
     });
     builder.add_node(MasterOutputMeterNode {
         meter: track_meter_for(&track_meters, MASTER_METER_ID)?,
