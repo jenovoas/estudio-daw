@@ -263,6 +263,8 @@ y el avance no marcado como completo en `tasks.md`.
 
 - HEAD publicado al iniciar el corte: `183e938`. Hay implementación local pendiente de publicar: decodificación `ffmpeg` incremental en workers, rings PCM acotados, mezcla de regiones con MIDI y aplicación de offset, duración, canales, ganancia y fades.
 - Verificación: `cargo check -p estudio-daw-ui-shell`, `cargo fmt --all -- --check`, `node --check crates/ui-shell/frontend/main.js`, `git diff --check` y `openspec validate workstation-arrangement-surface-v2` pasaron. No se ejecutaron pruebas ni QA acústica. OpenSpec 2.3 permanece abierta hasta cubrir loop, búsqueda/cursor compartido, actualización del plan en caliente y QA.
+- Avance local de 4.3: la posición se deriva de `TransportClock` dentro del plan PipeWire; la UI presenta lectura y cabezal en Arreglo. La pausa congela el valor y Stop lo reinicia. Loop, seek y posición inicial elegible siguen abiertos.
+- Verificación local de 4.3: `cargo check -p estudio-daw-ui-shell`, fmt check, `node --check` de ambos scripts Tauri, diff check y validación OpenSpec pasan; no se ejecutó suite ni QA en hardware.
 - 2.2 permanece abierta por QA visual de importación/edición. Continuar desde el plan aprobado; no detener el trabajo sólo porque una verificación humana quede pendiente.
 
 Leer `docs/HANDOFF_CONTINUACION_2026-09-27.md` antes de continuar. HEAD

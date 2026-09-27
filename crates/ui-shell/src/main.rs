@@ -786,6 +786,15 @@ fn project_snapshot(state: State<'_, DesktopState>) -> Result<UiSnapshot, String
 }
 
 #[tauri::command]
+fn transport_position(state: State<'_, DesktopState>) -> Result<u64, String> {
+    Ok(state
+        .audio
+        .lock()
+        .map_err(|_| "el estado del motor de audio quedó bloqueado".to_owned())?
+        .position_ticks())
+}
+
+#[tauri::command]
 fn save_project(state: State<'_, DesktopState>) -> Result<UiSnapshot, String> {
     let application = state
         .application
@@ -948,6 +957,7 @@ fn main() {
             demo_midi_project,
             open_project,
             project_snapshot,
+            transport_position,
             save_project,
             save_project_as,
             set_transport,

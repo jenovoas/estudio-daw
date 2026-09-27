@@ -701,9 +701,10 @@ incluye lanzamiento de clips en Session, edición de clips/notas ni
 posicionamiento compartido del transporte. Play decodifica las
 regiones de audio de forma incremental en workers, las precarga en rings PCM
 acotados y las mezcla con instrumentos MIDI; el callback no decodifica ni hace
-I/O. Todavía faltan bucles, búsqueda/seguimiento del cursor, actualizar el plan
-sin detener el transporte, selección de salidas físicas, grabación live y
-monitorización de entrada. No
+I/O. La posición y el cabezal de reproducción de Arreglo siguen los frames
+procesados y se congelan en pausa. Todavía faltan bucles, búsqueda/seguimiento
+del cursor, actualización del plan durante la reproducción, selección de
+salidas físicas, grabación live y monitorización de entrada. No
 se declara terminada la interfaz. La propuesta y las tareas abiertas de
 [workstation-arrangement-surface-v2](openspec/changes/workstation-arrangement-surface-v2/)
 registran Ableton Live 12 como referencia de UX prioritaria y Ardour sólo como

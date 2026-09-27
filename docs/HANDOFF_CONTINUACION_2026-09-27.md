@@ -6,8 +6,9 @@
 - `AudioPcmDecoder` usa `ffmpeg` para transmitir PCM f32 estéreo. Un worker por región llena un ring PCM SPSC de un segundo, limitado a 64 regiones y precargado antes de abrir PipeWire. `AudioClipMixerNode` mezcla en el plan ya compilado con MIDI y aplica posición inicial, desplazamiento/duración, canales, ganancia y fades. El callback sólo consume el ring y mezcla en scratch preasignado.
 - Pause congela el plan; Stop libera los workers/cancela `ffmpeg`. Cambiar regiones mientras corre guarda el proyecto pero no reconstruye el plan activo; detener e iniciar carga los cambios. El transporte aún empieza en cero, sin búsqueda/seguimiento del cursor ni bucle.
 - `workstation-arrangement-surface-v2` permanece en 9/35; 2.2 sigue abierta por QA visual y 2.3 sigue abierta por las capacidades de transporte ausentes y QA acústica. No marcar ninguna completa por esta implementación parcial.
-- Verificación prevista para este corte: `cargo check -p estudio-daw-ui-shell`, `cargo fmt --all -- --check`, `node --check crates/ui-shell/frontend/main.js`, `git diff --check` y validación OpenSpec; no se ejecuta suite de pruebas ni QA física en esta intervención.
-- Próximo paso aprobado: continuar el plan de trabajo con las dependencias siguientes de 2.3 (loop/búsqueda/actualización de plan) y luego abrir los cortes 2.4/2.5 según OpenSpec. Mantener el callback libre de asignación, bloqueo e I/O.
+- Avance local de 4.3: `TransportPositionNode` publica la posición musical calculada por `TransportClock` a partir de los frames procesados por PipeWire; la UI dibuja y muestra el cabezal. Sigue pendiente búsqueda, posición inicial elegible y loop; la implementación no usa reloj de pared para mover el cabezal.
+- Verificación del corte local: `cargo check -p estudio-daw-ui-shell`, `cargo fmt --all -- --check`, `node --check` para `main.js` y `platform-tauri.js`, `git diff --check` y validación OpenSpec pasan; no se ejecutaron pruebas ni QA física.
+- Próximo paso aprobado: continuar 2.3 (loop/búsqueda/actualización de plan) y 4.3 (posición inicial elegible/bucle y resto de transporte), después abrir los cortes 2.4/2.5 según OpenSpec. Mantener el callback libre de asignación, bloqueo e I/O.
 
 ## Contexto histórico — edición de regiones de audio 2.2
 

@@ -3,7 +3,7 @@
 //! La preparación de instrumentos y el scheduler corren fuera del callback. El
 //! callback PipeWire sólo procesa el plan ya compilado y memoria preasignada.
 
-use estudio_daw_application::AudioProfileSettings;
+use estudio_daw_application::{AudioProfileSettings, TransportClock};
 use estudio_daw_audio_engine::{
     render_plan_exchange, AudioNode, AudioNodeError, RenderPlanBuilder, SampleRingBuffer,
 };
@@ -18,7 +18,7 @@ use estudio_daw_synth::{
 use std::{
     io::Read,
     sync::{
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
         mpsc, Arc,
     },
     thread::{self, JoinHandle},
@@ -159,6 +159,32 @@ struct AudioClipMixerNode {
     frame_cursor: u64,
 }
 
+/// Publica la posición musical desde los mismos bloques que consume PipeWire.
+/// El nodo corre primero en el plan y conserva el resto fraccional entre
+/// callbacks; la lectura desde Tauri usa un atómico y nunca toca el callback.
+struct TransportPositionNode {
+    clock: TransportClock,
+    sample_rate: u32,
+    tempo_bpm: f64,
+    position_ticks: Arc<AtomicU64>,
+}
+
+impl AudioNode for TransportPositionNode {
+    fn process(&mut self, interleaved: &mut [f32]) -> Result<(), AudioNodeError> {
+        if interleaved.len() % 2 != 0 {
+            return Err(AudioNodeError::InvalidBlockLength);
+        }
+        self.clock.advance_frames(
+            (interleaved.len() / 2) as u64,
+            self.sample_rate,
+            self.tempo_bpm,
+        );
+        self.position_ticks
+            .store(self.clock.position_ticks(), Ordering::Release);
+        Ok(())
+    }
+}
+
 impl AudioClipMixerNode {
     fn new(streams: Vec<AudioClipStream>, max_samples: usize) -> Self {
         Self {
@@ -249,9 +275,18 @@ struct PlaybackSession {
     thread: JoinHandle<Result<(), String>>,
 }
 
-#[derive(Default)]
 pub struct AudioRuntimeHost {
     playback: Option<PlaybackSession>,
+    position_ticks: Arc<AtomicU64>,
+}
+
+impl Default for AudioRuntimeHost {
+    fn default() -> Self {
+        Self {
+            playback: None,
+            position_ticks: Arc::new(AtomicU64::new(0)),
+        }
+    }
 }
 
 impl AudioRuntimeHost {
@@ -259,6 +294,10 @@ impl AudioRuntimeHost {
         self.playback
             .as_ref()
             .is_some_and(|playback| playback.connected.load(Ordering::Acquire))
+    }
+
+    pub fn position_ticks(&self) -> u64 {
+        self.position_ticks.load(Ordering::Acquire)
     }
 
     pub fn play(&mut self, project: &Project, profile: AudioProfileSettings) -> Result<(), String> {
@@ -269,6 +308,7 @@ impl AudioRuntimeHost {
             }
         }
         self.stop()?;
+        self.position_ticks.store(0, Ordering::Release);
         let config = PipeWireStreamConfig {
             period_frames: profile.device_period_frames as usize,
             ..PipeWireStreamConfig::default()
@@ -283,6 +323,7 @@ impl AudioRuntimeHost {
             max_samples,
             profile.playback_safety_frames as usize,
             Arc::clone(&paused),
+            Arc::clone(&self.position_ticks),
         )?;
         let (control, processor) = render_plan_exchange(plan);
         drop(control);
@@ -363,6 +404,7 @@ impl AudioRuntimeHost {
 
     pub fn stop(&mut self) -> Result<(), String> {
         let Some(playback) = self.playback.take() else {
+            self.position_ticks.store(0, Ordering::Release);
             return Ok(());
         };
         playback.stop.store(true, Ordering::Release);
@@ -370,7 +412,9 @@ impl AudioRuntimeHost {
         playback
             .thread
             .join()
-            .map_err(|_| "el hilo de reproducción terminó inesperadamente".to_owned())?
+            .map_err(|_| "el hilo de reproducción terminó inesperadamente".to_owned())??;
+        self.position_ticks.store(0, Ordering::Release);
+        Ok(())
     }
 }
 
@@ -400,6 +444,7 @@ fn build_project_playback(
     max_samples: usize,
     queue_target_frames: usize,
     paused: Arc<AtomicBool>,
+    position_ticks: Arc<AtomicU64>,
 ) -> Result<
     (
         estudio_daw_audio_engine::RenderPlan,
@@ -555,6 +600,12 @@ fn build_project_playback(
 
     schedule.sort_by_key(|event| (event.at, event.sequence));
     let mut builder = RenderPlanBuilder::new();
+    builder.add_node(TransportPositionNode {
+        clock: TransportClock::default(),
+        sample_rate,
+        tempo_bpm: bpm,
+        position_ticks,
+    });
     builder.add_node(InstrumentMixerNode::new(sources, max_samples));
     if !audio_streams.is_empty() {
         builder.add_node(AudioClipMixerNode::new(audio_streams, max_samples));
@@ -749,10 +800,11 @@ mod tests {
             512,
             1024,
             Arc::new(AtomicBool::new(false)),
+            Arc::new(AtomicU64::new(0)),
         )
         .unwrap();
 
-        assert_eq!(plan.node_count(), 1);
+        assert_eq!(plan.node_count(), 2);
         assert_eq!(senders.len(), 2);
         assert_eq!(schedule.len(), 4);
         assert_eq!(schedule[0].at, Duration::ZERO);
@@ -784,6 +836,7 @@ mod tests {
             512,
             1024,
             Arc::new(AtomicBool::new(false)),
+            Arc::new(AtomicU64::new(0)),
         )
         .unwrap();
         assert_eq!(schedule.len(), 4);

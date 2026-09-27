@@ -25,6 +25,7 @@ const elements = {
   tempo: document.querySelector("#tempo"),
   transportTempo: document.querySelector("#transport-tempo"),
   transport: document.querySelector("#transport-state"),
+  transportPosition: document.querySelector("#transport-position"),
   tracks: document.querySelector("#track-list"),
   lanes: document.querySelector("#arrangement-lanes"),
   ruler: document.querySelector("#timeline-ruler"),
@@ -62,6 +63,8 @@ const elements = {
 let hasProject = false;
 let audioSettings = null;
 let projectTransportState = "stopped";
+let transportPositionTick = 0;
+let transportPositionPollPending = false;
 let pendingAudioPath = null;
 let editCursorTick = 0;
 let editCursorProjectId = null;
@@ -247,9 +250,11 @@ function renderSnapshot(snapshot) {
   setProjectEnabled(true);
   if (snapshot.projectId !== editCursorProjectId) {
     editCursorTick = 0;
+    transportPositionTick = 0;
     editCursorProjectId = snapshot.projectId;
   }
   projectTransportState = snapshot.transportState;
+  if (projectTransportState === "stopped") renderTransportPosition(0);
   elements.save.disabled = !snapshot.projectPath;
   elements.save.title = snapshot.projectPath ? "Guardar proyecto" : "Guarda como para elegir una ubicación";
   elements.path.textContent = snapshot.projectPath ?? "Proyecto sin ruta";
@@ -300,6 +305,7 @@ function renderSnapshot(snapshot) {
     emptyLane.textContent = "Sin pistas en el arreglo";
     elements.lanes.append(emptyLane);
     renderEditCursor();
+    renderTransportPosition(transportPositionTick);
     return;
   }
 
@@ -414,9 +420,14 @@ function renderSnapshot(snapshot) {
     cursor.className = "edit-cursor";
     cursor.setAttribute("aria-hidden", "true");
     lane.append(cursor);
+    const playhead = document.createElement("span");
+    playhead.className = "playhead";
+    playhead.setAttribute("aria-hidden", "true");
+    lane.append(playhead);
     elements.lanes.append(lane);
   }
   renderEditCursor();
+  renderTransportPosition(transportPositionTick);
 }
 
 function makeAudioTrimHandle(edge, name) {
@@ -704,8 +715,26 @@ function renderTimelineRuler(beatsPerBar) {
   cursor.className = "edit-cursor";
   cursor.setAttribute("aria-hidden", "true");
   elements.ruler.append(cursor);
+  const playhead = document.createElement("span");
+  playhead.className = "playhead";
+  playhead.setAttribute("aria-hidden", "true");
+  elements.ruler.append(playhead);
   elements.ruler.dataset.beatsPerBar = String(beatsPerBar);
   renderEditCursor();
+}
+
+function renderTransportPosition(ticks) {
+  transportPositionTick = Math.max(0, Number(ticks) || 0);
+  const beatsPerBar = Number(elements.ruler.dataset.beatsPerBar) || 4;
+  const ticksPerBar = beatsPerBar * 960;
+  const timelineTicks = ticksPerBar * 16;
+  const left = `${Math.max(0, Math.min(100, transportPositionTick / timelineTicks * 100))}%`;
+  document.querySelectorAll(".playhead").forEach((playhead) => { playhead.style.left = left; });
+  const bar = Math.floor(transportPositionTick / ticksPerBar) + 1;
+  const beatPosition = (transportPositionTick % ticksPerBar) / 960;
+  const beat = Math.floor(beatPosition) + 1;
+  const subdivision = Math.floor((beatPosition % 1) * 4) + 1;
+  elements.transportPosition.textContent = `${bar}.${beat}.${subdivision}`;
 }
 
 function renderEditCursor() {
@@ -818,6 +847,18 @@ elements.pause.addEventListener("click", () => runCommand("Transporte pausado", 
 elements.stop.addEventListener("click", () => runCommand("Transporte detenido", () => platform.setTransport("stop")));
 elements.undo.addEventListener("click", () => runCommand("Undo aplicado", () => platform.historyAction("undo")));
 elements.redo.addEventListener("click", () => runCommand("Redo aplicado", () => platform.historyAction("redo")));
+
+setInterval(async () => {
+  if (projectTransportState !== "playing" || transportPositionPollPending) return;
+  transportPositionPollPending = true;
+  try {
+    renderTransportPosition(await platform.transportPosition());
+  } catch {
+    // El indicador conserva la última posición confirmada si falla una lectura.
+  } finally {
+    transportPositionPollPending = false;
+  }
+}, 50);
 
 elements.audioProfile.addEventListener("change", () => {
   if (!audioSettings) return;
