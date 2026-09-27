@@ -61,6 +61,7 @@ const elements = {
   undo: document.querySelector("#undo"),
   redo: document.querySelector("#redo"),
   audioProfile: document.querySelector("#audio-profile"),
+  audioOutputDevice: document.querySelector("#audio-output-device"),
   devicePeriod: document.querySelector("#device-period"),
   playbackSafety: document.querySelector("#playback-safety"),
   saveAudioSettings: document.querySelector("#save-audio-settings"),
@@ -125,9 +126,24 @@ function renderAudioProfile(view = null) {
 
 async function loadAudioSettings() {
   try {
-    const view = await platform.audioRuntimeSettings();
+    const [devices, view] = await Promise.all([
+      platform.audioOutputDevices().catch((error) => {
+        setNotice("No se pudo consultar PipeWire", String(error));
+        return [];
+      }),
+      platform.audioRuntimeSettings(),
+    ]);
     audioSettings = view.settings;
     elements.audioProfile.value = audioSettings.activeProfile;
+    const options = [new Option("Automática (AudioBox si está disponible)", "pipewire:default")];
+    for (const device of devices) {
+      options.push(new Option(device.description ? `${device.description} · ${device.name}` : device.name, device.key));
+    }
+    if (!options.some((option) => option.value === audioSettings.backendDeviceKey)) {
+      options.push(new Option(`No disponible · ${audioSettings.backendDeviceKey}`, audioSettings.backendDeviceKey));
+    }
+    elements.audioOutputDevice.replaceChildren(...options);
+    elements.audioOutputDevice.value = audioSettings.backendDeviceKey;
     renderAudioProfile(view);
   } catch (error) {
     elements.audioApplyState.textContent = "No se pudo cargar";
@@ -1328,6 +1344,7 @@ elements.audioProfile.addEventListener("change", () => {
 
 elements.saveAudioSettings.addEventListener("click", async () => {
   if (!audioSettings) return;
+  audioSettings.backendDeviceKey = elements.audioOutputDevice.value;
   const profile = selectedAudioProfile();
   profile.devicePeriodFrames = Number(elements.devicePeriod.value);
   profile.playbackSafetyFrames = Number(elements.playbackSafety.value);

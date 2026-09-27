@@ -15,6 +15,7 @@ use estudio_daw_project_model::{
     ImportProvenance, InstrumentConfig, MidiClip, Project, TimeSignature, Track,
     TrackChannelConfig, TrackKind, TrackMixerState, TrackRole, Transport, TransportLoopRange,
 };
+use estudio_daw_runtime_diagnostics::audio_devices;
 use serde::Serialize;
 use std::{collections::HashMap, path::PathBuf, sync::Mutex};
 use tauri::State;
@@ -53,6 +54,14 @@ struct TrackSummary {
 struct TrackMeterSummary {
     peak: f32,
     rms: f32,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AudioOutputDeviceSummary {
+    key: String,
+    name: String,
+    description: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -999,13 +1008,16 @@ fn set_transport(
     match session_command {
         SessionCommand::Play => {
             let project = application.snapshot().project.project;
-            let active_profile = settings
+            let settings = settings
                 .as_ref()
-                .map(|settings| settings.active())
                 .ok_or_else(|| "faltan preferencias para iniciar audio".to_owned())?;
-            if let Err(error) =
-                audio.play(&project, active_profile, position_ticks.unwrap_or_default())
-            {
+            let active_profile = settings.active();
+            if let Err(error) = audio.play(
+                &project,
+                active_profile,
+                position_ticks.unwrap_or_default(),
+                &settings.backend_device_key,
+            ) {
                 // Keep the domain transport stopped if device/backend startup
                 // fails after the command was accepted.
                 let rollback = application.execute(
@@ -1179,6 +1191,23 @@ fn audio_runtime_settings(state: State<'_, DesktopState>) -> Result<AudioRuntime
 }
 
 #[tauri::command]
+fn audio_output_devices() -> Result<Vec<AudioOutputDeviceSummary>, String> {
+    audio_devices()
+        .map_err(|error| format!("no se pudieron consultar las salidas de audio: {error}"))
+        .map(|devices| {
+            devices
+                .into_iter()
+                .filter(|device| device.media_class.to_ascii_lowercase().contains("sink"))
+                .map(|device| AudioOutputDeviceSummary {
+                    key: format!("pipewire:{}", device.name),
+                    name: device.name,
+                    description: device.description,
+                })
+                .collect()
+        })
+}
+
+#[tauri::command]
 fn save_audio_settings(
     settings: AudioRuntimeSettings,
     state: State<'_, DesktopState>,
@@ -1224,6 +1253,7 @@ fn main() {
             set_tracks_group,
             history_action,
             audio_runtime_settings,
+            audio_output_devices,
             save_audio_settings
         ])
         .run(tauri::generate_context!())

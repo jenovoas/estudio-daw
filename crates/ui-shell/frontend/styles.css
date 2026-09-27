@@ -239,6 +239,9 @@ button:disabled { opacity: .4; cursor: not-allowed !important; }
 .audio-settings-body { padding: 0 11px 12px; }
 .audio-profile-row { display: grid; grid-template-columns: 48px minmax(135px, 1.1fr) 122px minmax(95px, .7fr) 75px minmax(95px, .7fr) auto; gap: 6px; align-items: center; }
 .audio-profile-row label { color: #a2a8ab; font-size: 8px; }
+.audio-device-row { display: grid; grid-template-columns: 122px minmax(220px, 430px) 1fr; gap: 8px; align-items: center; margin-top: 8px; }
+.audio-device-row label, .audio-device-row span { color: #a2a8ab; font-size: 8px; }
+.audio-device-row select { width: 100%; min-height: 27px; border: 1px solid #484e52; border-radius: 3px; background: #202326; color: #e0e2e2; padding: 5px 7px; font-size: 9px; }
 .audio-profile-row select, .audio-number input { width: 100%; min-height: 27px; border: 1px solid #484e52; border-radius: 3px; background: #202326; color: #e0e2e2; padding: 5px 7px; font-size: 9px; }
 .audio-number { display: flex; align-items: center; gap: 5px; color: #92999c; font-size: 8px; }
 .audio-number input { min-width: 0; font-variant-numeric: tabular-nums; }
@@ -268,6 +271,8 @@ button:disabled { opacity: .4; cursor: not-allowed !important; }
   .arrangement-grid { grid-template-columns: 165px minmax(620px, 1fr); }
   .audio-profile-row { grid-template-columns: 45px minmax(120px, 1fr) 105px minmax(85px, .65fr) 64px minmax(85px, .65fr); }
   .audio-profile-row .button { grid-column: 2 / -1; justify-self: start; }
+  .audio-device-row { grid-template-columns: 95px minmax(160px, 1fr); }
+  .audio-device-row span { grid-column: 2; }
 }
 @media (max-height: 680px) {
   .editor { grid-template-rows: 46px 34px minmax(170px, 1fr) 64px auto; }

@@ -84,6 +84,13 @@
 - OpenSpec sigue 9/35; las tareas 2.3 y 4.3 continúan abiertas por actualización del plan al editar, controladores MIDI restantes, sincronía del scheduler y QA funcional/acústica. Consultar el último commit de `main` para el SHA final.
 - Siguiente: continuar 2.3 con actualización del plan activo cuando cambian regiones/proyecto; mantener en paralelo los pendientes de 4.3. Vault append-only actualizado en esta intervención.
 
+## Actualización — selector de salida PipeWire y claridad arquitectónica
+
+- Se añadió en Ajustes de audio la enumeración de sinks PipeWire y la selección de salida Master para el siguiente inicio del transporte. La opción automática conserva AudioBox como preferencia y recurre a la salida predeterminada; una selección manual ausente informa error antes de construir el plan. La selección es global de aplicación: todavía no asigna destinos físicos independientes a pistas ni implementa captura de entrada.
+- `estudio-daw-project devices` enumeró en este equipo salidas HDMI, AudioBox USB 96, audio interno y Bluetooth. `cargo fmt --all -- --check`, `cargo check --workspace`, ambos `node --check`, diff check y validación OpenSpec pasaron; ésta conserva ocho avisos lingüísticos conocidos. No se ejecutaron pruebas.
+- Se aclaró en `AGENTS.md` que escritorio integrado/modular describe el producto y sus límites por crates; `docs/architecture-v2.md` ya define el monolito modular como un producto integrado sin microservicios de dominio. No significa un solo crate ni prohíbe workers y procesos auxiliares.
+- La ventana Tauri que se lanzó en esta sesión usa el binario anterior a este selector; no cerrar si hay cambios de proyecto sin guardar. Para revisar el selector, reiniciar cuando sea seguro. OpenSpec sigue 9/35; 2.2/2.3/2.4 siguen parciales y 2.4 sólo avanzó en selección de salida Master.
+
 ## Actualización — recompilación al editar regiones
 
 - Mover, recortar y quitar audio mientras está en Play actualiza el plan desde la posición musical vigente y lo publica en el siguiente límite de bloque; PipeWire sigue abierto. En pausa se conserva el cambio y se reconstruye al reanudar.

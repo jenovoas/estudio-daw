@@ -122,6 +122,7 @@
                 <div class="audio-number"><input id="playback-safety" type="number" min="0" max="2048" step="256" /><span>frames</span></div>
                 <button id="save-audio-settings" class="button button-accent">Aplicar al próximo inicio</button>
               </div>
+              <div class="audio-device-row"><label for="audio-output-device">Salida de audio</label><select id="audio-output-device"><option value="pipewire:default">Automática (AudioBox si está disponible)</option></select><span>Se conecta al iniciar Play; el cambio no interrumpe un stream activo.</span></div>
               <div class="audio-readouts"><span>Frecuencia<strong id="audio-sample-rate">—</strong></span><span>Periodo solicitado<strong id="audio-requested-period">—</strong></span><span>Periodo efectivo<strong id="audio-effective-period">No disponible</strong></span><span>Búfer extra<strong id="audio-safety-duration">—</strong></span></div>
               <p class="audio-help">Los perfiles se aplican al iniciar el siguiente stream. PipeWire puede negociar un periodo distinto; el margen PCM sólo afecta la cola de pistas SoundFont.</p>
               <p class="audio-help audio-warning">Esta shell reproduce clips MIDI. Grabación live, monitorización MIDI y clips de audio todavía no están disponibles aquí.</p>

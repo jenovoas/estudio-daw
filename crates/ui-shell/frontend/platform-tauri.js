@@ -58,5 +58,6 @@ window.estudioPlatform = {
   setLoopRange: (startTick, endTick) => invoke("set_loop_range", { startTick, endTick }),
   historyAction: (action) => invoke("history_action", { action }),
   audioRuntimeSettings: () => invoke("audio_runtime_settings"),
+  audioOutputDevices: () => invoke("audio_output_devices"),
   saveAudioSettings: (settings) => invoke("save_audio_settings", { settings }),
 };

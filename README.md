@@ -689,6 +689,10 @@ pista puede enrutar su salida a otra pista de audio, un bus o Master; los buses
 suman sus entradas y pueden continuar hacia otro destino. El cambio es reversible
 y las rutas cíclicas se rechazan. El plan compila este recorrido antes del stream
 y procesa buffers por pista sin asignar ni resolver conexiones en el callback.
+En los ajustes de audio se puede elegir el destino de salida PipeWire para el
+siguiente inicio del transporte; la opción automática prefiere AudioBox si está
+disponible y, en caso contrario, usa el destino predeterminado. El cambio no
+interrumpe un stream activo.
 El tamaño de la interfaz se ajusta de 80 % a 150 % con Ctrl++/Ctrl+- o los
 controles de zoom de la barra superior; Ctrl+0 lo restablece. La preferencia se
 guarda localmente y no cambia el proyecto.
@@ -700,9 +704,10 @@ Session muestra encabezados/casillas vacías y controles compartidos de mezcla;
 Arrangement y Mezclador exponen ACT/M/S y ganancia/panorama para pistas no master.
 Los grupos sólo organizan: no enlazan la mezcla de sus pistas. Los medidores de
 pista muestran pico y RMS de bloque; el canal Master aplica activa/silencio/
-ganancia cuando está persistido y mide la salida estéreo final. El ruteo de
-dispositivos, las entradas en vivo, los envíos/retornos y los procesadores siguen
-pendientes. Se pueden
+ganancia cuando está persistido y mide la salida estéreo final. La selección de
+salida Master ya está disponible en los ajustes de aplicación; siguen pendientes
+la selección de entrada física, el ruteo físico independiente por pista, los
+envíos/retornos y los procesadores. Se pueden
 importar archivos de audio a pistas existentes,
 copiándolos a la carpeta `media` junto al proyecto o vinculando el original,
 con metadatos básicos, preescucha corta antes de confirmar la importación,

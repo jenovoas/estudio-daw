@@ -889,6 +889,7 @@ impl AudioRuntimeHost {
         project: &Project,
         profile: AudioProfileSettings,
         start_position_ticks: u64,
+        backend_device_key: &str,
     ) -> Result<(), String> {
         if let Some(playback) = self
             .playback
@@ -908,6 +909,7 @@ impl AudioRuntimeHost {
             }
             return Ok(());
         }
+        let playback_node = playback_node_for_key(backend_device_key)?;
         self.stop()?;
         self.reset_track_meters()?;
         let loop_range = project.transport.loop_range;
@@ -969,7 +971,6 @@ impl AudioRuntimeHost {
 
         let stop = Arc::new(AtomicBool::new(false));
         let connected = Arc::new(AtomicBool::new(false));
-        let playback_node = preferred_playback_node();
         let worker_stop = Arc::clone(&stop);
         let worker_paused = Arc::clone(&paused);
         let worker_connected = Arc::clone(&connected);
@@ -1237,6 +1238,24 @@ fn track_gain_pan(track: &estudio_daw_project_model::Track) -> (f32, f32) {
         1.0
     };
     (gain * left, gain * right)
+}
+
+fn playback_node_for_key(device_key: &str) -> Result<Option<String>, String> {
+    if device_key == "pipewire:default" {
+        return Ok(preferred_playback_node());
+    }
+    let Some(node) = device_key.strip_prefix("pipewire:") else {
+        return Err(format!("backend de audio no compatible: {device_key}"));
+    };
+    let node = audio_devices()
+        .map_err(|error| format!("no se pudieron consultar las salidas PipeWire: {error}"))?
+        .into_iter()
+        .find(|device| {
+            device.name == node && device.media_class.to_ascii_lowercase().contains("sink")
+        })
+        .map(|device| device.name)
+        .ok_or_else(|| format!("la salida PipeWire seleccionada ya no está disponible: {node}"))?;
+    Ok(Some(node))
 }
 
 fn preferred_playback_node() -> Option<String> {

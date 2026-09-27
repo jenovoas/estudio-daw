@@ -41,8 +41,11 @@ no borrando el historial.
 
 ## Límites arquitectónicos
 
-- Mantener el monolito modular y las fronteras Portable Domain, Native Core,
-  Platform, Compute Runtime, Analysis Workers y futuro Web Adapter.
+- Mantener la aplicación de escritorio integrada y modular, con crates y
+  fronteras explícitas entre Portable Domain, Native Core, Platform, Compute
+  Runtime, Analysis Workers y el futuro Web Adapter. Los workers y procesos
+  auxiliares se usan para aislar tareas concretas; no convertirlos en servicios
+  de dominio desplegados por separado sin una decisión arquitectónica explícita.
 - El Portable Domain no depende de PipeWire, ALSA, GPU, GUI, Python ni LLM.
 - UI, CLI, MIDI, scripting y agentes emiten comandos; no mutan directamente el
   modelo.

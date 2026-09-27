@@ -96,8 +96,14 @@ salida Master informativa sin controles editables. El selector del Mezclador
 asigna como destino una pista de audio, un bus o Master mediante un comando
 reversible. El runtime compila y valida rutas internas acíclicas (incluidos los
 buses encadenados) antes de publicar el plan y usa buffers por pista reservados
-antes del callback. Esto no selecciona puertos físicos de audio ni implementa
-entradas, envíos, retornos o procesadores.
+antes del callback. Esto no selecciona puertos físicos independientes por
+pista ni implementa entradas, envíos, retornos o procesadores.
+
+Los ajustes de aplicación permiten escoger un sink PipeWire para el stream
+Master del próximo inicio. La opción automática conserva la preferencia por
+AudioBox y usa el destino predeterminado cuando no hay una disponible. La
+enumeración y la selección ocurren fuera del callback; aún faltan entrada física
+y ruteo de hardware por pista.
 
 La escala de la interfaz es una preferencia local del WebView, no del proyecto.
 Tauri controla el zoom entre 80 % y 150 %; Ctrl++/Ctrl+- ajusta en pasos de 10 %
