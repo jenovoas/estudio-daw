@@ -1187,12 +1187,13 @@ function renderSnapshot(snapshot) {
       block.style.setProperty("--clip-hue", String((trackIndex * 54 + 24) % 360));
       block.title = `${clip.name} · ${clip.noteCount} notas`;
       block.tabIndex = 0;
-      block.setAttribute("aria-label", `Seleccionar clip MIDI ${clip.name}, ${clip.noteCount} notas`);
+      block.setAttribute("aria-label", `Seleccionar clip MIDI ${clip.name}, ${clip.noteCount} notas. Arrastra para mover.`);
       bindClipSelection(block, clip.id, snapshot);
       const left = Math.max(0, Number(clip.startBeats) || 0);
       const width = Math.max(0.25, Number(clip.durationBeats) || 0.25);
       block.style.left = `${left / (snapshot.beatsPerBar * 16) * 100}%`;
       block.style.width = `${Math.min(width / (snapshot.beatsPerBar * 16) * 100, 100)}%`;
+      bindMidiClipMovement(block, lane, clip, snapshot.beatsPerBar);
       const clipLabel = document.createElement("span");
       clipLabel.className = "clip-label";
       clipLabel.textContent = clip.name;
@@ -1478,6 +1479,66 @@ function makeAudioTrimHandle(edge, name) {
   handle.setAttribute("aria-label", `Recortar ${edge === "left" ? "inicio" : "final"} de ${name}`);
   handle.title = "Arrastra hacia dentro para recortar sin modificar el archivo";
   return handle;
+}
+
+function bindMidiClipMovement(block, lane, clip, beatsPerBar) {
+  const timelineBeats = Math.max(1, Number(beatsPerBar) || 4) * 16;
+  const originalLeft = Math.max(0, Number(clip.startBeats) || 0);
+  const duration = Math.max(0.25, Number(clip.durationBeats) || 0.25);
+  const ppq = Math.max(1, Number(clip.ppq) || 480);
+  let gesture = null;
+
+  block.addEventListener("pointerdown", (event) => {
+    if (event.button !== 0 || event.target.closest("button")) return;
+    const bounds = lane.getBoundingClientRect();
+    if (bounds.width <= 0) return;
+    gesture = { pointerId: event.pointerId, startX: event.clientX, laneWidth: bounds.width };
+    block.setPointerCapture(event.pointerId);
+    block.classList.add("is-editing");
+    event.preventDefault();
+  });
+
+  block.addEventListener("pointermove", (event) => {
+    if (!gesture || gesture.pointerId !== event.pointerId) return;
+    const deltaBeats = (event.clientX - gesture.startX) / gesture.laneWidth * timelineBeats;
+    const left = Math.max(0, Math.min(timelineBeats - duration, originalLeft + deltaBeats));
+    block.style.left = `${left / timelineBeats * 100}%`;
+  });
+
+  const finish = async (event) => {
+    if (!gesture || gesture.pointerId !== event.pointerId) return;
+    const current = gesture;
+    gesture = null;
+    block.classList.remove("is-editing");
+    const restore = () => { block.style.left = `${originalLeft / timelineBeats * 100}%`; };
+    if (event.type === "pointercancel" || Math.abs(event.clientX - current.startX) < 2) {
+      restore();
+      return;
+    }
+    const rawBeats = Math.max(0, Math.min(timelineBeats - duration,
+      originalLeft + (event.clientX - current.startX) / current.laneWidth * timelineBeats));
+    const snapValue = elements.gridSnap.value;
+    const snapBeats = snapValue === "bar"
+      ? Math.max(1, Number(beatsPerBar) || 4)
+      : Number(snapValue);
+    const snappedBeats = snapBeats > 0 ? Math.round(rawBeats / snapBeats) * snapBeats : rawBeats;
+    const startTick = Math.round(Math.max(0, Math.min(timelineBeats - duration, snappedBeats)) * ppq);
+    if (startTick === Math.round(originalLeft * ppq)) {
+      restore();
+      return;
+    }
+    try {
+      renderSnapshot(await platform.moveMidiClip(clip.id, startTick));
+      setNotice("Clip MIDI movido", projectTransportState === "playing"
+        ? "El plan activo se reconstruyó en un límite de bloque. Puedes deshacer el cambio desde el historial."
+        : "La toma y sus eventos permanecen intactos; puedes deshacer el cambio desde el historial.");
+    } catch (error) {
+      try { renderSnapshot(await platform.projectSnapshot()); } catch { restore(); }
+      setNotice("No se pudo mover el clip MIDI", String(error));
+    }
+  };
+  block.addEventListener("pointerup", finish);
+  block.addEventListener("pointercancel", finish);
 }
 
 function bindAudioRegionEditing(block, lane, clip, beatsPerBar, tempoBpm) {

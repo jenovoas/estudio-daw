@@ -28,6 +28,7 @@ window.estudioPlatform = {
     return invoke("edit_audio_region", { action, clipId, startTick, sourceStartSamples, durationSamples, gainDb, fadeInSamples, fadeOutSamples });
   },
   quantizeMidiClip: (clipId, gridTicks) => invoke("quantize_midi_clip", { clipId, gridTicks }),
+  moveMidiClip: (clipId, startTick) => invoke("move_midi_clip", { clipId, startTick }),
   audioWaveform: (sourceId) => invoke("audio_waveform", { sourceId }),
   audioPreview: (sourceId) => invoke("audio_preview", { sourceId }),
   audioPreviewFile: (path) => invoke("audio_preview_file", { path }),

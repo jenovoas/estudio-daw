@@ -495,6 +495,42 @@ fn quantize_midi_clip(
     Ok(summarize(application, connected))
 }
 
+#[tauri::command]
+fn move_midi_clip(
+    clip_id: String,
+    start_tick: u64,
+    state: State<'_, DesktopState>,
+) -> Result<UiSnapshot, String> {
+    let mut application = state
+        .application
+        .lock()
+        .map_err(|_| "el estado de la aplicación quedó bloqueado".to_owned())?;
+    let application = application
+        .as_mut()
+        .ok_or_else(|| "primero abre un proyecto".to_owned())?;
+    application
+        .execute_project(ProjectCommand::MoveMidiClip {
+            clip_id,
+            start_tick,
+        })
+        .map_err(|error| error.to_string())?;
+    let project = application.snapshot().project.project;
+    let mut audio = state
+        .audio
+        .lock()
+        .map_err(|_| "el estado del motor de audio quedó bloqueado".to_owned())?;
+    let connected = audio.is_connected();
+    if connected {
+        let settings = load_audio_runtime_settings().map_err(|error| error.to_string())?;
+        audio
+            .refresh_project(&project, settings.active())
+            .map_err(|error| {
+                format!("el clip se movió, pero no se pudo actualizar el plan de audio: {error}")
+            })?;
+    }
+    Ok(summarize(application, connected))
+}
+
 fn summarize_midi_notes(clip: &MidiClip) -> Vec<MidiNoteSummary> {
     let ppq = f64::from(clip.take.ppq.max(1));
     let mut active_notes = Vec::<(u8, u8, u64, u8)>::new();
@@ -1760,6 +1796,7 @@ fn main() {
             import_audio,
             edit_audio_region,
             quantize_midi_clip,
+            move_midi_clip,
             audio_waveform,
             audio_preview,
             audio_preview_file,

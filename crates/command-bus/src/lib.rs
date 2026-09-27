@@ -139,6 +139,10 @@ pub enum ProjectCommand {
         clip_id: String,
         start_tick: u64,
     },
+    MoveMidiClip {
+        clip_id: String,
+        start_tick: u64,
+    },
     RemoveAudioClip {
         clip_id: String,
     },
@@ -935,6 +939,23 @@ impl CommandRuntime {
                         .iter_mut()
                         .find(|clip| clip.id == clip_id)
                         .ok_or_else(|| format!("unknown audio clip: {clip_id}"))?;
+                    clip.start_tick = start_tick;
+                    project
+                        .validate_persisted_contracts()
+                        .map_err(|error| error.to_string())
+                })
+                .map_err(|error| CommandError::Project(error.to_string()))?,
+            ProjectCommand::MoveMidiClip {
+                clip_id,
+                start_tick,
+            } => self
+                .project_history
+                .transact("move MIDI clip", |project| -> Result<(), String> {
+                    let clip = project
+                        .midi_clips
+                        .iter_mut()
+                        .find(|clip| clip.id == clip_id)
+                        .ok_or_else(|| format!("unknown MIDI clip: {clip_id}"))?;
                     clip.start_tick = start_tick;
                     project
                         .validate_persisted_contracts()
@@ -1969,6 +1990,49 @@ mod tests {
             runtime.snapshot().project.project.midi_clips[0].take.events[0].tick,
             500
         );
+    }
+
+    #[test]
+    fn moving_midi_clip_is_reversible_and_preserves_take_events() {
+        let mut runtime = CommandRuntime::new(project());
+        let events = runtime.snapshot().project.project.midi_clips[0]
+            .take
+            .events
+            .clone();
+
+        runtime
+            .apply(envelope(
+                "move-midi-1",
+                DomainCommand::Project(ProjectCommand::MoveMidiClip {
+                    clip_id: "midi-clip-1".into(),
+                    start_tick: 1_920,
+                }),
+            ))
+            .unwrap();
+        let moved = runtime.snapshot().project.project.midi_clips[0].clone();
+        assert_eq!(moved.start_tick, 1_920);
+        assert_eq!(moved.take.events, events);
+
+        runtime
+            .apply(envelope(
+                "undo-move-midi-1",
+                DomainCommand::Project(ProjectCommand::Undo),
+            ))
+            .unwrap();
+        assert_eq!(
+            runtime.snapshot().project.project.midi_clips[0].start_tick,
+            0
+        );
+
+        runtime
+            .apply(envelope(
+                "redo-move-midi-1",
+                DomainCommand::Project(ProjectCommand::Redo),
+            ))
+            .unwrap();
+        let redone = runtime.snapshot().project.project.midi_clips[0].clone();
+        assert_eq!(redone.start_tick, 1_920);
+        assert_eq!(redone.take.events, events);
     }
 
     #[test]

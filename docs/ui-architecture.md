@@ -153,7 +153,9 @@ ganancia y desvanecimientos; las regiones se pueden mover y recortar por sus
 bordes con la rejilla seleccionada (1/16, 1/8, negra, compás o libre). El recorte
 del inicio avanza también el desplazamiento de fuente y las modificaciones usan
 el historial del proyecto. Los clips MIDI aún son de sólo lectura en
-Arrangement.
+Arrangement. En Arreglo, los clips MIDI se pueden arrastrar para moverlos con
+la rejilla seleccionada; la posición se convierte usando el PPQ del clip y el
+comando conserva eventos y toma. Deshacer/rehacer restaura la posición.
 
 El navegador también enumera las regiones de audio importadas del proyecto y
 permite filtrarlas por nombre, fuente, pista y disposición de canales. Cada

@@ -190,7 +190,9 @@ button:disabled { opacity: .4; cursor: not-allowed !important; }
 .timeline-lane::before { position: absolute; top: 0; bottom: 0; left: 0; width: 1px; content: ""; background: color-mix(in srgb, var(--track-color, #58a6b8) 55%, transparent); }
 .lane-empty-label { position: absolute; top: 31px; left: 12px; color: #777e82; font-size: 8px; }
 .midi-clip { position: absolute; top: 8px; height: 59px; min-width: 27px; overflow: hidden; padding: 6px 8px; border: 1px solid hsl(var(--clip-hue, 28) 80% 72%); border-radius: 4px; background: linear-gradient(155deg, hsl(var(--clip-hue, 28) 60% 52%), hsl(var(--clip-hue, 28) 52% 35%) 72%); color: #fff4e9; box-shadow: 0 1px hsl(var(--clip-hue, 28) 90% 85% / .55) inset, 0 2px 4px #1118; font-size: 9px; font-weight: 650; white-space: nowrap; text-overflow: ellipsis; }
-.midi-clip, .audio-clip { cursor: pointer; }
+.midi-clip { cursor: grab; }
+.midi-clip.is-editing { cursor: grabbing; }
+.audio-clip { cursor: pointer; }
 .midi-clip.is-inspected, .audio-clip.is-inspected { outline: 2px solid #f5d5a7; outline-offset: 1px; }
 .audio-clip { position: absolute; top: 8px; height: 59px; min-width: 27px; overflow: hidden; padding: 6px 8px; border: 1px solid #72c6a4; border-radius: 4px; background: linear-gradient(155deg, #286f5d, #1d5148 72%); color: #e7fff3; box-shadow: 0 1px #a0e9c8 inset, 0 2px 4px #1118; font-size: 9px; font-weight: 650; white-space: nowrap; text-overflow: ellipsis; }
 .audio-clip:not(.is-editing) { cursor: grab; }
