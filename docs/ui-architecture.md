@@ -130,6 +130,9 @@ quitar una pista cuando esa pista lo permite. Proyecto abre el flujo de
 importación de audio ya conectado y Sesión añade una escena. Sus acciones reutilizan los
 manejadores visibles y sus comandos reversibles. El catálogo todavía no cubre
 las familias completas de Proyecto, edición de clips, preferencias ni ayuda.
+Transporte también ofrece Play/Pause/Stop/Record, pánico, metrónomo y los
+controles existentes del rango A/B; cada opción sigue el estado habilitado del
+control que reutiliza.
 
 La barra de herramientas lateral y las pestañas del encabezado cambian entre
 Arreglo, Session y Mezclador. Session presenta pistas por columnas y escenas
