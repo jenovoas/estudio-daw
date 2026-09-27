@@ -90,6 +90,7 @@
 - `estudio-daw-project devices` enumeró en este equipo salidas HDMI, AudioBox USB 96, audio interno y Bluetooth. `cargo fmt --all -- --check`, `cargo check --workspace`, ambos `node --check`, diff check y validación OpenSpec pasaron; ésta conserva ocho avisos lingüísticos conocidos. No se ejecutaron pruebas.
 - Se aclaró en `AGENTS.md` que escritorio integrado/modular describe el producto y sus límites por crates; `docs/architecture-v2.md` ya define el monolito modular como un producto integrado sin microservicios de dominio. No significa un solo crate ni prohíbe workers y procesos auxiliares.
 - La ventana Tauri que se lanzó en esta sesión usa el binario anterior a este selector; no cerrar si hay cambios de proyecto sin guardar. Para revisar el selector, reiniciar cuando sea seguro. OpenSpec sigue 9/35; 2.2/2.3/2.4 siguen parciales y 2.4 sólo avanzó en selección de salida Master.
+- El usuario revisó la ventana y confirmó que el zoom de interfaz funciona. La confirmación se registra como QA visual del zoom; la tarea 5.7 sigue parcial por el resto de atajos/menús.
 
 ## Actualización — recompilación al editar regiones
 
