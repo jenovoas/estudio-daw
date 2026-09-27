@@ -368,7 +368,7 @@ mod tests {
         let (mut midi_sender, midi_receiver) = crate::midi_event_queue();
         let mut initial = RenderPlanBuilder::new();
         initial.add_node(crate::SineSynthNode::new(48_000, 2, midi_receiver).unwrap());
-        let (control, mut processor) = render_plan_exchange(initial.build().unwrap());
+        let (control, mut processor) = render_plan_exchange(initial.build());
 
         // La carga falla antes de publicar una sustitución; por diseño no toca
         // el plan activo ni su slot. La ruta usa un nombre único que no existe.

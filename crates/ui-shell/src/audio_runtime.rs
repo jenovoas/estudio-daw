@@ -291,7 +291,7 @@ fn build_project_playback(
     schedule.sort_by_key(|event| (event.at, event.sequence));
     let mut builder = RenderPlanBuilder::new();
     builder.add_node(InstrumentMixerNode::new(sources, max_samples));
-    let mut plan = builder.build().map_err(|error| error.to_string())?;
+    let mut plan = builder.build();
     for worker in workers {
         plan.retain_resource(worker);
     }

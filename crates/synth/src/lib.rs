@@ -355,6 +355,25 @@ mod tests {
     use super::*;
     use estudio_daw_audio_engine::AudioNode;
 
+    struct ConstantNode(f32);
+
+    impl AudioNode for ConstantNode {
+        fn process(&mut self, block: &mut [f32]) -> Result<(), AudioNodeError> {
+            block.fill(self.0);
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn explicit_instrument_mixer_sums_parallel_sources() {
+        let sources: Vec<Box<dyn AudioNode>> =
+            vec![Box::new(ConstantNode(0.25)), Box::new(ConstantNode(-0.5))];
+        let mut mixer = InstrumentMixerNode::new(sources, 8);
+        let mut block = [0.0; 8];
+        mixer.process(&mut block).unwrap();
+        assert_eq!(block, [-0.25; 8]);
+    }
+
     #[test]
     fn note_events_render_a_finite_stereo_signal_and_release() {
         let (mut sender, receiver) = midi_event_queue();

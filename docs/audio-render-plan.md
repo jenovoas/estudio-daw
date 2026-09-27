@@ -1,25 +1,26 @@
 # Audio RenderPlan
 
-`estudio-daw-audio-engine` contiene la primera implementación del grafo DSP
-propio de Estudio DAW.
+`estudio-daw-audio-engine` contiene la primera cadena DSP in-place de Estudio
+DAW. No implementa un DAG de procesamiento.
 
-## Compilación del grafo
+## Construcción de la cadena
 
 La topología se construye fuera del procesamiento:
 
 ```text
 RenderPlanBuilder
-    ↓ add_node / connect
-orden topológico + validación de ciclos
+    ↓ add_node (orden de inserción)
+lista plana de AudioNode
     ↓
 RenderPlan
     ↓
 lista plana de AudioNode
 ```
 
-`connect(source, target)` declara una dependencia. `build()` rechaza ciclos y
-produce una lista ordenada. El hilo de audio nunca resuelve dependencias ni
-recorre un mapa de conexiones.
+`build()` transfiere los nodos en orden de inserción. Cada nodo procesa el mismo
+bloque mutable que dejó el anterior; por eso las fuentes de audio deben ir antes
+que sus inserts y master. El hilo de audio no resuelve topología ni conexiones.
+Esta API no expresa ramas ni suma automática.
 
 ## Contrato de nodo
 
@@ -49,13 +50,16 @@ let mut eq = EqualizerNode::new(48_000.0, 2)?;
 eq.add_band(EqBandConfig::bell(300.0, -3.5, 1.0))?;
 
 let mut builder = RenderPlanBuilder::new();
-let input = builder.add_node(input_node);
-let equalizer = builder.add_node(eq);
-let master = builder.add_node(GainNode::new(0.8));
-builder.connect(input, equalizer)?;
-builder.connect(equalizer, master)?;
-let mut plan = builder.build()?;
+builder.add_node(input_node);
+builder.add_node(eq);
+builder.add_node(GainNode::new(0.8));
+let mut plan = builder.build();
 ```
+
+Las fuentes simultáneas se agrupan en el nodo explícito
+`InstrumentMixerNode` de `estudio-daw-synth`. Ese mixer renderiza cada fuente
+en scratch reservado antes del stream y suma sus muestras; añadir fuentes
+independientes directamente a la cadena no las mezcla.
 
 ## Reemplazo seguro del plan
 

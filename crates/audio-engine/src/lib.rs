@@ -1,8 +1,8 @@
-//! Grafo DSP compilado para el motor de audio.
+//! Cadena DSP in-place compilada para el motor de audio.
 //!
-//! El builder puede asignar y ordenar nodos libremente porque trabaja fuera
-//! del callback. `RenderPlan::process` sólo recorre una lista plana ya
-//! compilada y no resuelve dependencias ni crea buffers temporales.
+//! El builder ordena nodos fuera del callback. `RenderPlan::process` ejecuta
+//! la cadena en orden de inserción sobre un solo bloque mutable; el mixer
+//! explícito gestiona varias fuentes con scratch preasignado.
 
 pub use estudio_daw_dsp::EqBandConfig;
 use estudio_daw_dsp::{DspError, Equalizer};
@@ -154,22 +154,9 @@ pub enum AudioNodeError {
     Dsp(#[from] DspError),
 }
 
-#[derive(Debug, Error, PartialEq, Eq)]
-pub enum GraphError {
-    #[error("el nodo {0} no existe")]
-    InvalidNode(usize),
-    #[error("el grafo DSP contiene un ciclo")]
-    Cycle,
-}
-
-struct PendingNode {
-    dependencies: Vec<usize>,
-    node: Box<dyn AudioNode>,
-}
-
-/// Builder mutable para una topología de sesión.
+/// Builder para una cadena DSP in-place en orden de inserción.
 pub struct RenderPlanBuilder {
-    nodes: Vec<PendingNode>,
+    nodes: Vec<Box<dyn AudioNode>>,
 }
 
 impl Default for RenderPlanBuilder {
@@ -183,70 +170,19 @@ impl RenderPlanBuilder {
         Self { nodes: Vec::new() }
     }
 
-    pub fn add_node<N>(&mut self, node: N) -> usize
+    pub fn add_node<N>(&mut self, node: N)
     where
         N: AudioNode + 'static,
     {
-        let id = self.nodes.len();
-        self.nodes.push(PendingNode {
-            dependencies: Vec::new(),
-            node: Box::new(node),
-        });
-        id
+        self.nodes.push(Box::new(node));
     }
 
-    /// Declara que `source` debe renderizarse antes de `target`.
-    pub fn connect(&mut self, source: usize, target: usize) -> Result<(), GraphError> {
-        if source >= self.nodes.len() {
-            return Err(GraphError::InvalidNode(source));
-        }
-        let Some(target_node) = self.nodes.get_mut(target) else {
-            return Err(GraphError::InvalidNode(target));
-        };
-        target_node.dependencies.push(source);
-        Ok(())
-    }
-
-    /// Compila el DAG en orden topológico fuera del hilo de audio.
-    pub fn build(self) -> Result<RenderPlan, GraphError> {
-        let node_count = self.nodes.len();
-        let mut indegree: Vec<usize> = self
-            .nodes
-            .iter()
-            .map(|node| node.dependencies.len())
-            .collect();
-        let mut ready: Vec<usize> = indegree
-            .iter()
-            .enumerate()
-            .filter_map(|(id, degree)| (*degree == 0).then_some(id))
-            .collect();
-        let mut order = Vec::with_capacity(node_count);
-
-        while let Some(source) = ready.pop() {
-            order.push(source);
-            for (target, node) in self.nodes.iter().enumerate() {
-                if node.dependencies.contains(&source) {
-                    indegree[target] -= 1;
-                    if indegree[target] == 0 {
-                        ready.push(target);
-                    }
-                }
-            }
-        }
-        if order.len() != node_count {
-            return Err(GraphError::Cycle);
-        }
-
-        let mut nodes: Vec<Option<Box<dyn AudioNode>>> =
-            self.nodes.into_iter().map(|node| Some(node.node)).collect();
-        let ordered_nodes = order
-            .into_iter()
-            .map(|id| nodes[id].take().expect("cada nodo aparece una vez"))
-            .collect();
-        Ok(RenderPlan {
-            nodes: ordered_nodes,
+    /// Termina la cadena fuera del callback; los nodos conservan su orden.
+    pub fn build(self) -> RenderPlan {
+        RenderPlan {
+            nodes: self.nodes,
             retained_resources: Vec::new(),
-        })
+        }
     }
 }
 
@@ -480,6 +416,24 @@ mod tests {
 
     struct DropCounter(Arc<AtomicUsize>);
 
+    struct OffsetNode(f32);
+
+    impl AudioNode for OffsetNode {
+        fn process(&mut self, block: &mut [f32]) -> Result<(), AudioNodeError> {
+            block.iter_mut().for_each(|sample| *sample += self.0);
+            Ok(())
+        }
+    }
+
+    struct ScaleNode(f32);
+
+    impl AudioNode for ScaleNode {
+        fn process(&mut self, block: &mut [f32]) -> Result<(), AudioNodeError> {
+            block.iter_mut().for_each(|sample| *sample *= self.0);
+            Ok(())
+        }
+    }
+
     impl AudioNode for DropCounter {
         fn process(&mut self, _interleaved: &mut [f32]) -> Result<(), AudioNodeError> {
             Ok(())
@@ -493,25 +447,14 @@ mod tests {
     }
 
     #[test]
-    fn compiles_dag_in_dependency_order() {
+    fn processes_in_insertion_order_as_an_in_place_chain() {
         let mut builder = RenderPlanBuilder::new();
-        let gain_a = builder.add_node(GainNode::new(2.0));
-        let gain_b = builder.add_node(GainNode::new(3.0));
-        builder.connect(gain_a, gain_b).unwrap();
-        let mut plan = builder.build().unwrap();
+        builder.add_node(OffsetNode(3.0));
+        builder.add_node(ScaleNode(2.0));
+        let mut plan = builder.build();
         let mut block = [1.0, -1.0];
         plan.process(&mut block).unwrap();
-        assert_eq!(block, [6.0, -6.0]);
-    }
-
-    #[test]
-    fn rejects_cycles_before_audio_processing() {
-        let mut builder = RenderPlanBuilder::new();
-        let first = builder.add_node(GainNode::new(1.0));
-        let second = builder.add_node(GainNode::new(1.0));
-        builder.connect(first, second).unwrap();
-        builder.connect(second, first).unwrap();
-        assert!(matches!(builder.build(), Err(GraphError::Cycle)));
+        assert_eq!(block, [8.0, 4.0]);
     }
 
     #[test]
@@ -520,7 +463,7 @@ mod tests {
         eq.add_band(EqBandConfig::bell(1_000.0, 3.0, 1.0)).unwrap();
         let mut plan = RenderPlanBuilder::new();
         plan.add_node(eq);
-        let mut plan = plan.build().unwrap();
+        let mut plan = plan.build();
         let mut block = [0.1; 32];
         plan.process(&mut block).unwrap();
         assert!(block.iter().all(|sample| sample.is_finite()));
@@ -530,7 +473,7 @@ mod tests {
     fn processes_preallocated_audio_block() {
         let mut builder = RenderPlanBuilder::new();
         builder.add_node(GainNode::new(0.5));
-        let mut plan = builder.build().unwrap();
+        let mut plan = builder.build();
         let mut block = AudioBlock::new(2, 4).unwrap();
         block.samples_mut().fill(1.0);
         plan.process_block(&mut block).unwrap();
@@ -577,12 +520,12 @@ mod tests {
         let drops = Arc::new(AtomicUsize::new(0));
         let mut initial = RenderPlanBuilder::new();
         initial.add_node(DropCounter(Arc::clone(&drops)));
-        let mut initial = initial.build().unwrap();
+        let mut initial = initial.build();
         initial.retain_resource(DropCounter(Arc::clone(&drops)));
 
         let mut replacement = RenderPlanBuilder::new();
         replacement.add_node(GainNode::new(2.0));
-        let replacement = replacement.build().unwrap();
+        let replacement = replacement.build();
         let (control, mut processor) = render_plan_exchange(initial);
 
         // El plan viejo sigue siendo el activo hasta que comienza el siguiente
@@ -603,29 +546,29 @@ mod tests {
     fn exchange_rejects_another_plan_until_retired_slot_is_reclaimed() {
         let mut builder = RenderPlanBuilder::new();
         builder.add_node(GainNode::new(1.0));
-        let (control, mut processor) = render_plan_exchange(builder.build().unwrap());
+        let (control, mut processor) = render_plan_exchange(builder.build());
 
         let mut replacement = RenderPlanBuilder::new();
         replacement.add_node(GainNode::new(3.0));
-        assert!(control.publish(replacement.build().unwrap()).is_ok());
+        assert!(control.publish(replacement.build()).is_ok());
         let mut block = [1.0];
         processor.process(&mut block).unwrap();
 
         let mut next = RenderPlanBuilder::new();
         next.add_node(GainNode::new(4.0));
-        let next = next.build().unwrap();
+        let next = next.build();
         assert!(control.publish(next).is_err());
         assert!(control.reap_retired());
         let mut next = RenderPlanBuilder::new();
         next.add_node(GainNode::new(4.0));
-        assert!(control.publish(next.build().unwrap()).is_ok());
+        assert!(control.publish(next.build()).is_ok());
     }
 
     #[test]
     fn empty_active_slot_fails_closed_with_silence_without_panicking() {
         let mut builder = RenderPlanBuilder::new();
         builder.add_node(GainNode::new(2.0));
-        let (_control, mut processor) = render_plan_exchange(builder.build().unwrap());
+        let (_control, mut processor) = render_plan_exchange(builder.build());
         // Simulate slot corruption/invariant failure without crossing an FFI
         // boundary; the callback contract is to return silence, never unwind.
         unsafe { *processor.inner.slots[0].plan.get() = None };

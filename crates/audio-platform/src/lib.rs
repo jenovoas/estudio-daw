@@ -1151,7 +1151,7 @@ mod tests {
         let calls = Arc::new(AtomicUsize::new(0));
         let mut builder = RenderPlanBuilder::new();
         builder.add_node(ProcessCounter(Arc::clone(&calls)));
-        let (_control, mut processor) = render_plan_exchange(builder.build().unwrap());
+        let (_control, mut processor) = render_plan_exchange(builder.build());
 
         let mut block = [0.25; 8];
         process_output_block(&mut processor, &mut block, true);

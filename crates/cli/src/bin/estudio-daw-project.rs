@@ -557,7 +557,7 @@ fn audio_test_command() -> Result<(), Box<dyn std::error::Error>> {
     equalizer.add_band(EqBandConfig::high_pass(20.0, 0.707))?;
     let mut render_builder = RenderPlanBuilder::new();
     render_builder.add_node(equalizer);
-    let render_plan = render_builder.build()?;
+    let render_plan = render_builder.build();
     let report = run_pipewire_duplex_for_targets(
         PipeWireStreamConfig::default(),
         render_plan,
@@ -703,7 +703,7 @@ fn parse_synth_options(
     Ok((input, instrument))
 }
 
-/// Compila el DAG del instrumento, EQ y master antes de iniciar PipeWire.
+/// Compila la cadena de instrumento, EQ y master antes de iniciar PipeWire.
 /// La fuente seleccionada no cambia el contrato del callback de audio.
 fn build_synth_render_plan(
     config: PipeWireStreamConfig,
@@ -755,12 +755,10 @@ fn build_synth_render_plan(
     equalizer.add_band(EqBandConfig::high_pass(20.0, 0.707))?;
 
     let mut builder = RenderPlanBuilder::new();
-    let instrument = builder.add_node(source);
-    let insert = builder.add_node(equalizer);
-    let master = builder.add_node(GainNode::new(0.8));
-    builder.connect(instrument, insert)?;
-    builder.connect(insert, master)?;
-    let mut plan = builder.build()?;
+    builder.add_node(source);
+    builder.add_node(equalizer);
+    builder.add_node(GainNode::new(0.8));
+    let mut plan = builder.build();
     if let Some(worker) = worker.as_ref() {
         // The plan owns the worker lifetime: a replacement plan can be
         // prepared while the active instrument keeps rendering, and the old
@@ -1198,7 +1196,7 @@ fn audio_record_command(seconds: &str, output: PathBuf) -> Result<(), Box<dyn st
     equalizer.add_band(EqBandConfig::high_pass(20.0, 0.707))?;
     let mut render_builder = RenderPlanBuilder::new();
     render_builder.add_node(equalizer);
-    let render_plan = render_builder.build()?;
+    let render_plan = render_builder.build();
     // Diez segundos de margen amortiguan ráfagas de disco sin convertir el
     // callback en un productor bloqueante. El writer sigue siendo el dueño de
     // la persistencia y reporta overflow si el sistema no alcanza.

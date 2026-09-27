@@ -585,7 +585,7 @@ estudio-daw/
 ├── crates/       núcleo Rust y adaptadores
 │   ├── session/   estado de sesión y CommandBus bounded
 │   ├── midi-engine/
-│   ├── audio-engine/ grafo DSP y RenderPlan
+│   ├── audio-engine/ cadena DSP in-place y RenderPlan
 │   ├── synth/       instrumento MIDI nativo experimental
 │   ├── dsp/       procesamiento DSP modular
 │   ├── command-bus/ comandos de dominio versionados

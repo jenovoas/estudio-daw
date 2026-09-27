@@ -66,7 +66,7 @@ fn processing_preallocated_audio_and_ring_does_not_allocate() {
     // el contrato medido comienza en la entrada al procesamiento del bloque.
     let mut builder = RenderPlanBuilder::new();
     builder.add_node(GainNode::new(0.75));
-    let mut plan = builder.build().expect("el plan de prueba debe compilar");
+    let mut plan = builder.build();
     let mut block = AudioBlock::new(2, 64).expect("el bloque debe reservarse antes");
     let ring = SampleRingBuffer::new(256);
     let mut output = [0.0_f32; 128];
@@ -99,11 +99,11 @@ fn processing_preallocated_audio_and_ring_does_not_allocate() {
 fn render_plan_handoff_at_audio_boundary_does_not_allocate() {
     let mut initial = RenderPlanBuilder::new();
     initial.add_node(GainNode::new(1.0));
-    let (control, mut processor) = render_plan_exchange(initial.build().unwrap());
+    let (control, mut processor) = render_plan_exchange(initial.build());
 
     let mut replacement = RenderPlanBuilder::new();
     replacement.add_node(GainNode::new(0.5));
-    assert!(control.publish(replacement.build().unwrap()).is_ok());
+    assert!(control.publish(replacement.build()).is_ok());
     let mut block = [1.0_f32; 64];
     processor.process(&mut block).unwrap();
     assert_eq!(block, [0.5; 64]);
