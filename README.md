@@ -713,8 +713,10 @@ primera vuelta adicional antes de abrir el stream y las siguientes fuera del
 callback; el plan silencia desde B hasta que se aplica el salto a A. Si no puede
 preparar o aplicar una vuelta, la consulta de posición informa el error. Cambiar
 el rango después de iniciar el transporte no altera la vuelta activa; detén y
-vuelve a iniciar para aplicar el nuevo rango. Faltan restauración del resto de controladores MIDI al
-navegar y actualización del plan al editar, selección de salidas físicas,
+vuelve a iniciar para aplicar el nuevo rango. Al mover, recortar o quitar una
+región durante Play, el plan activo se recompila en un límite de bloque sin
+cerrar PipeWire; si la edición ocurre en pausa, se aplica al reanudar. Faltan
+restauración del resto de controladores MIDI al navegar, selección de salidas físicas,
 grabación live y monitorización de entrada. No
 se declara terminada la interfaz. La propuesta y las tareas abiertas de
 [workstation-arrangement-surface-v2](openspec/changes/workstation-arrangement-surface-v2/)

@@ -410,7 +410,12 @@ function renderSnapshot(snapshot) {
           try {
             const snapshot = await platform.editAudioRegion({ action: "remove", clipId: clip.id });
             renderSnapshot(snapshot);
-            setNotice("Región quitada", "La región salió del proyecto y la fuente de audio se conservó.");
+            const playbackNote = projectTransportState === "playing"
+              ? "El plan activo se reconstruyó; la fuente de audio se conservó."
+              : projectTransportState === "paused"
+                ? "La fuente se conservó; el plan actualizado se aplicará al reanudar."
+                : "La fuente de audio se conservó.";
+            setNotice("Región quitada", playbackNote);
           } catch (error) {
             setNotice("No se pudo quitar la región", String(error));
           }
@@ -553,7 +558,9 @@ function bindAudioRegionEditing(block, lane, clip, beatsPerBar, tempoBpm) {
       renderSnapshot(snapshot);
       const playbackNote = projectTransportState === "stopped"
         ? "La fuente permanece intacta; puedes deshacer el cambio desde el historial."
-        : "La fuente permanece intacta. Detén e inicia el transporte para cargar el cambio.";
+        : projectTransportState === "playing"
+          ? "La fuente permanece intacta; el plan activo se reconstruyó en un límite de bloque."
+          : "La fuente permanece intacta; el plan actualizado se aplicará al reanudar.";
       setNotice("Región actualizada", playbackNote);
     } catch (error) {
       try {

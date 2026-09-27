@@ -316,6 +316,41 @@ struct PlaybackSession {
     thread: JoinHandle<Result<(), String>>,
     loop_thread: Option<JoinHandle<()>>,
     loop_error: Arc<std::sync::Mutex<Option<String>>>,
+    project_model: Arc<LoopProjectModel>,
+    active_project_revision: Arc<AtomicU64>,
+}
+
+struct LoopProjectModel {
+    project: std::sync::Mutex<Project>,
+    revision: AtomicU64,
+}
+
+impl LoopProjectModel {
+    fn replace(&self, project: &Project) -> Result<u64, String> {
+        let mut current = self
+            .project
+            .lock()
+            .map_err(|_| "el estado del proyecto de reproducción quedó bloqueado".to_owned())?;
+        if *current != *project {
+            *current = project.clone();
+            return Ok(self
+                .revision
+                .fetch_add(1, Ordering::AcqRel)
+                .saturating_add(1));
+        }
+        Ok(self.revision.load(Ordering::Acquire))
+    }
+
+    fn snapshot(&self) -> Result<(Project, u64), String> {
+        let current = self
+            .project
+            .lock()
+            .map_err(|_| "el estado del proyecto de reproducción quedó bloqueado".to_owned())?;
+        let project = current.clone();
+        let revision = self.revision.load(Ordering::Acquire);
+        drop(current);
+        Ok((project, revision))
+    }
 }
 
 struct PlaybackSchedule {
@@ -370,11 +405,23 @@ impl AudioRuntimeHost {
         profile: AudioProfileSettings,
         start_position_ticks: u64,
     ) -> Result<(), String> {
-        if let Some(playback) = &self.playback {
-            if playback.connected.load(Ordering::Acquire) {
-                playback.paused.store(false, Ordering::Release);
-                return Ok(());
+        if let Some(playback) = self
+            .playback
+            .as_ref()
+            .filter(|playback| playback.connected.load(Ordering::Acquire))
+        {
+            let current_revision = playback.project_model.replace(project)?;
+            let was_paused = playback.paused.load(Ordering::Acquire);
+            let pause_flag = Arc::clone(&playback.paused);
+            let active_revision = Arc::clone(&playback.active_project_revision);
+            if was_paused {
+                pause_flag.store(false, Ordering::Release);
+                if active_revision.load(Ordering::Acquire) != current_revision {
+                    self.seek(project, profile, self.position_ticks())?;
+                    active_revision.store(current_revision, Ordering::Release);
+                }
             }
+            return Ok(());
         }
         self.stop()?;
         let loop_range = project.transport.loop_range;
@@ -395,6 +442,11 @@ impl AudioRuntimeHost {
             .period_frames
             .saturating_mul(config.channels as usize);
         let paused = Arc::new(AtomicBool::new(false));
+        let project_model = Arc::new(LoopProjectModel {
+            project: std::sync::Mutex::new(project.clone()),
+            revision: AtomicU64::new(0),
+        });
+        let active_project_revision = Arc::new(AtomicU64::new(0));
         let (plan, senders, schedule) = build_project_playback_with_end(
             project,
             config.sample_rate,
@@ -489,6 +541,8 @@ impl AudioRuntimeHost {
                     thread,
                     loop_thread: None,
                     loop_error: Arc::new(std::sync::Mutex::new(None)),
+                    project_model: Arc::clone(&project_model),
+                    active_project_revision: Arc::clone(&active_project_revision),
                 });
                 self.plan_control = Some(Arc::clone(&control));
                 if let (Some(range), Some(prepared)) = (loop_range, prepared_loop) {
@@ -497,7 +551,8 @@ impl AudioRuntimeHost {
                     let loop_position = Arc::clone(&self.position_ticks);
                     let loop_control = Arc::clone(&control);
                     let loop_schedule = self.playback.as_ref().unwrap().schedule.clone();
-                    let loop_project = project.clone();
+                    let loop_project = Arc::clone(&project_model);
+                    let loop_active_revision = Arc::clone(&active_project_revision);
                     let loop_profile = profile;
                     let loop_error = Arc::clone(&self.playback.as_ref().unwrap().loop_error);
                     let handle = thread::Builder::new()
@@ -515,6 +570,7 @@ impl AudioRuntimeHost {
                                 loop_stop,
                                 loop_paused,
                                 loop_position,
+                                loop_active_revision,
                             ) {
                                 if let Ok(mut state) = loop_error.lock() {
                                     *state = Some(error);
@@ -549,6 +605,33 @@ impl AudioRuntimeHost {
         if let Some(playback) = &self.playback {
             playback.paused.store(paused, Ordering::Release);
         }
+    }
+
+    /// Actualiza el modelo fuente del coordinador y recompila el plan activo
+    /// mientras suena. Si está pausado, conserva el cambio para aplicarlo al
+    /// reanudar, cuando PipeWire vuelva a procesar bloques.
+    pub fn refresh_project(
+        &mut self,
+        project: &Project,
+        profile: AudioProfileSettings,
+    ) -> Result<bool, String> {
+        let Some(playback) = self
+            .playback
+            .as_ref()
+            .filter(|playback| playback.connected.load(Ordering::Acquire))
+        else {
+            return Ok(false);
+        };
+        let project_model = Arc::clone(&playback.project_model);
+        let active_revision = Arc::clone(&playback.active_project_revision);
+        let paused = playback.paused.load(Ordering::Acquire);
+        let revision = project_model.replace(project)?;
+        if paused {
+            return Ok(false);
+        }
+        self.seek(project, profile, self.position_ticks())?;
+        active_revision.store(revision, Ordering::Release);
+        Ok(true)
     }
 
     /// Compila el estado desde la posición solicitada y publica el nuevo plan
@@ -1042,7 +1125,7 @@ fn build_project_playback_with_end(
 
 #[allow(clippy::too_many_arguments)]
 fn coordinate_loop(
-    project: Project,
+    project_model: Arc<LoopProjectModel>,
     profile: AudioProfileSettings,
     sample_rate: u32,
     max_samples: usize,
@@ -1057,43 +1140,49 @@ fn coordinate_loop(
     stop: Arc<AtomicBool>,
     paused: Arc<AtomicBool>,
     position_ticks: Arc<AtomicU64>,
+    active_project_revision: Arc<AtomicU64>,
 ) -> Result<(), String> {
+    let mut prepared_revision = project_model.revision.load(Ordering::Acquire);
     while !stop.load(Ordering::Acquire) {
         if paused.load(Ordering::Acquire) || position_ticks.load(Ordering::Acquire) < range.end_tick
         {
             thread::sleep(Duration::from_millis(1));
             continue;
         }
-        let (plan, senders, events) = prepared;
-        let published = control
-            .lock()
-            .map_err(|_| "el control del plan quedó bloqueado".to_owned())?
-            .publish(plan)
-            .is_ok();
-        if !published {
-            thread::sleep(Duration::from_millis(1));
-            // A competing seek can occupy the exchange; rebuild after it settles.
-            prepared = build_project_playback_with_end(
-                &project,
+        if prepared_revision != project_model.revision.load(Ordering::Acquire) {
+            (prepared, prepared_revision) = prepare_latest_loop_plan(
+                &project_model,
                 sample_rate,
                 max_samples,
-                profile.playback_safety_frames as usize,
+                profile,
+                range,
                 Arc::clone(&paused),
                 Arc::clone(&position_ticks),
-                range.start_tick,
-                Some(range.end_tick),
-            )
-            .map_err(|error| format!("no se pudo reconstruir la vuelta A/B: {error}"))?;
+            )?;
+        }
+        let (plan, senders, events) = prepared;
+        let control = control
+            .lock()
+            .map_err(|_| "el control del plan quedó bloqueado".to_owned())?;
+        if control.publish(plan).is_err() {
+            drop(control);
+            thread::sleep(Duration::from_millis(1));
+            // A competing seek can occupy the exchange; rebuild after it settles.
+            (prepared, prepared_revision) = prepare_latest_loop_plan(
+                &project_model,
+                sample_rate,
+                max_samples,
+                profile,
+                range,
+                Arc::clone(&paused),
+                Arc::clone(&position_ticks),
+            )?;
             continue;
         }
         let deadline = Instant::now() + Duration::from_millis(500);
         let mut reclaimed = false;
         while !stop.load(Ordering::Acquire) && Instant::now() < deadline {
-            if control
-                .lock()
-                .map_err(|_| "el control del plan quedó bloqueado".to_owned())?
-                .reap_retired()
-            {
+            if control.reap_retired() {
                 reclaimed = true;
                 break;
             }
@@ -1105,7 +1194,43 @@ fn coordinate_loop(
         if schedule.send(PlaybackSchedule { events, senders }).is_err() {
             return Err("el scheduler MIDI terminó antes del cambio de vuelta".to_owned());
         }
-        prepared = build_project_playback_with_end(
+        drop(control);
+        active_project_revision.store(prepared_revision, Ordering::Release);
+        (prepared, prepared_revision) = prepare_latest_loop_plan(
+            &project_model,
+            sample_rate,
+            max_samples,
+            profile,
+            range,
+            Arc::clone(&paused),
+            Arc::clone(&position_ticks),
+        )?;
+    }
+    Ok(())
+}
+
+fn prepare_latest_loop_plan(
+    project_model: &LoopProjectModel,
+    sample_rate: u32,
+    max_samples: usize,
+    profile: AudioProfileSettings,
+    range: TransportLoopRange,
+    paused: Arc<AtomicBool>,
+    position_ticks: Arc<AtomicU64>,
+) -> Result<
+    (
+        (
+            estudio_daw_audio_engine::RenderPlan,
+            Vec<EventSender>,
+            Vec<ScheduledEvent>,
+        ),
+        u64,
+    ),
+    String,
+> {
+    loop {
+        let (project, revision) = project_model.snapshot()?;
+        let prepared = build_project_playback_with_end(
             &project,
             sample_rate,
             max_samples,
@@ -1116,8 +1241,10 @@ fn coordinate_loop(
             Some(range.end_tick),
         )
         .map_err(|error| format!("no se pudo preparar la siguiente vuelta A/B: {error}"))?;
+        if project_model.revision.load(Ordering::Acquire) == revision {
+            return Ok((prepared, revision));
+        }
     }
-    Ok(())
 }
 
 fn synth_event(message: &RecordedMidiMessage) -> Option<SynthMidiEvent> {

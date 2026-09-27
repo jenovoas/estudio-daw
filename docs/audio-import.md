@@ -46,15 +46,18 @@ forma de onda limita la duración procesada a diez minutos y produce como máxim
   se prepara antes de abrir el stream y las siguientes fuera del callback. Si
   falla la preparación o el intercambio, la consulta de posición devuelve un
   error. Los cambios del rango durante la reproducción aplican al siguiente
-  inicio. Los cambios de región se guardan de inmediato y se oyen al
-  detener e iniciar de nuevo; no reinician el dispositivo como parte de la
-  edición. La waveform sólo visualiza datos y no simula la señal reproducida.
+  inicio. Al mover, recortar o quitar una región durante Play, el runtime
+  recompila el plan desde la posición actual y lo publica en el siguiente límite
+  de bloque sin cerrar PipeWire. En pausa, el proyecto se actualiza y el plan
+  nuevo se aplica al reanudar. La waveform sólo visualiza datos y no simula la
+  señal reproducida.
 - Los procesos externos `ffmpeg` y `ffprobe` deben estar instalados. Un fallo se
   presenta como error de importación/forma de onda, sin registrar una región
   incompleta.
 
 La tarea OpenSpec 2.2 permanece abierta hasta completar QA visual del flujo de
 importación y edición en la aplicación. La tarea 2.3 también sigue abierta por
-permanecer abierta por QA funcional/acústica y actualización del plan de región
-al editar durante reproducción; el bucle A/B ya está conectado al runtime, pero
-la suite no se ejecutó en esta intervención.
+QA funcional/acústica, posicionamiento compartido del transporte, restauración
+de controladores MIDI y sincronía sample-accurate del scheduler; los cambios de
+región durante Play ya reconstruyen el plan activo. No se ejecutó suite de
+pruebas en esta intervención.

@@ -83,3 +83,10 @@
 - Verificación: `cargo check -p estudio-daw-ui-shell`, `cargo fmt --all -- --check`, `git diff --check`; `openspec validate workstation-arrangement-surface-v2` válida con ocho avisos lingüísticos conocidos. No se ejecutó ninguna suite de pruebas.
 - OpenSpec sigue 9/35; las tareas 2.3 y 4.3 continúan abiertas por actualización del plan al editar, controladores MIDI restantes, sincronía del scheduler y QA funcional/acústica. Consultar el último commit de `main` para el SHA final.
 - Siguiente: continuar 2.3 con actualización del plan activo cuando cambian regiones/proyecto; mantener en paralelo los pendientes de 4.3. Vault append-only actualizado en esta intervención.
+
+## Actualización — recompilación al editar regiones
+
+- Mover, recortar y quitar audio mientras está en Play actualiza el plan desde la posición musical vigente y lo publica en el siguiente límite de bloque; PipeWire sigue abierto. En pausa se conserva el cambio y se reconstruye al reanudar.
+- El modelo para el coordinador de loop usa revisión atómica más snapshot protegido fuera del callback. Cada vuelta futura se prepara con la revisión más reciente. Publicación/retiro del plan y reemplazo de agenda se serializan con la búsqueda manual para evitar cruces entre plan y MIDI.
+- Verificación local: `cargo check -p estudio-daw-ui-shell`, `cargo fmt --all -- --check`, ambos `node --check` y `git diff --check`; no se ejecutaron pruebas ni QA visual/acústica. OpenSpec sigue 9/35; 2.3 y 4.3 permanecen abiertas por QA, controladores MIDI restantes y sincronía del scheduler.
+- Consultar `git log` para los SHAs de implementación/documentación que publican este avance y la actualización de tareas.

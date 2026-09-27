@@ -181,6 +181,19 @@ Para explorar estructuralmente el código, usa la habilidad instalada `codebase-
   registrar el avance append-only en `BITACORA_AGENTES.md` y actualizar
   `ESTADO_ACTUAL.md`.
 
+## Estado vigente — edición de regiones durante Play — 2026-09-27
+
+- Mover, recortar o quitar regiones de audio durante Play actualiza el proyecto y
+  recompila el plan desde la posición actual; se publica en un límite de bloque
+  y no se reinicia PipeWire. Si se edita en pausa, se guarda el modelo nuevo y
+  Play lo aplica al reanudar.
+- El coordinador A/B toma snapshots versionados del proyecto para preparar las
+  vueltas siguientes. No mezclar agendas de seek y loop: publicación, retiro y
+  reemplazo de agenda se serializan fuera del callback.
+- Continúan pendientes QA funcional/acústica, otros controladores MIDI y
+  sincronía del scheduler con el reloj del plan. OpenSpec 2.3/4.3 sigue abierta;
+  no ejecutar suites salvo instrucción del usuario.
+
 ## Avance posterior — búsqueda de transporte — 2026-09-27
 
 - Un clic en la regla durante Play recompila el plan y lo publica al siguiente

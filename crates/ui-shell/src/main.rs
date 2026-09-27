@@ -344,11 +344,18 @@ fn edit_audio_region(
     application
         .execute_project(command)
         .map_err(|error| error.to_string())?;
-    let connected = state
+    let project = application.snapshot().project.project;
+    let mut audio = state
         .audio
         .lock()
-        .map_err(|_| "el estado del motor de audio quedó bloqueado".to_owned())?
-        .is_connected();
+        .map_err(|_| "el estado del motor de audio quedó bloqueado".to_owned())?;
+    let connected = audio.is_connected();
+    if connected {
+        let settings = load_audio_runtime_settings().map_err(|error| error.to_string())?;
+        audio
+            .refresh_project(&project, settings.active())
+            .map_err(|error| format!("la edición del proyecto quedó aplicada, pero no se pudo actualizar el plan de audio: {error}"))?;
+    }
     Ok(summarize(application, connected))
 }
 
