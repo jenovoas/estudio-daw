@@ -123,6 +123,6 @@
 
 ## Avance parcial — controles de mezcla de pista
 
-- Session, Arrangement y Mezclador presentan ACT/M/S y sliders de ganancia/panorama para pistas no master. Las interacciones emiten `SetTrackMixer` reversible; el backend refresca el plan en Play y deja las ediciones listas para aplicar al reanudar si está pausado.
+- Publicado en `037aa15` y extendido a las tres superficies en `9cd8e42`. Session, Arrangement y Mezclador presentan ACT/M/S y sliders de ganancia/panorama para pistas no master. Las interacciones emiten `SetTrackMixer` reversible; el backend refresca el plan en Play y deja las ediciones listas para aplicar al reanudar si está pausado.
 - El plan hace efectivos active/mute/solo/gain/pan para MIDI y regiones de audio. El master no ofrece controles, y no hay medidores ni agrupación; no marcar 4.1 completa.
 - Verificación local: fmt/fmt check, `cargo check -p estudio-daw-ui-shell`, ambos `node --check`, diff check y OpenSpec normal (ocho avisos lingüísticos conocidos). No se ejecutaron suites ni QA visual/acústica. No marcar 4.1 completa.
