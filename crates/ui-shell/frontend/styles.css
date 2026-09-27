@@ -142,8 +142,8 @@ button:disabled { opacity: .4; cursor: not-allowed !important; }
 .timeline-ruler .playhead { z-index: 11; }
 .transport-position { min-width: 42px; color: #f08c84; font: 700 9px ui-monospace, monospace; font-variant-numeric: tabular-nums; }
 .edit-cursor-position { margin: 0 7px 5px; color: #d7bf91; font-size: 8px; font-variant-numeric: tabular-nums; }
-.arrangement-track-list, .arrangement-lanes { display: grid; grid-auto-rows: 76px; align-content: start; }
-.track-row { position: sticky; left: 0; z-index: 2; display: flex; flex-direction: column; justify-content: center; gap: 5px; padding: 0 11px; overflow: hidden; background: linear-gradient(90deg, #33373a, #2e3235); border-right: 1px solid #141617; border-bottom: 1px solid #181a1c; box-shadow: inset 3px 0 var(--track-color, #58a6b8); }
+.arrangement-track-list, .arrangement-lanes { display: grid; grid-auto-rows: 116px; align-content: start; }
+.track-row { position: sticky; left: 0; z-index: 2; display: flex; flex-direction: column; justify-content: center; gap: 4px; padding: 5px 11px; overflow: hidden; background: linear-gradient(90deg, #33373a, #2e3235); border-right: 1px solid #141617; border-bottom: 1px solid #181a1c; box-shadow: inset 3px 0 var(--track-color, #58a6b8); }
 .track-name { min-width: 0; display: flex; align-items: center; gap: 8px; color: #e7e8e8; font-size: 10px; font-weight: 650; }
 .track-name > span:last-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .track-icon { width: 23px; height: 23px; flex: none; display: grid; place-items: center; border-radius: 4px; background: color-mix(in srgb, var(--track-color, #58a6b8) 25%, #202326); color: var(--track-color, #58a6b8); font-size: 11px; }
@@ -182,7 +182,7 @@ button:disabled { opacity: .4; cursor: not-allowed !important; }
 .surface-heading span { color: #898f92; font-size: 8px; letter-spacing: 0; }
 .surface-empty { padding: 24px 14px; color: #92999c; font-size: 9px; }
 .session-track-grid { display: flex; gap: 1px; align-items: stretch; min-width: max-content; padding: 10px; }
-.session-track-card { width: 188px; min-height: 152px; display: flex; flex-direction: column; gap: 6px; padding: 9px; border: 1px solid #17191b; border-top: 2px solid var(--track-color, #58a6b8); background: #303437; }
+.session-track-card { width: 188px; min-height: 205px; display: flex; flex-direction: column; gap: 6px; padding: 9px; border: 1px solid #17191b; border-top: 2px solid var(--track-color, #58a6b8); background: #303437; }
 .session-track-card > strong { overflow: hidden; color: #e2e4e4; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
 .session-track-card > span { color: var(--track-color, #58a6b8); font-size: 7px; font-weight: 750; letter-spacing: .7px; }
 .session-track-card > small { min-height: 22px; color: #969da0; font-size: 7px; line-height: 1.45; }
@@ -198,6 +198,10 @@ button:disabled { opacity: .4; cursor: not-allowed !important; }
 .mixer-toggle.is-selected { border-color: #c38a55; background: #51402f; color: #ffd4aa; }
 .mixer-slider { display: flex; flex-direction: column; gap: 3px; color: #aeb4b6; font-size: 8px; }
 .mixer-slider input { width: 100%; height: 12px; margin: 0; accent-color: #d89b63; }
+.mixer-controls-compact { grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 2px; }
+.mixer-controls-compact .mixer-toggle { grid-column: span 2; min-height: 18px; padding: 1px 2px; font-size: 6px; }
+.mixer-controls-compact .mixer-slider { grid-column: span 3; gap: 2px; font-size: 6px; }
+.mixer-controls-compact .mixer-slider input { height: 10px; }
 
 .lower-panel { min-height: 73px; max-height: 220px; overflow: auto; background: #292c2f; border-top: 1px solid #42474a; }
 .lower-panel-title { height: 25px; display: flex; align-items: center; gap: 7px; padding: 0 10px; color: #a5abae; font-size: 7px; letter-spacing: .8px; }
@@ -246,7 +250,7 @@ button:disabled { opacity: .4; cursor: not-allowed !important; }
 }
 @media (max-height: 680px) {
   .editor { grid-template-rows: 46px 34px minmax(170px, 1fr) 64px auto; }
-  .arrangement-track-list, .arrangement-lanes { grid-auto-rows: 65px; }
+  .arrangement-track-list, .arrangement-lanes { grid-auto-rows: 116px; }
   .midi-clip { height: 51px; }
   .lower-panel { min-height: 62px; }
   .lower-panel-title { height: 21px; }
