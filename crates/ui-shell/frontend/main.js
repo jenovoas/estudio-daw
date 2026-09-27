@@ -140,6 +140,7 @@ const UI_ACTIONS = [
   { id: "transport.loopB", label: "Fijar fin del rango B", menu: "Transporte", target: "loopPointB", requiresProject: true },
   { id: "transport.loopClear", label: "Limpiar rango A/B", menu: "Transporte", target: "loopRangeClear", requiresProject: true },
   { id: "clip.select", label: "Seleccionar clip o región", menu: "Contexto", contexts: ["clip", "audio", "midi"] },
+  { id: "midi.duplicate", label: "Duplicar clip MIDI", menu: "Contexto", contexts: ["midi"] },
   { id: "midi.quantize", label: "Cuantizar clip MIDI a rejilla actual", menu: "Contexto", contexts: ["midi"] },
   { id: "audio.preview", label: "Preescuchar región", menu: "Contexto", contexts: ["audio"] },
   { id: "audio.remove", label: "Quitar región", menu: "Contexto", contexts: ["audio"] },
@@ -173,6 +174,9 @@ function executeUiAction(action, context = null) {
         void runCommand("Clip MIDI cuantizado", () => platform.quantizeMidiClip(clip.id, gridTicks));
       }
     }
+  } else if (action.id === "midi.duplicate") {
+    const clipId = context?.clip?.dataset.clipId;
+    if (clipId) void runCommand("Clip MIDI duplicado", () => platform.duplicateMidiClip(clipId));
   } else if (action.id === "track.moveUp") {
     context?.track?.querySelector('[data-track-order="up"]:not(:disabled)')?.click();
   } else if (action.id === "track.moveDown") {

@@ -140,6 +140,9 @@ En el contexto de un clip MIDI, «Cuantizar a rejilla actual» usa su PPQ
 persistido y el valor del selector de rejilla; el comando sólo cuantiza Note
 On/Off y conserva controladores. La acción se oculta cuando la rejilla está en
 modo libre.
+El mismo menú contextual permite duplicar el clip MIDI a continuación del
+original. El comando asigna un ID único y conserva el contenido de la toma;
+la nueva posición también puede ajustarse arrastrando con la rejilla activa.
 
 La barra de herramientas lateral y las pestañas del encabezado cambian entre
 Arreglo, Session y Mezclador. Session presenta pistas por columnas y escenas

@@ -143,6 +143,9 @@ pub enum ProjectCommand {
         clip_id: String,
         start_tick: u64,
     },
+    DuplicateMidiClip {
+        clip_id: String,
+    },
     RemoveAudioClip {
         clip_id: String,
     },
@@ -957,6 +960,32 @@ impl CommandRuntime {
                         .find(|clip| clip.id == clip_id)
                         .ok_or_else(|| format!("unknown MIDI clip: {clip_id}"))?;
                     clip.start_tick = start_tick;
+                    project
+                        .validate_persisted_contracts()
+                        .map_err(|error| error.to_string())
+                })
+                .map_err(|error| CommandError::Project(error.to_string()))?,
+            ProjectCommand::DuplicateMidiClip { clip_id } => self
+                .project_history
+                .transact("duplicate MIDI clip", |project| -> Result<(), String> {
+                    let source_index = project
+                        .midi_clips
+                        .iter()
+                        .position(|clip| clip.id == clip_id)
+                        .ok_or_else(|| format!("unknown MIDI clip: {clip_id}"))?;
+                    let source = project.midi_clips[source_index].clone();
+                    let base_id = format!("{}-copy", source.id);
+                    let mut new_id = base_id.clone();
+                    let mut suffix = 2_u32;
+                    while project.midi_clips.iter().any(|clip| clip.id == new_id) {
+                        new_id = format!("{base_id}-{suffix}");
+                        suffix = suffix.saturating_add(1);
+                    }
+                    let mut duplicate = source.clone();
+                    duplicate.id = new_id;
+                    duplicate.name = format!("{} (copia)", source.name);
+                    duplicate.start_tick = source.start_tick.saturating_add(source.duration_ticks);
+                    project.midi_clips.insert(source_index + 1, duplicate);
                     project
                         .validate_persisted_contracts()
                         .map_err(|error| error.to_string())
@@ -2033,6 +2062,44 @@ mod tests {
         let redone = runtime.snapshot().project.project.midi_clips[0].clone();
         assert_eq!(redone.start_tick, 1_920);
         assert_eq!(redone.take.events, events);
+    }
+
+    #[test]
+    fn duplicating_midi_clip_creates_unique_adjacent_copy_and_undoes() {
+        let mut runtime = CommandRuntime::new(project());
+        let original = runtime.snapshot().project.project.midi_clips[0].clone();
+
+        runtime
+            .apply(envelope(
+                "duplicate-midi-1",
+                DomainCommand::Project(ProjectCommand::DuplicateMidiClip {
+                    clip_id: original.id.clone(),
+                }),
+            ))
+            .unwrap();
+        let clips = runtime.snapshot().project.project.midi_clips;
+        assert_eq!(clips.len(), 2);
+        assert_eq!(clips[0], original);
+        assert_ne!(clips[1].id, original.id);
+        assert_eq!(clips[1].track_id, original.track_id);
+        assert_eq!(clips[1].name, format!("{} (copia)", original.name));
+        assert_eq!(
+            clips[1].start_tick,
+            original.start_tick + original.duration_ticks
+        );
+        assert_eq!(clips[1].duration_ticks, original.duration_ticks);
+        assert_eq!(clips[1].take, original.take);
+
+        runtime
+            .apply(envelope(
+                "undo-duplicate-midi-1",
+                DomainCommand::Project(ProjectCommand::Undo),
+            ))
+            .unwrap();
+        assert_eq!(
+            runtime.snapshot().project.project.midi_clips,
+            vec![original]
+        );
     }
 
     #[test]
