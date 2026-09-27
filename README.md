@@ -705,9 +705,11 @@ anteriores al cursor. Play decodifica las
 regiones de audio de forma incremental en workers, las precarga en rings PCM
 acotados y las mezcla con instrumentos MIDI; el callback no decodifica ni hace
 I/O. La posición y el cabezal de reproducción de Arreglo siguen los frames
-procesados y se congelan en pausa. Todavía faltan bucles, búsqueda durante la
-reproducción, restauración del resto de controladores MIDI al buscar y actualización del
-plan, selección de salidas físicas, grabación live y monitorización de entrada. No
+procesados y se congelan en pausa. Un clic en la regla durante Play reubica la
+reproducción compilando y publicando el plan al siguiente bloque sin cerrar
+PipeWire. Todavía faltan bucles, restauración del resto de controladores MIDI al
+navegar y actualización del plan al editar, selección de salidas físicas,
+grabación live y monitorización de entrada. No
 se declara terminada la interfaz. La propuesta y las tareas abiertas de
 [workstation-arrangement-surface-v2](openspec/changes/workstation-arrangement-surface-v2/)
 registran Ableton Live 12 como referencia de UX prioritaria y Ardour sólo como

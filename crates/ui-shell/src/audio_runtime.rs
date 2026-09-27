@@ -5,7 +5,8 @@
 
 use estudio_daw_application::{AudioProfileSettings, TransportClock};
 use estudio_daw_audio_engine::{
-    render_plan_exchange, AudioNode, AudioNodeError, RenderPlanBuilder, SampleRingBuffer,
+    render_plan_exchange, AudioNode, AudioNodeError, RenderPlanBuilder, RenderPlanControl,
+    SampleRingBuffer,
 };
 use estudio_daw_audio_platform::{run_pipewire_output_until, PipeWireStreamConfig};
 use estudio_daw_midi_engine::RecordedMidiMessage;
@@ -282,11 +283,18 @@ struct PlaybackSession {
     stop: Arc<AtomicBool>,
     paused: Arc<AtomicBool>,
     connected: Arc<AtomicBool>,
+    schedule: mpsc::Sender<PlaybackSchedule>,
     thread: JoinHandle<Result<(), String>>,
+}
+
+struct PlaybackSchedule {
+    events: Vec<ScheduledEvent>,
+    senders: Vec<EventSender>,
 }
 
 pub struct AudioRuntimeHost {
     playback: Option<PlaybackSession>,
+    plan_control: Option<RenderPlanControl>,
     position_ticks: Arc<AtomicU64>,
 }
 
@@ -294,6 +302,7 @@ impl Default for AudioRuntimeHost {
     fn default() -> Self {
         Self {
             playback: None,
+            plan_control: None,
             position_ticks: Arc::new(AtomicU64::new(0)),
         }
     }
@@ -343,7 +352,7 @@ impl AudioRuntimeHost {
             start_position_ticks,
         )?;
         let (control, processor) = render_plan_exchange(plan);
-        drop(control);
+        let (schedule_tx, schedule_rx) = mpsc::channel();
 
         let stop = Arc::new(AtomicBool::new(false));
         let connected = Arc::new(AtomicBool::new(false));
@@ -360,7 +369,15 @@ impl AudioRuntimeHost {
                 let scheduler = thread::Builder::new()
                     .name("estudio-daw-midi-scheduler".into())
                     .spawn(move || {
-                        schedule_events(schedule, senders, scheduler_stop, scheduler_paused)
+                        schedule_events(
+                            PlaybackSchedule {
+                                events: schedule,
+                                senders,
+                            },
+                            schedule_rx,
+                            scheduler_stop,
+                            scheduler_paused,
+                        )
                     })
                     .map_err(|error| error.to_string())?;
 
@@ -397,8 +414,10 @@ impl AudioRuntimeHost {
                     stop,
                     paused,
                     connected,
+                    schedule: schedule_tx,
                     thread,
                 });
+                self.plan_control = Some(control);
                 Ok(())
             }
             Ok(Err(error)) => {
@@ -419,6 +438,58 @@ impl AudioRuntimeHost {
         }
     }
 
+    /// Compila el estado desde la posición solicitada y publica el nuevo plan
+    /// en un límite de bloque, manteniendo abierto el stream PipeWire.
+    pub fn seek(
+        &mut self,
+        project: &Project,
+        profile: AudioProfileSettings,
+        position_ticks: u64,
+    ) -> Result<(), String> {
+        let playback = self
+            .playback
+            .as_ref()
+            .filter(|playback| playback.connected.load(Ordering::Acquire))
+            .ok_or_else(|| "la búsqueda requiere el transporte en reproducción".to_owned())?;
+        if playback.paused.load(Ordering::Acquire) {
+            return Err("reanuda el transporte antes de buscar mientras reproduce".to_owned());
+        }
+        let control = self
+            .plan_control
+            .as_ref()
+            .ok_or_else(|| "no está disponible el control del plan de audio".to_owned())?;
+        let sample_rate = PipeWireStreamConfig::default().sample_rate;
+        let max_samples = (profile.device_period_frames as usize).saturating_mul(2);
+        let (plan, senders, events) = build_project_playback(
+            project,
+            sample_rate,
+            max_samples,
+            profile.playback_safety_frames as usize,
+            Arc::clone(&playback.paused),
+            Arc::clone(&self.position_ticks),
+            position_ticks,
+        )?;
+        if control.publish(plan).is_err() {
+            return Err("el motor aún está aplicando un cambio anterior de plan".to_owned());
+        }
+        if playback
+            .schedule
+            .send(PlaybackSchedule { events, senders })
+            .is_err()
+        {
+            return Err("el scheduler terminó antes de recibir la búsqueda".to_owned());
+        }
+        let deadline = Instant::now() + Duration::from_millis(250);
+        while !control.reap_retired() {
+            if Instant::now() >= deadline {
+                return Err("PipeWire no confirmó el cambio de plan tras la búsqueda".to_owned());
+            }
+            thread::sleep(Duration::from_millis(1));
+        }
+        self.position_ticks.store(position_ticks, Ordering::Release);
+        Ok(())
+    }
+
     pub fn stop(&mut self) -> Result<(), String> {
         let Some(playback) = self.playback.take() else {
             self.position_ticks.store(0, Ordering::Release);
@@ -431,6 +502,7 @@ impl AudioRuntimeHost {
             .join()
             .map_err(|_| "el hilo de reproducción terminó inesperadamente".to_owned())??;
         self.position_ticks.store(0, Ordering::Release);
+        self.plan_control = None;
         Ok(())
     }
 }
@@ -827,37 +899,74 @@ fn ticks_to_micros(ticks: u64, ppq: u32, bpm: f64) -> u64 {
 }
 
 fn schedule_events(
-    schedule: Vec<ScheduledEvent>,
-    mut senders: Vec<EventSender>,
+    mut schedule: PlaybackSchedule,
+    updates: mpsc::Receiver<PlaybackSchedule>,
     stop: Arc<AtomicBool>,
     paused: Arc<AtomicBool>,
 ) {
-    let origin = Instant::now();
+    schedule
+        .events
+        .sort_by_key(|event| (event.at, event.sequence));
+    let mut origin = Instant::now();
     let mut paused_total = Duration::ZERO;
     let mut pause_started = None;
-    for event in schedule {
-        loop {
-            if stop.load(Ordering::Acquire) {
-                return;
-            }
-            if paused.load(Ordering::Acquire) {
-                pause_started.get_or_insert_with(Instant::now);
-                thread::sleep(Duration::from_millis(2));
-                continue;
-            }
-            if let Some(started) = pause_started.take() {
-                paused_total = paused_total.saturating_add(started.elapsed());
-            }
-            let target = event.at.saturating_add(paused_total);
-            let elapsed = origin.elapsed();
-            if elapsed >= target {
-                break;
-            }
-            thread::sleep((target - elapsed).min(Duration::from_millis(2)));
+    let mut index = 0;
+    loop {
+        if stop.load(Ordering::Acquire) {
+            return;
         }
-        if let Some(sender) = senders.get_mut(event.sender) {
+        if let Ok(mut replacement) = updates.try_recv() {
+            replacement
+                .events
+                .sort_by_key(|event| (event.at, event.sequence));
+            schedule = replacement;
+            index = 0;
+            origin = Instant::now();
+            paused_total = Duration::ZERO;
+            pause_started = None;
+        }
+        let Some(event) = schedule.events.get(index) else {
+            if let Ok(replacement) = updates.recv_timeout(Duration::from_millis(2)) {
+                schedule = replacement;
+                schedule
+                    .events
+                    .sort_by_key(|event| (event.at, event.sequence));
+                index = 0;
+                origin = Instant::now();
+                paused_total = Duration::ZERO;
+                pause_started = None;
+            }
+            continue;
+        };
+        if paused.load(Ordering::Acquire) {
+            pause_started.get_or_insert_with(Instant::now);
+            thread::sleep(Duration::from_millis(1));
+            continue;
+        }
+        if let Some(started) = pause_started.take() {
+            paused_total = paused_total.saturating_add(started.elapsed());
+        }
+        let target = event.at.saturating_add(paused_total);
+        let elapsed = origin.elapsed();
+        if elapsed < target {
+            if let Ok(replacement) =
+                updates.recv_timeout((target - elapsed).min(Duration::from_millis(2)))
+            {
+                schedule = replacement;
+                schedule
+                    .events
+                    .sort_by_key(|event| (event.at, event.sequence));
+                index = 0;
+                origin = Instant::now();
+                paused_total = Duration::ZERO;
+                pause_started = None;
+            }
+            continue;
+        }
+        if let Some(sender) = schedule.senders.get_mut(event.sender) {
             sender.send(event.midi);
         }
+        index += 1;
     }
 }
 

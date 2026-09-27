@@ -845,6 +845,18 @@ fn set_transport(
     let application = application
         .as_mut()
         .ok_or_else(|| "primero abre un proyecto".to_owned())?;
+    if command == "seek" {
+        let position_ticks =
+            position_ticks.ok_or_else(|| "la búsqueda requiere una posición musical".to_owned())?;
+        let settings = load_audio_runtime_settings().map_err(|error| error.to_string())?;
+        let project = application.snapshot().project.project;
+        let mut audio = state
+            .audio
+            .lock()
+            .map_err(|_| "el estado del motor de audio quedó bloqueado".to_owned())?;
+        audio.seek(&project, settings.active(), position_ticks)?;
+        return Ok(summarize(application, audio.is_connected()));
+    }
     let session_command = match command.as_str() {
         "play" => SessionCommand::Play,
         "pause" => SessionCommand::Pause,

@@ -162,6 +162,20 @@ de formatos como OpenSpec; no se usan como excusa para añadir prosa en inglés.
 Para explorar estructuralmente el código, usa la habilidad instalada `codebase-memory`.
 <!-- codebase-memory-mcp:end -->
 
+## Avance posterior — búsqueda de transporte — 2026-09-27
+
+- Un clic en la regla durante Play recompila el plan y lo publica al siguiente
+  límite de bloque sin cerrar el stream PipeWire; la UI refleja la posición y
+  el scheduler sustituye la agenda MIDI. Al buscar, audio salta al offset de la
+  región y MIDI reconstruye las notas activas y CC64 anteriores al cursor.
+- `workstation-arrangement-surface-v2` sigue en 9/35; 2.3/4.3 continúan
+  parciales. Pendientes: bucle, cambios de proyecto en caliente, otros
+  controladores MIDI, scheduler ligado al reloj del plan y QA visual/auditiva.
+- Validación del corte: compilación del crate UI Shell, formato, sintaxis JS,
+  diff check y validación OpenSpec pasaron; sin pruebas ni QA manual.
+- Consultar el handoff y `git log` para los SHA publicados. Los artefactos
+  generados de `.codebase-memory/` se restauran antes de versionar.
+
 ## Continuación activa — 2.2 (2026-09-27)
 
 El commit publicado `b375009` incluye el primer corte de 2.2 (sobre `f1fdf43`)

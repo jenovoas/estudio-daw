@@ -791,8 +791,17 @@ async function addTrack(kind, button) {
 
 elements.addMidiTrack.addEventListener("click", () => addTrack("midi", elements.addMidiTrack));
 elements.addAudioTrack.addEventListener("click", () => addTrack("audio", elements.addAudioTrack));
-elements.ruler.addEventListener("click", (event) => {
+elements.ruler.addEventListener("click", async (event) => {
   setEditCursorFromX(event.clientX, elements.ruler.getBoundingClientRect());
+  if (projectTransportState !== "playing") return;
+  try {
+    const snapshot = await platform.setTransport("seek", editCursorTick * 2);
+    renderSnapshot(snapshot);
+    renderTransportPosition(await platform.transportPosition());
+    setNotice("Transporte reubicado", `Reproducción desde ${elements.transportPosition.textContent}.`);
+  } catch (error) {
+    setNotice("No se pudo reubicar el transporte", String(error));
+  }
 });
 elements.importBar.addEventListener("change", () => {
   const bar = Math.max(1, Number(elements.importBar.value) || 1);

@@ -1,5 +1,12 @@
 # Handoff de continuación — 2026-09-27
 
+## Actualización — búsqueda de transporte durante Play
+
+- Continuación publicada: consultar `git log`; la búsqueda se aplica mediante un plan nuevo en el siguiente límite de bloque y conserva abierto PipeWire. Un clic en la regla reubica audio y MIDI; el scheduler sustituye la agenda y las regiones se decodifican desde la nueva posición.
+- Verificación del corte: `cargo fmt --all`, `cargo check -p estudio-daw-ui-shell`, `cargo fmt --all -- --check`, `node --check` de `main.js` y `platform-tauri.js`, `git diff --check` y `openspec validate workstation-arrangement-surface-v2` pasan; ocho avisos lingüísticos conocidos. No se ejecutaron pruebas ni QA auditiva/visual.
+- `workstation-arrangement-surface-v2` sigue en 9/35; 2.3 y 4.3 continúan abiertas. Pendientes: loop, rebuild al editar, otros controladores MIDI, alinear el scheduler al reloj del plan y QA. La búsqueda se ofrece sólo mientras está en Play; pausado se debe reanudar primero.
+- No se modificó el dispositivo ni el callback para preparar planes. El control publica el plan desde Tauri y espera la recuperación del anterior fuera de RT; el scheduler usa todavía reloj de pared para los tiempos de eventos. Continuar con esa limitación documentada.
+
 ## Reanudación — reproducción incremental de regiones (OpenSpec 2.3)
 
 - HEAD publicado tras los cortes 2.3/4.3: `c534142` (`feat: muestra posición real del transporte`). La búsqueda inicial desde el cursor de Arreglo está en curso; consultar `git status/log` al reanudar.
