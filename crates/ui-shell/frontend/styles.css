@@ -299,6 +299,10 @@ button:disabled { opacity: .4; cursor: not-allowed !important; }
 .track-instrument-control button:disabled { opacity: .45; cursor: default; }
 .track-instrument-control small { grid-column: 1 / -1; color: #9ca4a7; line-height: 1.4; }
 .track-instrument-control[open] { padding: 6px; border: 1px solid #474e50; border-left: 2px solid #e88a43; border-radius: 3px; background: #24282a; }
+.track-instrument-control.is-device { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 4px; padding: 4px 5px; border: 1px solid #3e4447; border-left: 3px solid var(--track-color, #e88a43); border-radius: 3px; background: #1f2325; }
+.track-instrument-control.is-device .device-name { min-width: 0; overflow: hidden; color: #f3d2ae; font-size: 9px; font-weight: 700; letter-spacing: .2px; text-overflow: ellipsis; white-space: nowrap; }
+.track-instrument-control.is-device .mixer-toggle { min-height: 20px; padding: 1px 7px; }
+.track-instrument-control.is-device small { grid-column: 1 / -1; }
 .mixer-controls-compact { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 3px; }
 .mixer-controls-compact .mixer-toggle { grid-column: auto; min-height: 19px; padding: 1px 2px; font-size: 8px; }
 .mixer-controls-compact .mixer-slider { display: none; }

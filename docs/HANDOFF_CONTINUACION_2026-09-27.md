@@ -1,5 +1,13 @@
 # Handoff de continuación — 2026-09-27
 
+## Punto de reanudación actual — editor VST3 Linux (2026-09-28)
+
+- HEAD publicado al iniciar este corte: `e2c015d`. Hay implementación local del editor nativo VST3 en Linux: el helper crea una ventana X11, adjunta `IPlugView` y atiende `CreateGui`/`CloseGui` en el hilo gráfico. Tauri expone `set_vst3_editor`; Arreglo y Mezclador muestran un slot de dispositivo con CONTROLES/OCULTAR. Play o pausa cargan el helper; Stop lo termina y oculta el estado local de la ventana.
+- `CreateGui`/`CloseGui` pasan al plazo lento de 30 s. Abrir la GUI bloquea el worker de esa pista hasta que el plugin responde; el audio de la pista puede interrumpirse unos segundos. El callback PipeWire no crea ventanas ni habla con el helper.
+- Verificación de este corte: `cargo check -p vst3-host --bins --tests`, `cargo check -p estudio-daw-ui-shell`, `cargo test -p vst3-host --lib slow_commands_are_classified_apart_from_the_per_block_ones`, `cargo fmt --all -- --check`, ambos `node --check` y `git diff --check`. No se ejecutó la suite del workspace ni QA en Tauri con Analog Lab.
+- OpenSpec `workstation-arrangement-surface-v2` sigue 10/44. 4.6.2 y 4.6.6 registran este avance y permanecen abiertas: falta QA visual/auditiva, estado binario del plugin y el mismo acceso desde Session.
+- Continuar: probar en Tauri Play → CONTROLES con Analog Lab V, luego persistir estado del plugin (4.6.4). No marcar 4.6.2 completa sin esa QA. Bitácora de bóveda: `/home/jnovoas/proyectos/personalvault/docs/estudio-daw/BITACORA_AGENTES.md`.
+
 ## Punto de reanudación actual — UI Tauri (2026-09-27)
 
 - HEAD funcional al guardar este handoff: consultar `git log` (piano roll MIDI con gestos). Arreglo incluye movimiento, duplicación, cuantización y división reversibles de clips MIDI. El inspector muestra un piano roll de 36 teclas para insertar y seleccionar notas; permite editar tono/posición/duración/velocidad, borrar, mover por arrastre y redimensionar desde el borde mediante comandos que conservan eventos ajenos, soportan undo/redo y refrescan el plan conectado. Los comandos rechazan referencias obsoletas a eventos.

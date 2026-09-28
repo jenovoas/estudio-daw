@@ -17,6 +17,13 @@ Los ejecutables `vst3-host-helper` y `vst3-host-probe` deben distribuirse junto
 al ejecutable de la aplicación. Si falta alguno, la pista VST3 informa el error
 de carga/inspección y no sustituye el instrumento.
 
+Para abrir los controles nativos de un VST3, el transporte debe estar en Play o
+pausa: el helper sólo vive mientras el motor está conectado. El botón CONTROLES
+de la pista envía `set_vst3_editor`; la primera apertura puede tardar y el audio
+de esa pista puede interrumpirse unos segundos mientras el plugin crea su
+ventana. Cerrar la ventana del plugin o pulsar OCULTAR usa `CloseGui`. Esto no
+sustituye una prueba de Analog Lab en la ventana Tauri.
+
 La salida de esa terminal contiene errores Rust, fallos de inicialización de
 PipeWire y mensajes del proceso Tauri. Los errores de interfaz web/IPC se muestran
 en la consola de desarrollo del visor web y en el aviso inferior de la ventana.

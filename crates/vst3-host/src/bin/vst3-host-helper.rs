@@ -9,15 +9,14 @@
 //! The protocol enums are imported from the library (`vst3_host::process_isolation`),
 //! so host and helper can never disagree about the wire format.
 //!
-//! ## Threading (macOS)
+//! ## Threading (macOS/Linux)
 //!
 //! A plugin editor needs a native UI run loop on the **main thread** to be interactive.
-//! So on macOS the main thread runs an `NSApplication` event pump and stdin/command
-//! processing moves to a worker thread; the plugin is shared behind an
-//! `Arc<Mutex<Option<Plugin>>>`. `CreateGui`/`CloseGui` are forwarded from the worker to
-//! the main thread (which owns the `NSWindow`) over a channel. Audio/control commands run
-//! exactly as before, just on the worker thread. On other platforms the helper stays a
-//! single-threaded stdin loop and GUI is not yet supported.
+//! The main thread runs a native UI event pump and stdin/command processing moves to a
+//! worker thread; the plugin is shared behind an `Arc<Mutex<Option<Plugin>>>`.
+//! `CreateGui`/`CloseGui` are forwarded from the worker to the main thread over a channel.
+//! Audio/control commands stay on the worker thread. Other platforms remain single-threaded
+//! and report GUI as unsupported.
 
 use std::io::{self, BufRead, Write};
 use std::sync::{Arc, Mutex};
@@ -28,7 +27,7 @@ use vst3_host::{
     Plugin, Vst3Host,
 };
 
-/// Loaded plugin shared between the command worker and (on macOS) the UI main thread.
+/// Loaded plugin shared between the command worker and the UI main thread.
 type SharedPlugin = Arc<Mutex<Option<Plugin>>>;
 
 fn main() {
@@ -48,7 +47,12 @@ fn main() {
         macos::run(plugin, protocol);
     }
 
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(target_os = "linux")]
+    {
+        linux::run(plugin, protocol);
+    }
+
+    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
     {
         // No UI run loop needed: process commands on this (main) thread directly.
         let mut protocol = protocol;
@@ -108,7 +112,7 @@ fn err<E: std::fmt::Display>(prefix: &str, e: E) -> HostResponse {
 }
 
 /// A GUI request the worker forwards to the main thread (which owns the window).
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 struct GuiRequest {
     open: bool,
     reply: std::sync::mpsc::Sender<HostResponse>,
@@ -637,15 +641,15 @@ fn handle(
     }
 }
 
-/// The worker's handle to the main thread's GUI loop (macOS only).
-#[cfg(target_os = "macos")]
+/// The worker's handle to the main thread's GUI loop.
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 struct GuiChannel(std::sync::mpsc::Sender<GuiRequest>);
-#[cfg(not(target_os = "macos"))]
+#[cfg(not(any(target_os = "macos", target_os = "linux")))]
 struct GuiChannel;
 
 /// Forward a GUI open/close to the main thread and wait for its reply.
 fn gui_request(gui: Option<&GuiChannel>, open: bool) -> HostResponse {
-    #[cfg(target_os = "macos")]
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
     {
         let Some(GuiChannel(tx)) = gui else {
             return HostResponse::Error {
@@ -668,7 +672,7 @@ fn gui_request(gui: Option<&GuiChannel>, open: bool) -> HostResponse {
             message: "GUI loop did not reply".to_string(),
         })
     }
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
     {
         let _ = (gui, open);
         HostResponse::Error {
@@ -856,6 +860,251 @@ mod macos {
         }
         if let Some(w) = window {
             w.close();
+        }
+    }
+}
+
+#[cfg(target_os = "linux")]
+mod linux {
+    use super::*;
+    use std::sync::mpsc;
+    use std::thread;
+    use std::time::Duration;
+    use xcb::Xid;
+
+    struct PluginEditorWindow {
+        connection: xcb::Connection,
+        window: xcb::x::Window,
+        wm_delete_window: xcb::x::Atom,
+    }
+
+    pub fn run(plugin: SharedPlugin, mut protocol: ProtocolChannel) {
+        let (gui_tx, gui_rx) = mpsc::channel::<GuiRequest>();
+        let (shutdown_tx, shutdown_rx) = mpsc::channel::<()>();
+
+        let worker_plugin = plugin.clone();
+        thread::spawn(move || {
+            let stdin = io::stdin();
+            let mut sample_rate = 44100.0;
+            let gui = GuiChannel(gui_tx);
+            for line in stdin.lock().lines() {
+                let Some(command) = parse_line(line, &mut protocol) else {
+                    continue;
+                };
+                if matches!(command, HostCommand::Shutdown) {
+                    eprintln!("Shutting down helper process");
+                    let _ = shutdown_tx.send(());
+                    break;
+                }
+                let response = handle(command, &worker_plugin, &mut sample_rate, Some(&gui));
+                respond(&mut protocol, &response);
+            }
+            let _ = shutdown_tx.send(());
+        });
+
+        run_event_loop(&plugin, &gui_rx, &shutdown_rx);
+    }
+
+    fn run_event_loop(
+        plugin: &SharedPlugin,
+        gui_rx: &mpsc::Receiver<GuiRequest>,
+        shutdown_rx: &mpsc::Receiver<()>,
+    ) {
+        let mut window: Option<PluginEditorWindow> = None;
+        loop {
+            if shutdown_rx.try_recv().is_ok() {
+                break;
+            }
+
+            while let Ok(request) = gui_rx.try_recv() {
+                let response = if request.open {
+                    close_editor(plugin, window.take());
+                    match open_editor(plugin) {
+                        Ok((opened, width, height)) => {
+                            window = Some(opened);
+                            HostResponse::GuiCreated { width, height }
+                        }
+                        Err(error) => HostResponse::Error { message: error },
+                    }
+                } else {
+                    close_editor(plugin, window.take());
+                    HostResponse::Success {
+                        message: "editor closed".to_string(),
+                    }
+                };
+                let _ = request.reply.send(response);
+            }
+
+            if let Some(opened) = window.as_ref() {
+                service_editor(plugin, opened);
+                if opened.close_requested() {
+                    close_editor(plugin, window.take());
+                }
+            }
+            thread::sleep(Duration::from_millis(16));
+        }
+        close_editor(plugin, window.take());
+    }
+
+    fn open_editor(plugin: &SharedPlugin) -> Result<(PluginEditorWindow, i32, i32), String> {
+        let (connection, screen_number) = xcb::Connection::connect(None)
+            .map_err(|error| format!("no se pudo conectar con X11 para el editor VST3: {error}"))?;
+        let screen = connection
+            .get_setup()
+            .roots()
+            .nth(screen_number as usize)
+            .ok_or_else(|| "X11 no informó una pantalla para el editor VST3".to_string())?;
+        let window = connection.generate_id();
+        let (title, width, height) = {
+            let mut guard = plugin
+                .lock()
+                .map_err(|_| "el estado del plugin quedó bloqueado".to_string())?;
+            let loaded = guard
+                .as_mut()
+                .ok_or_else(|| "no hay un plugin cargado".to_string())?;
+            if !loaded.has_editor() {
+                return Err("el plugin no ofrece una interfaz gráfica".to_string());
+            }
+            let (width, height) = loaded.get_editor_size().unwrap_or((800, 600));
+            (format!("{} - VST3", loaded.info().name), width, height)
+        };
+
+        connection
+            .send_and_check_request(&xcb::x::CreateWindow {
+                depth: xcb::x::COPY_FROM_PARENT as u8,
+                wid: window,
+                parent: screen.root(),
+                x: 0,
+                y: 0,
+                width: width.clamp(1, i32::from(u16::MAX)) as u16,
+                height: height.clamp(1, i32::from(u16::MAX)) as u16,
+                border_width: 0,
+                class: xcb::x::WindowClass::InputOutput,
+                visual: screen.root_visual(),
+                value_list: &[
+                    xcb::x::Cw::BackPixel(screen.white_pixel()),
+                    xcb::x::Cw::EventMask(
+                        xcb::x::EventMask::STRUCTURE_NOTIFY | xcb::x::EventMask::EXPOSURE,
+                    ),
+                ],
+            })
+            .map_err(|error| format!("no se pudo crear la ventana del editor VST3: {error}"))?;
+
+        connection.send_request(&xcb::x::ChangeProperty {
+            mode: xcb::x::PropMode::Replace,
+            window,
+            property: xcb::x::ATOM_WM_NAME,
+            r#type: xcb::x::ATOM_STRING,
+            data: title.as_bytes(),
+        });
+        let wm_protocols = connection
+            .wait_for_reply(connection.send_request(&xcb::x::InternAtom {
+                only_if_exists: false,
+                name: b"WM_PROTOCOLS",
+            }))
+            .map_err(|error| format!("no se pudo registrar WM_PROTOCOLS: {error}"))?
+            .atom();
+        let wm_delete_window = connection
+            .wait_for_reply(connection.send_request(&xcb::x::InternAtom {
+                only_if_exists: false,
+                name: b"WM_DELETE_WINDOW",
+            }))
+            .map_err(|error| format!("no se pudo registrar WM_DELETE_WINDOW: {error}"))?
+            .atom();
+        connection
+            .send_and_check_request(&xcb::x::ChangeProperty {
+                mode: xcb::x::PropMode::Replace,
+                window,
+                property: wm_protocols,
+                r#type: xcb::x::ATOM_ATOM,
+                data: &[wm_delete_window],
+            })
+            .map_err(|error| format!("no se pudo habilitar el cierre del editor: {error}"))?;
+        connection.send_request(&xcb::x::MapWindow { window });
+        connection
+            .flush()
+            .map_err(|error| format!("no se pudo mostrar el editor VST3: {error}"))?;
+
+        let mut guard = plugin
+            .lock()
+            .map_err(|_| "el estado del plugin quedó bloqueado".to_string())?;
+        let loaded = guard
+            .as_mut()
+            .ok_or_else(|| "no hay un plugin cargado".to_string())?;
+        if let Err(error) =
+            loaded.open_editor(vst3_host::WindowHandle::from_x11(window.resource_id()))
+        {
+            connection.send_request(&xcb::x::DestroyWindow { window });
+            let _ = connection.flush();
+            return Err(format!(
+                "no se pudo abrir la interfaz gráfica del plugin: {error}"
+            ));
+        }
+        Ok((
+            PluginEditorWindow {
+                connection,
+                window,
+                wm_delete_window,
+            },
+            width,
+            height,
+        ))
+    }
+
+    fn service_editor(plugin: &SharedPlugin, window: &PluginEditorWindow) {
+        let Ok(mut guard) = plugin.try_lock() else {
+            return;
+        };
+        let Some(loaded) = guard.as_mut() else {
+            return;
+        };
+        loaded.service_run_loop();
+        if let Some((width, height)) = loaded.take_editor_resize_request() {
+            if width > 0 && height > 0 {
+                window.connection.send_request(&xcb::x::ConfigureWindow {
+                    window: window.window,
+                    value_list: &[
+                        xcb::x::ConfigWindow::Width(width as u32),
+                        xcb::x::ConfigWindow::Height(height as u32),
+                    ],
+                });
+                let _ = window.connection.flush();
+            }
+        }
+    }
+
+    fn close_editor(plugin: &SharedPlugin, window: Option<PluginEditorWindow>) {
+        if let Ok(mut guard) = plugin.lock() {
+            if let Some(loaded) = guard.as_mut() {
+                let _ = loaded.close_editor();
+            }
+        }
+        if let Some(window) = window {
+            window.connection.send_request(&xcb::x::UnmapWindow {
+                window: window.window,
+            });
+            window.connection.send_request(&xcb::x::DestroyWindow {
+                window: window.window,
+            });
+            let _ = window.connection.flush();
+        }
+    }
+
+    impl PluginEditorWindow {
+        fn close_requested(&self) -> bool {
+            loop {
+                match self.connection.poll_for_event() {
+                    Ok(Some(xcb::Event::X(xcb::x::Event::ClientMessage(event)))) => {
+                        if let xcb::x::ClientMessageData::Data32([atom, ..]) = event.data() {
+                            if atom == self.wm_delete_window.resource_id() {
+                                return true;
+                            }
+                        }
+                    }
+                    Ok(Some(_)) => {}
+                    Ok(None) | Err(_) => return false,
+                }
+            }
         }
     }
 }

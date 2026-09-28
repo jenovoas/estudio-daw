@@ -47,8 +47,8 @@ const MAX_WIRE_BUSES: i32 = 256;
 /// sum of their 4096-entry limits.
 const MAX_WIRE_PARAMETER_CHANGES: usize = 8192;
 
-/// Whether a command belongs to the slow class — module load and state I/O — which gets
-/// [`DEFAULT_SLOW_COMMAND_TIMEOUT`] instead of the per-block response deadline.
+/// Whether a command belongs to the slow class — module load, editor creation and state
+/// I/O — which gets [`DEFAULT_SLOW_COMMAND_TIMEOUT`] instead of the per-block response deadline.
 pub(crate) fn is_slow_command(command: &HostCommand) -> bool {
     matches!(
         command,
@@ -59,6 +59,8 @@ pub(crate) fn is_slow_command(command: &HostCommand) -> bool {
             | HostCommand::SetProgramData { .. }
             | HostCommand::GetUnitData { .. }
             | HostCommand::SetUnitData { .. }
+            | HostCommand::CreateGui
+            | HostCommand::CloseGui
     )
 }
 
@@ -2567,6 +2569,8 @@ mod wire_tests {
             time_sig_denominator: 4,
             class_id: None,
         }));
+        assert!(is_slow_command(&HostCommand::CreateGui));
+        assert!(is_slow_command(&HostCommand::CloseGui));
         assert!(!is_slow_command(&HostCommand::Process {
             inputs: vec![],
             frames: 64

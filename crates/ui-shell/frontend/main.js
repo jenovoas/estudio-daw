@@ -114,6 +114,7 @@ let editCursorProjectId = null;
 let selectedClipId = null;
 let selectedMidiNote = null;
 const waveformCache = new Map();
+const vst3EditorOpenByTrack = new Map();
 let previewContext = null;
 let currentPreview = null;
 const UI_ZOOM_STORAGE_KEY = "estudio-daw.ui-zoom.v1";
@@ -647,6 +648,11 @@ function createTrackInputControl(track) {
   return field;
 }
 
+function vst3PluginLabel(path) {
+  const file = String(path || "").split(/[\\/]/).filter(Boolean).pop() || "VST3";
+  return file.replace(/\.vst3$/i, "") || "VST3";
+}
+
 function createTrackInstrumentControl(track) {
   if (track.virtualMaster || track.kind !== "midi") return null;
   const currentVst3 = track.instrument?.backend === "vst3" ? track.instrument : null;
@@ -677,23 +683,56 @@ function createTrackInstrumentControl(track) {
     }
   };
   if (currentVst3) {
-    const panel = document.createElement("details");
-    panel.className = "track-instrument-control";
-    const summary = document.createElement("summary");
-    summary.textContent = "Instrumento VST3";
-    const pluginPath = document.createElement("input");
-    pluginPath.type = "text";
-    pluginPath.readOnly = true;
-    pluginPath.value = currentVst3.plugin?.path ?? "";
-    pluginPath.setAttribute("aria-label", `Plugin VST3 de ${track.name}`);
+    const panel = document.createElement("div");
+    panel.className = "track-instrument-control is-device";
+    panel.style.setProperty("--track-color", track.color);
+    const name = document.createElement("strong");
+    name.className = "device-name";
+    name.textContent = vst3PluginLabel(currentVst3.plugin?.path);
+    name.title = currentVst3.plugin?.path ?? "";
+    const show = document.createElement("button");
+    show.type = "button";
+    show.className = "mixer-toggle";
+    const editorOpen = Boolean(vst3EditorOpenByTrack.get(track.id));
+    const engineReady = ["playing", "paused"].includes(projectTransportState);
+    show.textContent = editorOpen ? "OCULTAR" : "CONTROLES";
+    show.classList.toggle("is-selected", editorOpen);
+    show.disabled = !engineReady;
+    show.title = engineReady
+      ? (editorOpen ? `Ocultar los controles de ${name.textContent}` : `Abrir los controles de ${name.textContent}`)
+      : "Dale a Play para cargar el instrumento y abrir sus controles";
+    show.setAttribute("aria-pressed", String(editorOpen));
+    show.setAttribute("aria-label", `${editorOpen ? "Ocultar" : "Mostrar"} controles de ${name.textContent} en ${track.name}`);
+    show.addEventListener("click", async () => {
+      const open = !vst3EditorOpenByTrack.get(track.id);
+      show.disabled = true;
+      try {
+        await platform.setVst3Editor(track.id, open);
+        vst3EditorOpenByTrack.set(track.id, open);
+        setNotice(
+          open ? "Controles abiertos" : "Controles ocultos",
+          open
+            ? `${name.textContent} muestra su ventana nativa. Ciérrala aquí o en la ventana del plugin.`
+            : `${name.textContent} sigue en la pista; sólo se ocultó su ventana.`,
+        );
+        renderSnapshot(lastSnapshot);
+      } catch (error) {
+        vst3EditorOpenByTrack.set(track.id, false);
+        setNotice("No se pudieron abrir los controles", String(error));
+        renderSnapshot(lastSnapshot);
+      }
+    });
     const choose = document.createElement("button");
     choose.type = "button";
-    choose.textContent = "Cambiar instrumento VST3";
+    choose.textContent = "Cambiar";
     choose.disabled = projectTransportState !== "stopped";
     choose.addEventListener("click", chooseVst3);
     const help = document.createElement("small");
-    help.textContent = "El plugin se procesa en un helper aislado; sus controles nativos y el guardado de presets aún están pendientes.";
-    panel.append(summary, pluginPath, choose, help);
+    const bridge = currentVst3.plugin?.bridge ? `${currentVst3.plugin.bridge} · ` : "";
+    help.textContent = engineReady
+      ? `${bridge}El instrumento está en esta pista. CONTROLES abre su ventana real; la primera vez puede tardar unos segundos.`
+      : `${bridge}Play carga el instrumento. Después CONTROLES abre su ventana.`;
+    panel.append(name, show, choose, help);
     return panel;
   }
   const current = track.instrument?.backend === "standalone" ? track.instrument : null;
@@ -1361,6 +1400,7 @@ function renderSnapshot(snapshot) {
   selectedTrackIds = new Set([...selectedTrackIds].filter((trackId) => validTrackIds.has(trackId)));
   projectTransportState = snapshot.transportState;
   audioRecording = audioRecording && projectTransportState !== "stopped";
+  if (projectTransportState === "stopped") vst3EditorOpenByTrack.clear();
   elements.panic.disabled = !snapshot.audioEngineConnected || !["playing", "paused"].includes(projectTransportState);
   loopRange = snapshot.loopRange ?? null;
   for (const button of [elements.loopPointA, elements.loopPointB, elements.loopRangeClear]) {

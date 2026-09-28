@@ -1890,6 +1890,19 @@ fn inspect_vst3_plugin(path: String) -> Result<vst3_host::discovery::DetailedPlu
 }
 
 #[tauri::command]
+fn set_vst3_editor(
+    track_id: String,
+    open: bool,
+    state: State<'_, DesktopState>,
+) -> Result<(), String> {
+    state
+        .audio
+        .lock()
+        .map_err(|_| "el estado del motor de audio quedó bloqueado".to_owned())?
+        .set_vst3_editor(&track_id, open)
+}
+
+#[tauri::command]
 fn open_standalone_instrument(
     track_id: String,
     application_path: String,
@@ -2246,6 +2259,7 @@ fn main() {
             set_track_identity,
             set_track_instrument,
             inspect_vst3_plugin,
+            set_vst3_editor,
             open_standalone_instrument,
             set_track_output,
             set_track_input_route,

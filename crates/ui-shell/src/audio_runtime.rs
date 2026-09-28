@@ -749,7 +749,10 @@ impl AudioNode for LoopBoundaryGateNode {
 enum EventSender {
     Sine(SynthEventSender),
     SoundFont(SoundFontEventSender),
-    Vst3(std::sync::mpsc::SyncSender<SynthMidiEvent>),
+    Vst3 {
+        track_id: String,
+        sender: std::sync::mpsc::SyncSender<Vst3InstrumentCommand>,
+    },
     Alsa {
         worker: LiveMidiOutputWorker,
         channel: Option<u8>,
@@ -767,8 +770,8 @@ impl EventSender {
                 let _ = sender.try_send(event);
                 Ok(())
             }
-            Self::Vst3(sender) => sender
-                .send(event)
+            Self::Vst3 { sender, .. } => sender
+                .send(Vst3InstrumentCommand::Midi(event))
                 .map_err(|_| "el worker aislado del VST3 terminó".to_owned()),
             Self::Alsa { worker, channel } => {
                 let message = match event {
@@ -838,6 +841,31 @@ impl EventSender {
             }
         }
     }
+
+    fn request_vst3_editor(
+        &mut self,
+        open: bool,
+    ) -> Result<mpsc::Receiver<Result<(), String>>, String> {
+        let Self::Vst3 { sender, .. } = self else {
+            return Err("la pista seleccionada no usa un instrumento VST3".to_owned());
+        };
+        let (reply, result) = mpsc::sync_channel(1);
+        let command = if open {
+            Vst3InstrumentCommand::OpenEditor(reply)
+        } else {
+            Vst3InstrumentCommand::CloseEditor(reply)
+        };
+        sender.send(command).map_err(|_| {
+            "el worker VST3 no puede recibir ahora el control de interfaz".to_owned()
+        })?;
+        Ok(result)
+    }
+}
+
+enum Vst3InstrumentCommand {
+    Midi(SynthMidiEvent),
+    OpenEditor(mpsc::SyncSender<Result<(), String>>),
+    CloseEditor(mpsc::SyncSender<Result<(), String>>),
 }
 
 /// El plugin y su IPC viven en un worker aislado. El callback sólo consume el
@@ -864,7 +892,7 @@ impl AudioNode for Vst3PcmNode {
 
 struct Vst3InstrumentWorker {
     stop: Arc<AtomicBool>,
-    commands: std::sync::mpsc::SyncSender<SynthMidiEvent>,
+    commands: std::sync::mpsc::SyncSender<Vst3InstrumentCommand>,
     thread: Option<JoinHandle<()>>,
 }
 
@@ -912,12 +940,32 @@ impl Vst3InstrumentWorker {
                     let _ = ready_sender.send(Ok(()));
                     let mut buffers = AudioBuffers::new(0, 2, block_frames, f64::from(sample_rate));
                     let mut interleaved = vec![0.0_f32; block_frames.saturating_mul(2)];
+                    let mut pending_midi = Vec::new();
                     while !worker_stop.load(Ordering::Acquire) {
+                        while let Ok(command) = receiver.try_recv() {
+                            match command {
+                                Vst3InstrumentCommand::Midi(event) => {
+                                    pending_midi.push(event);
+                                }
+                                Vst3InstrumentCommand::OpenEditor(reply) => {
+                                    // IsolatedPlugin ignora el padre: el helper crea su ventana X11.
+                                    let result = plugin
+                                        .open_editor(vst3_host::WindowHandle::from_x11(0))
+                                        .map_err(|error| error.to_string());
+                                    let _ = reply.send(result);
+                                }
+                                Vst3InstrumentCommand::CloseEditor(reply) => {
+                                    let result =
+                                        plugin.close_editor().map_err(|error| error.to_string());
+                                    let _ = reply.send(result);
+                                }
+                            }
+                        }
                         if paused.load(Ordering::Acquire) {
                             thread::sleep(Duration::from_millis(1));
                             continue;
                         }
-                        while let Ok(event) = receiver.try_recv() {
+                        for event in pending_midi.drain(..) {
                             let channel = MidiChannel::from_index(midi_channel(event))
                                 .ok_or_else(|| "canal MIDI VST3 fuera de rango".to_owned())?;
                             let event = match event {
@@ -1032,7 +1080,7 @@ impl Vst3InstrumentWorker {
         ))
     }
 
-    fn command_sender(&self) -> std::sync::mpsc::SyncSender<SynthMidiEvent> {
+    fn command_sender(&self) -> std::sync::mpsc::SyncSender<Vst3InstrumentCommand> {
         self.commands.clone()
     }
 }
@@ -1152,6 +1200,11 @@ struct ManagedStandaloneProcess {
 enum SchedulerCommand {
     Replace(PlaybackSchedule),
     Panic,
+    Vst3Editor {
+        track_id: String,
+        open: bool,
+        reply: mpsc::Sender<Result<(), String>>,
+    },
 }
 
 pub struct AudioRuntimeHost {
@@ -1260,6 +1313,32 @@ impl AudioRuntimeHost {
             .schedule
             .send(SchedulerCommand::Panic)
             .map_err(|_| "el scheduler MIDI terminó antes de recibir el pánico".to_owned())
+    }
+
+    /// Abre o cierra la ventana nativa del instrumento VST3 de una pista activa.
+    /// El plugin vive en el helper; esta llamada espera a que responda la creación GUI.
+    pub fn set_vst3_editor(&mut self, track_id: &str, open: bool) -> Result<(), String> {
+        let playback = self
+            .playback
+            .as_ref()
+            .filter(|playback| playback.connected.load(Ordering::Acquire))
+            .ok_or_else(|| {
+                "dale a Play para cargar el instrumento y abrir sus controles".to_owned()
+            })?;
+        let (reply, result) = mpsc::channel();
+        playback
+            .schedule
+            .send(SchedulerCommand::Vst3Editor {
+                track_id: track_id.to_owned(),
+                open,
+                reply,
+            })
+            .map_err(|_| "el scheduler MIDI terminó antes de recibir la orden GUI".to_owned())?;
+        result
+            .recv_timeout(Duration::from_secs(35))
+            .map_err(|error| {
+                format!("el instrumento no respondió al abrir sus controles: {error}")
+            })?
     }
 
     pub fn play(
@@ -2446,7 +2525,10 @@ fn build_project_playback_with_end(
                         track.name
                     )
                 })?;
-                senders.push(EventSender::Vst3(worker.command_sender()));
+                senders.push(EventSender::Vst3 {
+                    track_id: track.id.clone(),
+                    sender: worker.command_sender(),
+                });
                 sources_by_track
                     .entry(track.id.clone())
                     .or_default()
@@ -2909,14 +2991,7 @@ fn schedule_events(
             return Ok(());
         }
         if let Ok(command) = updates.try_recv() {
-            match command {
-                SchedulerCommand::Replace(mut replacement) => {
-                    sort_schedule(&mut replacement);
-                    schedule = replacement;
-                    index = 0;
-                }
-                SchedulerCommand::Panic => send_all_notes_off(&mut schedule.senders),
-            }
+            apply_scheduler_command(command, &mut schedule, &mut index, &sort_schedule);
         }
         let Some(event) = schedule.events.get(index) else {
             if let Ok(command) = updates.recv_timeout(Duration::from_millis(2)) {
@@ -2953,6 +3028,38 @@ fn apply_scheduler_command(
             *index = 0;
         }
         SchedulerCommand::Panic => send_all_notes_off(&mut schedule.senders),
+        SchedulerCommand::Vst3Editor {
+            track_id,
+            open,
+            reply,
+        } => {
+            let sender = schedule.senders.iter_mut().find(|sender| {
+                matches!(sender, EventSender::Vst3 { track_id: id, .. } if id == &track_id)
+            });
+            let result = sender
+                .ok_or_else(|| {
+                    "la pista seleccionada no tiene un instrumento VST3 activo".to_owned()
+                })
+                .and_then(|sender| sender.request_vst3_editor(open));
+            match result {
+                Ok(result) => {
+                    thread::spawn(move || {
+                        let result =
+                            result
+                                .recv_timeout(Duration::from_secs(32))
+                                .unwrap_or_else(|error| {
+                                    Err(format!(
+                                        "el helper VST3 no respondió al control GUI: {error}"
+                                    ))
+                                });
+                        let _ = reply.send(result);
+                    });
+                }
+                Err(error) => {
+                    let _ = reply.send(Err(error));
+                }
+            }
+        }
     }
 }
 
