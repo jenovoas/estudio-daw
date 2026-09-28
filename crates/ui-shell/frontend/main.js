@@ -98,6 +98,7 @@ let midiOutputDevices = [];
 let audioRecording = false;
 let projectTransportState = "stopped";
 let transportPositionTick = 0;
+let sessionLaunches = [];
 let transportPositionPollPending = false;
 let transportLoopErrorReported = false;
 let metronomeEnabled = false;
@@ -1136,6 +1137,46 @@ function updateTrackMeters(meters) {
   }
 }
 
+async function launchSessionSlot(sceneId, trackId) {
+  try {
+    const launch = await platform.launchSessionSlot(sceneId, trackId);
+    sessionLaunches = sessionLaunches.filter((item) => item.trackId !== trackId).concat(launch);
+    setNotice("Clip en cola", launch.state === "queued" ? "Sonará en el siguiente compás." : "El clip ya está sonando en esa pista.");
+    if (lastSnapshot) renderSnapshot(lastSnapshot);
+  } catch (error) {
+    setNotice("No se pudo lanzar el clip", String(error));
+  }
+}
+
+async function launchSessionScene(sceneId, snapshot) {
+  const slots = (snapshot.clipSlots ?? []).filter((slot) => slot.sceneId === sceneId && slot.clipKind === "midi" && slot.clipId);
+  if (!slots.length) {
+    setNotice("Escena vacía", "Asigna clips MIDI antes de lanzar la escena.");
+    return;
+  }
+  try {
+    for (const slot of slots) {
+      const launch = await platform.launchSessionSlot(sceneId, slot.trackId);
+      sessionLaunches = sessionLaunches.filter((item) => item.trackId !== slot.trackId).concat(launch);
+    }
+    setNotice("Escena en cola", "Los clips MIDI de la escena salen en el siguiente compás.");
+    renderSnapshot(snapshot);
+  } catch (error) {
+    setNotice("No se pudo lanzar la escena", String(error));
+  }
+}
+
+async function stopSessionTrack(trackId) {
+  try {
+    await platform.stopSessionTrack(trackId);
+    sessionLaunches = sessionLaunches.filter((item) => item.trackId !== trackId);
+    setNotice("Pista detenida", "Las notas de esa pista se apagaron.");
+    if (lastSnapshot) renderSnapshot(lastSnapshot);
+  } catch (error) {
+    setNotice("No se pudo detener la pista", String(error));
+  }
+}
+
 function renderSessionSurface(snapshot) {
   const tracks = snapshot.tracks.filter((track) => !["master", "bus", "return"].includes(track.role));
   elements.sessionView.replaceChildren();
@@ -1234,9 +1275,16 @@ function renderSessionSurface(snapshot) {
     launchScene.type = "button";
     launchScene.className = "session-launch session-launch-scene";
     launchScene.textContent = "▶";
-    launchScene.disabled = true;
-    launchScene.title = "El lanzamiento de escenas requiere conectar el planificador cuantizado de Session";
+    const sceneHasMidi = tracks.some((track) => (snapshot.clipSlots ?? []).some((slot) => slot.sceneId === scene.id && slot.trackId === track.id && slot.clipKind === "midi"));
+    const engineReady = ["playing", "paused"].includes(projectTransportState);
+    launchScene.disabled = !sceneHasMidi || !engineReady;
+    launchScene.title = !sceneHasMidi
+      ? "Asigna clips MIDI a esta escena"
+      : engineReady
+        ? `Lanzar ${scene.name} al siguiente compás`
+        : "Dale a Play para lanzar la escena";
     launchScene.setAttribute("aria-label", launchScene.title);
+    launchScene.addEventListener("click", () => launchSessionScene(scene.id, snapshot));
     sceneHeader.append(launchScene, sceneName, moveUp, moveDown, remove);
     grid.append(sceneHeader);
     for (const track of tracks) {
@@ -1262,14 +1310,30 @@ function renderSessionSurface(snapshot) {
       });
       const launch = document.createElement("button");
       launch.type = "button";
-      launch.className = `session-launch${slot?.clipId ? " has-clip" : ""}`;
-      launch.textContent = slot?.clipId ? "▶" : "+";
-      launch.disabled = Boolean(slot?.clipId);
-      launch.title = slot?.clipId
-        ? "El lanzamiento de clips requiere conectar el planificador cuantizado de Session"
-        : "Asigna un clip existente a esta casilla";
+      const playing = sessionLaunches.find((item) => item.trackId === track.id && item.clipId === slot?.clipId);
+      launch.className = `session-launch${slot?.clipId ? " has-clip" : ""}${playing?.state === "queued" ? " is-queued" : ""}${playing?.state === "playing" ? " is-playing" : ""}`;
+      const engineReady = ["playing", "paused"].includes(projectTransportState);
       if (!slot?.clipId) {
+        launch.textContent = "+";
+        launch.disabled = true;
+        launch.title = "Asigna un clip existente a esta casilla";
         launch.addEventListener("click", () => select.focus());
+      } else if (slot.clipKind === "audio") {
+        launch.textContent = "▶";
+        launch.disabled = true;
+        launch.title = "El lanzamiento de audio en Session sigue pendiente";
+      } else if (playing?.state === "playing") {
+        launch.textContent = "■";
+        launch.disabled = !engineReady;
+        launch.title = engineReady ? `Detener ${slot.clipId} en ${track.name}` : "Dale a Play para controlar Session";
+        launch.addEventListener("click", () => stopSessionTrack(track.id));
+      } else {
+        launch.textContent = playing?.state === "queued" ? "○" : "▶";
+        launch.disabled = !engineReady;
+        launch.title = engineReady
+          ? `Lanzar clip al siguiente compás en ${track.name}`
+          : "Dale a Play para lanzar el clip";
+        launch.addEventListener("click", () => launchSessionSlot(scene.id, track.id));
       }
       cell.append(launch, select);
       grid.append(cell);
@@ -1402,7 +1466,10 @@ function renderSnapshot(snapshot) {
   selectedTrackIds = new Set([...selectedTrackIds].filter((trackId) => validTrackIds.has(trackId)));
   projectTransportState = snapshot.transportState;
   audioRecording = audioRecording && projectTransportState !== "stopped";
-  if (projectTransportState === "stopped") vst3EditorOpenByTrack.clear();
+  if (projectTransportState === "stopped") {
+    vst3EditorOpenByTrack.clear();
+    sessionLaunches = [];
+  }
   elements.panic.disabled = !snapshot.audioEngineConnected || !["playing", "paused"].includes(projectTransportState);
   loopRange = snapshot.loopRange ?? null;
   for (const button of [elements.loopPointA, elements.loopPointB, elements.loopRangeClear]) {
@@ -2781,6 +2848,10 @@ setInterval(async () => {
       renderTransportPosition(await platform.transportPosition());
     }
     updateTrackMeters(await platform.trackMeters());
+    const launches = await platform.sessionLaunches();
+    const changed = JSON.stringify(launches) !== JSON.stringify(sessionLaunches);
+    sessionLaunches = launches;
+    if (changed && lastSnapshot) renderSnapshot(lastSnapshot);
   } catch (error) {
     if (!transportLoopErrorReported) {
       transportLoopErrorReported = true;

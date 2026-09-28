@@ -262,6 +262,8 @@ button:disabled { opacity: .4; cursor: not-allowed !important; }
 .session-cell select { min-width: 0; width: 100%; border: 1px solid #4b5154; border-radius: 3px; padding: 6px; background: #24282a; color: #e2e4e4; font-size: 8px; }
 .session-launch { width: 25px; height: 25px; flex: 0 0 25px; border: 1px solid #4b5154; border-radius: 50%; background: #272a2c; color: #aeb4b6; cursor: pointer; }
 .session-launch.has-clip { border-color: #675039; color: #ffc187; }
+.session-launch.is-queued { border-color: #c7a35a; color: #ffe08a; background: #3a3424; }
+.session-launch.is-playing { border-color: #58a66a; color: #d7ffe0; background: #243a2a; }
 .session-launch:disabled { opacity: .7; cursor: not-allowed; }
 .session-empty-state { grid-column: 1 / -1; }
 .session-add-scene { margin-left: auto; min-height: 23px; height: 23px; padding: 2px 7px; font-size: 8px; }

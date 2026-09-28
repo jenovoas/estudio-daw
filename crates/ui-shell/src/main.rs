@@ -26,7 +26,7 @@ use std::{
 };
 use tauri::State;
 
-use audio_runtime::AudioRuntimeHost;
+use audio_runtime::{AudioRuntimeHost, SessionLaunchView};
 
 struct DesktopState {
     // ProjectApplication conserva su runtime/historial; el lock sólo se toma
@@ -1546,6 +1546,45 @@ fn set_clip_slot(
     Ok(summarize(application, connected))
 }
 
+#[tauri::command]
+fn launch_session_slot(
+    scene_id: String,
+    track_id: String,
+    state: State<'_, DesktopState>,
+) -> Result<SessionLaunchView, String> {
+    let application = state
+        .application
+        .lock()
+        .map_err(|_| "el estado de la aplicación quedó bloqueado".to_owned())?;
+    let application = application
+        .as_ref()
+        .ok_or_else(|| "primero abre un proyecto".to_owned())?;
+    let project = application.snapshot().project.project;
+    state
+        .audio
+        .lock()
+        .map_err(|_| "el estado del motor de audio quedó bloqueado".to_owned())?
+        .launch_session_slot(&project, &scene_id, &track_id)
+}
+
+#[tauri::command]
+fn stop_session_track(track_id: String, state: State<'_, DesktopState>) -> Result<(), String> {
+    state
+        .audio
+        .lock()
+        .map_err(|_| "el estado del motor de audio quedó bloqueado".to_owned())?
+        .stop_session_track(&track_id)
+}
+
+#[tauri::command]
+fn session_launches(state: State<'_, DesktopState>) -> Result<Vec<SessionLaunchView>, String> {
+    state
+        .audio
+        .lock()
+        .map_err(|_| "el estado del motor de audio quedó bloqueado".to_owned())?
+        .session_launches()
+}
+
 fn unix_timestamp_nanos() -> u128 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -2297,6 +2336,9 @@ fn main() {
             remove_scene,
             move_scene,
             set_clip_slot,
+            launch_session_slot,
+            stop_session_track,
+            session_launches,
             save_project,
             save_project_as,
             set_transport,

@@ -1,5 +1,11 @@
 # Handoff de continuación — 2026-09-27
 
+## Punto de reanudación actual — lanzamiento Session MIDI (2026-09-28)
+
+- Sobre `066bc28`, Session lanza clips MIDI al siguiente compás sin cerrar PipeWire. ▶ en casilla o escena requiere Play/pausa; ■ detiene esa pista. El clip usa su PPQ y apaga las voces de la pista al entrar. Audio de Session, modos de lanzamiento y loop de clip siguen pendientes. 4.6 permanece abierta por QA Analog Lab.
+- Verificación: `cargo check -p estudio-daw-ui-shell`, pruebas `quantizes_session_launches_to_the_next_bar` y `session_midi_events_follow_clip_ppq_from_the_launch_tick`, formato, ambos `node --check`. Sin suite ni QA visual.
+- OpenSpec 10/44. Continuar: QA Analog Lab o audio de Session / cuantización por clip.
+
 ## Punto de reanudación actual — estado VST3 y Session (2026-09-28)
 
 - Sobre `c0c38d6`, Stop/Guardar capturan el blob del plugin activo, lo escriben en `plugin-state/<pista>.bin` junto al proyecto y persisten la referencia con `SetTrackInstrument`. Play restaura ese estado antes de procesar; un archivo ausente o con SHA distinto aborta la carga y conserva la asignación. CONTROLES aparece también en Session. Las vueltas A/B recargan el último estado en disco.

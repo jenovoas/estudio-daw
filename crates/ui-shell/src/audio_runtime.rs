@@ -13,8 +13,8 @@ use estudio_daw_audio_platform::{
 };
 use estudio_daw_midi_engine::{LiveMidiOutputWorker, RecordedMidiMessage};
 use estudio_daw_project_model::{
-    AudioClip, InstrumentConfig, PluginStateReference, Project, Track, TrackKind, TrackRole,
-    TransportLoopRange,
+    AudioClip, ClipReference, InstrumentConfig, MidiClip, PluginStateReference, Project, Track,
+    TrackKind, TrackRole, TransportLoopRange,
 };
 use estudio_daw_runtime_diagnostics::{audio_devices, DeviceInfo};
 use estudio_daw_synth::{
@@ -748,33 +748,51 @@ impl AudioNode for LoopBoundaryGateNode {
 }
 
 enum EventSender {
-    Sine(SynthEventSender),
-    SoundFont(SoundFontEventSender),
+    Sine {
+        track_id: String,
+        sender: SynthEventSender,
+    },
+    SoundFont {
+        track_id: String,
+        sender: SoundFontEventSender,
+    },
     Vst3 {
         track_id: String,
         sender: std::sync::mpsc::SyncSender<Vst3InstrumentCommand>,
     },
     Alsa {
+        track_id: String,
         worker: LiveMidiOutputWorker,
         channel: Option<u8>,
     },
 }
 
 impl EventSender {
+    fn track_id(&self) -> &str {
+        match self {
+            Self::Sine { track_id, .. }
+            | Self::SoundFont { track_id, .. }
+            | Self::Vst3 { track_id, .. }
+            | Self::Alsa { track_id, .. } => track_id,
+        }
+    }
+
     fn send(&mut self, event: SynthMidiEvent) -> Result<(), String> {
         match self {
-            Self::Sine(sender) => {
+            Self::Sine { sender, .. } => {
                 let _ = sender.try_send(event);
                 Ok(())
             }
-            Self::SoundFont(sender) => {
+            Self::SoundFont { sender, .. } => {
                 let _ = sender.try_send(event);
                 Ok(())
             }
             Self::Vst3 { sender, .. } => sender
                 .send(Vst3InstrumentCommand::Midi(event))
                 .map_err(|_| "el worker aislado del VST3 terminó".to_owned()),
-            Self::Alsa { worker, channel } => {
+            Self::Alsa {
+                worker, channel, ..
+            } => {
                 let message = match event {
                     SynthMidiEvent::NoteOn {
                         channel: event_channel,
@@ -1203,6 +1221,7 @@ fn midi_channel(event: SynthMidiEvent) -> u8 {
     }
 }
 
+#[derive(Clone)]
 struct ScheduledEvent {
     /// Tiempo relativo conservado para acotar eventos al final del loop y para
     /// inspección determinista del scheduler.
@@ -1294,9 +1313,35 @@ struct ManagedStandaloneProcess {
     child: Child,
 }
 
+struct SessionLaunch {
+    scene_id: String,
+    clip_id: String,
+    launch_tick: u64,
+    end_tick: u64,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionLaunchView {
+    pub track_id: String,
+    pub scene_id: String,
+    pub clip_id: String,
+    pub launch_tick: u64,
+    pub end_tick: u64,
+    pub state: &'static str,
+}
+
 enum SchedulerCommand {
     Replace(PlaybackSchedule),
     Panic,
+    LaunchTrack {
+        track_id: String,
+        launch_tick: u64,
+        events: Vec<ScheduledEvent>,
+    },
+    StopTrack {
+        track_id: String,
+    },
     Vst3Editor {
         track_id: String,
         open: bool,
@@ -1316,6 +1361,7 @@ pub struct AudioRuntimeHost {
     track_meters: Arc<Mutex<HashMap<String, Arc<TrackMeter>>>>,
     standalone_processes: HashMap<String, ManagedStandaloneProcess>,
     plugin_state_root: Option<PathBuf>,
+    session_launches: Arc<Mutex<HashMap<String, SessionLaunch>>>,
 }
 
 impl Default for AudioRuntimeHost {
@@ -1328,6 +1374,7 @@ impl Default for AudioRuntimeHost {
             track_meters: Arc::new(Mutex::new(HashMap::new())),
             standalone_processes: HashMap::new(),
             plugin_state_root: None,
+            session_launches: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 }
@@ -1442,6 +1489,121 @@ impl AudioRuntimeHost {
             .map_err(|error| {
                 format!("el instrumento no respondió al abrir sus controles: {error}")
             })?
+    }
+
+    pub fn session_launches(&self) -> Result<Vec<SessionLaunchView>, String> {
+        let position = self.position_ticks();
+        let launches = self
+            .session_launches
+            .lock()
+            .map_err(|_| "el estado de lanzamiento de Session quedó bloqueado".to_owned())?;
+        Ok(launches
+            .iter()
+            .map(|(track_id, launch)| {
+                let state = if position < launch.launch_tick {
+                    "queued"
+                } else if position < launch.end_tick {
+                    "playing"
+                } else {
+                    "finished"
+                };
+                SessionLaunchView {
+                    track_id: track_id.clone(),
+                    scene_id: launch.scene_id.clone(),
+                    clip_id: launch.clip_id.clone(),
+                    launch_tick: launch.launch_tick,
+                    end_tick: launch.end_tick,
+                    state,
+                }
+            })
+            .filter(|launch| launch.state != "finished")
+            .collect())
+    }
+
+    pub fn launch_session_slot(
+        &mut self,
+        project: &Project,
+        scene_id: &str,
+        track_id: &str,
+    ) -> Result<SessionLaunchView, String> {
+        let playback = self
+            .playback
+            .as_ref()
+            .filter(|playback| playback.connected.load(Ordering::Acquire))
+            .ok_or_else(|| "dale a Play para lanzar un clip de Session".to_owned())?;
+        let slot = project
+            .clip_slots
+            .iter()
+            .find(|slot| slot.scene_id == scene_id && slot.track_id == track_id)
+            .ok_or_else(|| "esa casilla de Session no existe".to_owned())?;
+        let Some(ClipReference::Midi(clip_id)) = slot.clip.as_ref() else {
+            return Err(
+                "este corte lanza clips MIDI; el audio de Session sigue pendiente del planificador"
+                    .to_owned(),
+            );
+        };
+        let clip = project
+            .midi_clips
+            .iter()
+            .find(|clip| clip.id == *clip_id && clip.track_id == track_id)
+            .ok_or_else(|| "el clip MIDI de la casilla ya no está en el proyecto".to_owned())?;
+        let bar_ticks = ticks_per_bar(&project.transport.time_signature);
+        let position = self.position_ticks();
+        let launch_tick = next_quantized_tick(position, bar_ticks);
+        let events = session_midi_events(clip, launch_tick, project.transport.tempo_bpm);
+        let end_tick = launch_tick.saturating_add(clip_duration_session_ticks(clip));
+        playback
+            .schedule
+            .send(SchedulerCommand::LaunchTrack {
+                track_id: track_id.to_owned(),
+                launch_tick,
+                events,
+            })
+            .map_err(|_| "el scheduler MIDI terminó antes de recibir el lanzamiento".to_owned())?;
+        let view = SessionLaunchView {
+            track_id: track_id.to_owned(),
+            scene_id: scene_id.to_owned(),
+            clip_id: clip.id.clone(),
+            launch_tick,
+            end_tick,
+            state: if position < launch_tick {
+                "queued"
+            } else {
+                "playing"
+            },
+        };
+        self.session_launches
+            .lock()
+            .map_err(|_| "el estado de lanzamiento de Session quedó bloqueado".to_owned())?
+            .insert(
+                track_id.to_owned(),
+                SessionLaunch {
+                    scene_id: scene_id.to_owned(),
+                    clip_id: clip.id.clone(),
+                    launch_tick,
+                    end_tick,
+                },
+            );
+        Ok(view)
+    }
+
+    pub fn stop_session_track(&mut self, track_id: &str) -> Result<(), String> {
+        let playback = self
+            .playback
+            .as_ref()
+            .filter(|playback| playback.connected.load(Ordering::Acquire))
+            .ok_or_else(|| "no hay un clip de Session sonando en esa pista".to_owned())?;
+        playback
+            .schedule
+            .send(SchedulerCommand::StopTrack {
+                track_id: track_id.to_owned(),
+            })
+            .map_err(|_| "el scheduler MIDI terminó antes de detener la pista".to_owned())?;
+        self.session_launches
+            .lock()
+            .map_err(|_| "el estado de lanzamiento de Session quedó bloqueado".to_owned())?
+            .remove(track_id);
+        Ok(())
     }
 
     /// Captura y escribe el estado binario de cada VST3 activo junto al proyecto.
@@ -2144,6 +2306,9 @@ impl AudioRuntimeHost {
         self.position_ticks.store(0, Ordering::Release);
         self.plan_control = None;
         self.plugin_state_root = None;
+        if let Ok(mut launches) = self.session_launches.lock() {
+            launches.clear();
+        }
         thread_result?;
         Ok(finished_recordings)
     }
@@ -2664,7 +2829,10 @@ fn build_project_playback_with_end(
                     .entry(track.id.clone())
                     .or_default()
                     .push(Box::new(node));
-                senders.push(EventSender::Sine(sender));
+                senders.push(EventSender::Sine {
+                    track_id: track.id.clone(),
+                    sender,
+                });
             }
             InstrumentConfig::FluidSynth {
                 soundfont,
@@ -2681,7 +2849,10 @@ fn build_project_playback_with_end(
                         Arc::clone(&paused),
                     )
                     .map_err(|error| error.to_string())?;
-                senders.push(EventSender::SoundFont(worker.event_sender()));
+                senders.push(EventSender::SoundFont {
+                    track_id: track.id.clone(),
+                    sender: worker.event_sender(),
+                });
                 sources_by_track
                     .entry(track.id.clone())
                     .or_default()
@@ -2750,6 +2921,7 @@ fn build_project_playback_with_end(
                     )
                 })?;
                 senders.push(EventSender::Alsa {
+                    track_id: track.id.clone(),
                     worker,
                     channel: route.channel,
                 });
@@ -3139,6 +3311,81 @@ fn synth_event(message: &RecordedMidiMessage) -> Option<SynthMidiEvent> {
     }
 }
 
+fn ticks_per_bar(signature: &estudio_daw_project_model::TimeSignature) -> u64 {
+    let numerator = u64::from(signature.numerator.max(1));
+    let denominator = u64::from(signature.denominator.max(1));
+    u64::from(estudio_daw_application::TICKS_PER_QUARTER)
+        .saturating_mul(4)
+        .saturating_mul(numerator)
+        / denominator
+}
+
+fn next_quantized_tick(position: u64, grid: u64) -> u64 {
+    if grid == 0 {
+        return position;
+    }
+    let remainder = position % grid;
+    if remainder == 0 {
+        position
+    } else {
+        position.saturating_add(grid - remainder)
+    }
+}
+
+fn clip_duration_session_ticks(clip: &MidiClip) -> u64 {
+    let ppq = u64::from(clip.take.ppq.max(1));
+    clip.duration_ticks
+        .saturating_mul(u64::from(estudio_daw_application::TICKS_PER_QUARTER))
+        / ppq
+}
+
+fn session_midi_events(clip: &MidiClip, launch_tick: u64, bpm: f64) -> Vec<ScheduledEvent> {
+    let ppq = clip.take.ppq.max(1);
+    let mut events = Vec::new();
+    let mut sequence = 1_u64;
+    for event in &clip.take.events {
+        if event.tick > clip.duration_ticks {
+            continue;
+        }
+        let Some(midi) = synth_event(&event.message) else {
+            continue;
+        };
+        let relative = event
+            .tick
+            .saturating_mul(u64::from(estudio_daw_application::TICKS_PER_QUARTER))
+            / u64::from(ppq);
+        let at_tick = launch_tick.saturating_add(relative);
+        let absolute_micros =
+            ticks_to_micros(at_tick, estudio_daw_application::TICKS_PER_QUARTER, bpm);
+        let launch_micros =
+            ticks_to_micros(launch_tick, estudio_daw_application::TICKS_PER_QUARTER, bpm);
+        events.push(ScheduledEvent {
+            at: Duration::from_micros(absolute_micros.saturating_sub(launch_micros)),
+            at_tick,
+            sequence,
+            sender: 0,
+            midi,
+        });
+        sequence = sequence.saturating_add(1);
+    }
+    events
+}
+
+fn send_notes_off(sender: &mut EventSender) {
+    for channel in 0..16 {
+        let _ = sender.send(SynthMidiEvent::ControlChange {
+            channel,
+            controller: 64,
+            value: 0,
+        });
+        let _ = sender.send(SynthMidiEvent::ControlChange {
+            channel,
+            controller: 123,
+            value: 0,
+        });
+    }
+}
+
 fn ticks_to_micros(ticks: u64, ppq: u32, bpm: f64) -> u64 {
     let ppq = u128::from(ppq.max(1));
     let milli_bpm = (bpm * 1_000.0).round().max(1.0) as u128;
@@ -3213,6 +3460,48 @@ fn apply_scheduler_command(
             *index = 0;
         }
         SchedulerCommand::Panic => send_all_notes_off(&mut schedule.senders),
+        SchedulerCommand::LaunchTrack {
+            track_id,
+            launch_tick,
+            events,
+        } => {
+            let Some(sender) = schedule
+                .senders
+                .iter_mut()
+                .position(|sender| sender.track_id() == track_id)
+            else {
+                return;
+            };
+            send_notes_off(schedule.senders.get_mut(sender).expect("índice de pista"));
+            schedule
+                .events
+                .retain(|event| event.sender != sender || event.at_tick < launch_tick);
+            let mut launched = events;
+            for event in &mut launched {
+                event.sender = sender;
+            }
+            schedule.events.extend(launched);
+            sort_schedule(schedule);
+            *index = schedule
+                .events
+                .iter()
+                .position(|event| event.at_tick >= launch_tick)
+                .unwrap_or(schedule.events.len());
+        }
+        SchedulerCommand::StopTrack { track_id } => {
+            let Some(sender) = schedule
+                .senders
+                .iter_mut()
+                .position(|sender| sender.track_id() == track_id)
+            else {
+                return;
+            };
+            send_notes_off(schedule.senders.get_mut(sender).expect("índice de pista"));
+            schedule.events.retain(|event| event.sender != sender);
+            if *index > schedule.events.len() {
+                *index = schedule.events.len();
+            }
+        }
         SchedulerCommand::Vst3Editor {
             track_id,
             open,
@@ -3294,7 +3583,7 @@ fn send_all_notes_off(senders: &mut [EventSender]) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use estudio_daw_midi_engine::{MidiSource, MidiTake, RecordedMidiEvent};
+    use estudio_daw_midi_engine::{MidiSource, MidiTake, RecordedMidiEvent, RecordedMidiMessage};
     use estudio_daw_project_model::{
         ImportProvenance, MidiClip, TimeSignature, Track, TrackChannelConfig, TrackMixerState,
         TrackRole, Transport,
@@ -3545,6 +3834,52 @@ mod tests {
         .unwrap_err();
         assert!(missing.contains("se conservó el instrumento asignado"));
         let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn quantizes_session_launches_to_the_next_bar() {
+        let signature = estudio_daw_project_model::TimeSignature {
+            numerator: 4,
+            denominator: 4,
+        };
+        assert_eq!(ticks_per_bar(&signature), 3840);
+        assert_eq!(next_quantized_tick(0, 3840), 0);
+        assert_eq!(next_quantized_tick(1, 3840), 3840);
+        assert_eq!(next_quantized_tick(3840, 3840), 3840);
+        assert_eq!(next_quantized_tick(3841, 3840), 7680);
+    }
+
+    #[test]
+    fn session_midi_events_follow_clip_ppq_from_the_launch_tick() {
+        let clip = MidiClip {
+            id: "clip".into(),
+            name: "Clip".into(),
+            track_id: "track".into(),
+            start_tick: 1920,
+            duration_ticks: 480,
+            take: MidiTake {
+                ppq: 480,
+                tempo_bpm: 120,
+                duration_micros: 500_000,
+                events: vec![RecordedMidiEvent {
+                    tick: 0,
+                    micros_since_start: 0,
+                    source: MidiSource { client: 0, port: 0 },
+                    message: RecordedMidiMessage::NoteOn {
+                        channel: 0,
+                        note: 60,
+                        velocity: 100,
+                    },
+                }],
+            },
+        };
+        let events = session_midi_events(&clip, 3840, 120.0);
+        assert_eq!(events[0].at_tick, 3840);
+        assert!(matches!(
+            events[0].midi,
+            SynthMidiEvent::NoteOn { note: 60, .. }
+        ));
+        assert_eq!(clip_duration_session_ticks(&clip), 960);
     }
 
     #[test]
