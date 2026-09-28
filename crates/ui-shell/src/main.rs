@@ -1579,11 +1579,11 @@ fn stop_session_track(track_id: String, state: State<'_, DesktopState>) -> Resul
 
 #[tauri::command]
 fn session_launches(state: State<'_, DesktopState>) -> Result<Vec<SessionLaunchView>, String> {
-    state
+    let mut audio = state
         .audio
         .lock()
-        .map_err(|_| "el estado del motor de audio quedó bloqueado".to_owned())?
-        .session_launches()
+        .map_err(|_| "el estado del motor de audio quedó bloqueado".to_owned())?;
+    audio.session_launches()
 }
 
 fn unix_timestamp_nanos() -> u128 {

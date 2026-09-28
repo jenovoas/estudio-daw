@@ -216,6 +216,7 @@ impl TrackMeter {
 
 enum SessionAudioCommand {
     Replace(Vec<AudioClipStream>),
+    Append(Vec<AudioClipStream>),
     Clear,
 }
 
@@ -258,8 +259,18 @@ impl AudioClipMixerNode {
             return;
         };
         match pending.take() {
-            Some(SessionAudioCommand::Replace(streams)) => {
+            Some(SessionAudioCommand::Replace(mut streams)) => {
+                for stream in &mut streams {
+                    stream.start_frame = stream.start_frame.saturating_add(self.frame_cursor);
+                }
                 self.session_streams = streams;
+                self.mute_arrangement = true;
+            }
+            Some(SessionAudioCommand::Append(mut streams)) => {
+                for stream in &mut streams {
+                    stream.start_frame = stream.start_frame.saturating_add(self.frame_cursor);
+                }
+                self.session_streams.extend(streams);
                 self.mute_arrangement = true;
             }
             Some(SessionAudioCommand::Clear) => {
@@ -1386,6 +1397,11 @@ struct SessionLaunch {
     launch_tick: u64,
     end_tick: u64,
     looping: bool,
+    bpm: f64,
+    bar_ticks: u64,
+    midi_clip: Option<MidiClip>,
+    audio_clip: Option<AudioClip>,
+    audio_source: Option<AudioSource>,
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -1405,6 +1421,10 @@ enum SchedulerCommand {
     LaunchTrack {
         track_id: String,
         launch_tick: u64,
+        events: Vec<ScheduledEvent>,
+    },
+    ExtendTrack {
+        track_id: String,
         events: Vec<ScheduledEvent>,
     },
     StopTrack {
@@ -1563,7 +1583,8 @@ impl AudioRuntimeHost {
             })?
     }
 
-    pub fn session_launches(&self) -> Result<Vec<SessionLaunchView>, String> {
+    pub fn session_launches(&mut self) -> Result<Vec<SessionLaunchView>, String> {
+        self.maintain_session_loops()?;
         let position = self.position_ticks();
         let launches = self
             .session_launches
@@ -1617,7 +1638,11 @@ impl AudioRuntimeHost {
             120.0
         };
         let bar_ticks = ticks_per_bar(&project.transport.time_signature);
-        let horizon = launch_tick.saturating_add(bar_ticks.saturating_mul(64));
+        let window = session_loop_window_ticks(bar_ticks);
+        let horizon = launch_tick.saturating_add(window);
+        let mut midi_clip = None;
+        let mut audio_clip = None;
+        let mut audio_source = None;
         let (kind, clip_id, end_tick) = match slot.clip.as_ref() {
             Some(ClipReference::Midi(clip_id)) => {
                 let clip = project
@@ -1638,6 +1663,7 @@ impl AudioRuntimeHost {
                     .map_err(|_| {
                         "el scheduler MIDI terminó antes de recibir el lanzamiento".to_owned()
                     })?;
+                midi_clip = Some(clip.clone());
                 (SessionClipKind::Midi, clip.id.clone(), horizon)
             }
             Some(ClipReference::Audio(clip_id)) => {
@@ -1648,12 +1674,20 @@ impl AudioRuntimeHost {
                     .ok_or_else(|| {
                         "el clip de audio de la casilla ya no está en el proyecto".to_owned()
                     })?;
-                self.replace_session_audio(project, track_id, clip, launch_tick, bpm)?;
+                let source = project
+                    .audio_sources
+                    .iter()
+                    .find(|source| clip.source_id.as_ref() == Some(&source.id))
+                    .cloned();
+                self.replace_session_audio(project, track_id, clip, launch_tick, bpm, false)?;
                 let duration = audio_clip_duration_session_ticks(clip, bpm).max(1);
+                audio_clip = Some(clip.clone());
+                audio_source = source;
                 (
                     SessionClipKind::Audio,
                     clip.id.clone(),
-                    horizon.max(launch_tick.saturating_add(duration)),
+                    launch_tick
+                        .saturating_add(duration.saturating_mul(u64::from(SESSION_AUDIO_REPEATS))),
                 )
             }
             None => return Err("la casilla está vacía".to_owned()),
@@ -1682,9 +1716,90 @@ impl AudioRuntimeHost {
                     launch_tick,
                     end_tick,
                     looping: true,
+                    bpm,
+                    bar_ticks,
+                    midi_clip,
+                    audio_clip,
+                    audio_source,
                 },
             );
         Ok(view)
+    }
+
+    fn maintain_session_loops(&mut self) -> Result<(), String> {
+        let Some(playback) = self
+            .playback
+            .as_ref()
+            .filter(|playback| playback.connected.load(Ordering::Acquire))
+        else {
+            return Ok(());
+        };
+        let position = self.position_ticks();
+        let schedule = playback.schedule.clone();
+        let mut launches = self
+            .session_launches
+            .lock()
+            .map_err(|_| "el estado de lanzamiento de Session quedó bloqueado".to_owned())?;
+        let mut audio_refills = Vec::new();
+        for (track_id, launch) in launches.iter_mut() {
+            if !launch.looping {
+                continue;
+            }
+            match launch.kind {
+                SessionClipKind::Midi => {
+                    let refill_at = launch
+                        .end_tick
+                        .saturating_sub(launch.bar_ticks.saturating_mul(2).max(1));
+                    if position < refill_at {
+                        continue;
+                    }
+                    let Some(clip) = launch.midi_clip.as_ref() else {
+                        continue;
+                    };
+                    let next_start = launch.end_tick;
+                    let next_end =
+                        next_start.saturating_add(session_loop_window_ticks(launch.bar_ticks));
+                    let events = session_midi_events_looped(clip, next_start, launch.bpm, next_end);
+                    if schedule
+                        .send(SchedulerCommand::ExtendTrack {
+                            track_id: track_id.clone(),
+                            events,
+                        })
+                        .is_err()
+                    {
+                        continue;
+                    }
+                    launch.end_tick = next_end;
+                }
+                SessionClipKind::Audio => {
+                    let Some(clip) = launch.audio_clip.as_ref() else {
+                        continue;
+                    };
+                    let duration = audio_clip_duration_session_ticks(clip, launch.bpm).max(1);
+                    let refill_at = launch.end_tick.saturating_sub(duration);
+                    if position < refill_at {
+                        continue;
+                    }
+                    audio_refills.push((
+                        track_id.clone(),
+                        clip.clone(),
+                        launch.audio_source.clone(),
+                        launch.end_tick,
+                        launch.bpm,
+                    ));
+                    launch.end_tick = launch
+                        .end_tick
+                        .saturating_add(duration.saturating_mul(u64::from(SESSION_AUDIO_REPEATS)));
+                }
+            }
+        }
+        drop(launches);
+        for (track_id, clip, source, launch_tick, bpm) in audio_refills {
+            if let Some(source) = source.as_ref() {
+                self.push_session_audio(&track_id, &clip, source, launch_tick, bpm, true)?;
+            }
+        }
+        Ok(())
     }
 
     fn replace_session_audio(
@@ -1694,8 +1809,8 @@ impl AudioRuntimeHost {
         clip: &AudioClip,
         launch_tick: u64,
         bpm: f64,
+        append: bool,
     ) -> Result<(), String> {
-        let sample_rate = PipeWireStreamConfig::default().sample_rate;
         let source_id = clip
             .source_id
             .as_ref()
@@ -1705,6 +1820,19 @@ impl AudioRuntimeHost {
             .iter()
             .find(|source| source.id == *source_id)
             .ok_or_else(|| format!("no está la fuente de '{}'", clip.name))?;
+        self.push_session_audio(track_id, clip, source, launch_tick, bpm, append)
+    }
+
+    fn push_session_audio(
+        &mut self,
+        track_id: &str,
+        clip: &AudioClip,
+        source: &AudioSource,
+        launch_tick: u64,
+        bpm: f64,
+        append: bool,
+    ) -> Result<(), String> {
+        let sample_rate = PipeWireStreamConfig::default().sample_rate;
         let streams = session_audio_streams(
             clip,
             source,
@@ -1738,12 +1866,23 @@ impl AudioRuntimeHost {
                 })
                 .clone()
         };
+        let command = if append {
+            SessionAudioCommand::Append(live_streams)
+        } else {
+            SessionAudioCommand::Replace(live_streams)
+        };
         *slot
             .command
             .lock()
-            .map_err(|_| "el audio de Session quedó bloqueado".to_owned())? =
-            Some(SessionAudioCommand::Replace(live_streams));
-        self.session_audio_pumps.insert(track_id.to_owned(), pumps);
+            .map_err(|_| "el audio de Session quedó bloqueado".to_owned())? = Some(command);
+        if append {
+            self.session_audio_pumps
+                .entry(track_id.to_owned())
+                .or_default()
+                .extend(pumps);
+        } else {
+            self.session_audio_pumps.insert(track_id.to_owned(), pumps);
+        }
         Ok(())
     }
 
@@ -3553,7 +3692,12 @@ fn clip_duration_session_ticks(clip: &MidiClip) -> u64 {
         / ppq
 }
 
-const SESSION_AUDIO_REPEATS: u32 = 8;
+const SESSION_AUDIO_REPEATS: u32 = 4;
+const SESSION_LOOP_WINDOW_BARS: u64 = 8;
+
+fn session_loop_window_ticks(bar_ticks: u64) -> u64 {
+    bar_ticks.saturating_mul(SESSION_LOOP_WINDOW_BARS).max(1)
+}
 
 fn session_midi_events_looped(
     clip: &MidiClip,
@@ -3787,6 +3931,21 @@ fn apply_scheduler_command(
                 .iter()
                 .position(|event| event.at_tick >= launch_tick)
                 .unwrap_or(schedule.events.len());
+        }
+        SchedulerCommand::ExtendTrack { track_id, events } => {
+            let Some(sender) = schedule
+                .senders
+                .iter()
+                .position(|sender| sender.track_id() == track_id)
+            else {
+                return;
+            };
+            let mut extra = events;
+            for event in &mut extra {
+                event.sender = sender;
+            }
+            schedule.events.extend(extra);
+            sort_schedule(schedule);
         }
         SchedulerCommand::StopTrack { track_id } => {
             let Some(sender) = schedule

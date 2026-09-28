@@ -1,5 +1,11 @@
 # Handoff de continuación — 2026-09-27
 
+## Punto de reanudación actual — loop Session hasta detener (2026-09-28)
+
+- El host rellena ventanas MIDI (`ExtendTrack`) y audio (`Append` al mixer) fuera del callback cuando la posición se acerca al final de la ventana. El clip marcado `looping` sigue sonando hasta ■. El mixer aplica `start_frame` relativo al `frame_cursor` al recibir el comando, para poder lanzar audio a mitad de un plan. `cargo check -p estudio-daw-ui-shell` pasa.
+- Los botones ▶ de casillas de audio están habilitados con Play/pausa (mismo gesto que MIDI).
+- OpenSpec 4.4/3.2 siguen abiertas: cuantización por clip, modos Live y QA.
+
 ## Punto de reanudación actual — Session audio, rejilla y loop (2026-09-28)
 
 - Session lanza MIDI y audio a la rejilla del transporte (1/16–compás o ahora). El clip se repite hasta ■: MIDI 64 compases, audio 8 vueltas predecodificadas. El audio de Session entra por un mixer de pista con comando try_lock; no se recrean workers VST3. Analog Lab 4.6 sigue pendiente de QA en Tauri.
