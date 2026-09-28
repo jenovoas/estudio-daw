@@ -102,6 +102,7 @@ let pendingAudioPath = null;
 let editCursorTick = 0;
 let editCursorProjectId = null;
 let selectedClipId = null;
+let selectedMidiNote = null;
 const waveformCache = new Map();
 let previewContext = null;
 let currentPreview = null;
@@ -1064,6 +1065,7 @@ function renderSnapshot(snapshot) {
   if (snapshot.projectId !== editCursorProjectId) {
     selectedTrackIds = new Set();
     selectedClipId = null;
+    selectedMidiNote = null;
     trackGroupDraft = "";
     editCursorTick = 0;
     transportPositionTick = 0;
@@ -1419,13 +1421,78 @@ function renderClipInspector(snapshot) {
       const row = grid.querySelectorAll(".piano-roll-row")[83 - note.key];
       if (!row) continue;
       const block = document.createElement("span");
-      block.className = "piano-roll-note";
+      const isSelected = selectedMidiNote?.clipId === midiClip.id
+        && selectedMidiNote.noteOnIndex === note.noteOnIndex
+        && selectedMidiNote.noteOffIndex === note.noteOffIndex;
+      block.className = `piano-roll-note${isSelected ? " selected" : ""}`;
       block.style.left = `calc(34px + ${Math.max(0, note.startBeats * 2 / steps) * 100}%)`;
       block.style.width = `max(8px, ${Math.max(0.008, note.durationBeats * 2 / steps) * 100}%)`;
       block.title = `Nota ${note.key}, velocidad ${note.velocity}`;
+      block.addEventListener("click", (event) => {
+        event.stopPropagation();
+        selectedMidiNote = { clipId: midiClip.id, ...note };
+        renderClipInspector(lastSnapshot);
+      });
       row.append(block);
     }
     pianoRoll.append(grid);
+    const selected = midiClip.notes.find((note) => selectedMidiNote?.clipId === midiClip.id
+      && selectedMidiNote.noteOnIndex === note.noteOnIndex
+      && selectedMidiNote.noteOffIndex === note.noteOffIndex
+      && selectedMidiNote.startTick === note.startTick
+      && selectedMidiNote.key === note.key);
+    if (selected) {
+      const editor = document.createElement("div");
+      editor.className = "piano-roll-note-editor";
+      const start = makeInspectorNumber("Inicio (ticks)", selected.startTick, 0, null, 1, () => {});
+      const duration = makeInspectorNumber("Duración (ticks)", selected.endTick - selected.startTick, 1, null, 1, () => {});
+      const key = makeInspectorNumber("Tono MIDI", selected.key, 0, 127, 1, () => {});
+      const velocity = makeInspectorNumber("Velocidad", selected.velocity, 1, 127, 1, () => {});
+      const apply = document.createElement("button");
+      apply.type = "button";
+      apply.className = "button button-accent";
+      apply.textContent = "Aplicar nota";
+      apply.addEventListener("click", async () => {
+        const values = [start, duration, key, velocity].map((field) => Number(field.querySelector("input").value));
+        if (values.some((value) => !Number.isInteger(value)) || values[0] < 0 || values[1] < 1 || values[2] > 127 || values[3] < 1 || values[3] > 127) return;
+        const [startTick, durationTicks, nextKey, nextVelocity] = values;
+        await runCommand("Nota MIDI actualizada", async () => {
+          const command = {
+            clipId: midiClip.id,
+            noteOnIndex: selected.noteOnIndex,
+            noteOffIndex: selected.noteOffIndex,
+            expectedStartTick: selected.startTick,
+            expectedEndTick: selected.endTick,
+            expectedKey: selected.key,
+            expectedChannel: selected.channel,
+            startTick, durationTicks, key: nextKey, velocity: nextVelocity,
+          };
+          const updated = await platform.updateMidiNote(command);
+          const updatedClip = updated.midiClips.find((clipItem) => clipItem.id === midiClip.id);
+          const updatedNote = updatedClip?.notes.find((item) => item.startTick === startTick && item.endTick === startTick + durationTicks && item.key === nextKey && item.velocity === nextVelocity);
+          selectedMidiNote = updatedNote ? { clipId: midiClip.id, ...updatedNote } : null;
+          return updated;
+        });
+      });
+      const remove = document.createElement("button");
+      remove.type = "button";
+      remove.className = "button";
+      remove.textContent = "Eliminar nota";
+      remove.addEventListener("click", () => {
+        selectedMidiNote = null;
+        void runCommand("Nota MIDI eliminada", () => platform.removeMidiNote({
+          clipId: midiClip.id,
+          noteOnIndex: selected.noteOnIndex,
+          noteOffIndex: selected.noteOffIndex,
+          expectedStartTick: selected.startTick,
+          expectedEndTick: selected.endTick,
+          expectedKey: selected.key,
+          expectedChannel: selected.channel,
+        }));
+      });
+      editor.append(start, duration, key, velocity, apply, remove);
+      pianoRoll.append(editor);
+    }
     elements.clipInspector.append(pianoRoll);
   }
 }

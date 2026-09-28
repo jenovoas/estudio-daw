@@ -163,9 +163,11 @@ restaura allí el último CC, pitch bend, presión y programa. Esto puede produc
 un nuevo ataque en notas sostenidas, y SysEx previo no se copia. Los cambios
 usan el historial y el plan activo se actualiza si el motor está conectado. El
 inspector abre un piano roll acotado de 36 teclas y permite insertar corcheas
-con clic; cada inserción conserva los eventos previos, se puede deshacer y
-refresca el plan activo. Aún faltan selección, movimiento, cambio de duración,
-velocidad y borrado de notas existentes; el registro nuevo usa canal 1.
+con clic, seleccionar notas y editar tono, posición, duración y velocidad o
+borrarlas. Las operaciones conservan los demás eventos y son reversibles; el
+plan activo se actualiza. Los comandos verifican que los índices/eventos de la
+nota seleccionada sigan vigentes. El arrastre para mover/redimensionar y la
+edición de expresión no están implementados; las notas nuevas usan canal 1.
 
 El navegador también enumera las regiones de audio importadas del proyecto y
 permite filtrarlas por nombre, fuente, pista y disposición de canales. Cada

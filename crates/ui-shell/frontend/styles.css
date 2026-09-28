@@ -292,7 +292,9 @@ button:disabled { opacity: .4; cursor: not-allowed !important; }
 .piano-roll-cell.beat-start { border-left-color: #41484a; }
 .piano-roll-cell.bar-start { border-left: 1px solid #737b7e; }
 .piano-roll-cell:hover { background: #685039; }
-.piano-roll-note { position: absolute; z-index: 1; top: 2px; height: 9px; border: 1px solid #ffc184; border-radius: 3px; background: #bd7037; opacity: .9; pointer-events: none; }
+.piano-roll-note { position: absolute; z-index: 1; top: 2px; height: 9px; border: 1px solid #ffc184; border-radius: 3px; background: #bd7037; opacity: .9; cursor: pointer; }
+.piano-roll-note.selected { border-color: #fff0dc; background: #ed9a4f; box-shadow: 0 0 0 1px #fff0dc; }
+.piano-roll-note-editor { display: flex; flex-wrap: wrap; align-items: end; gap: 6px 12px; padding: 7px 0 2px 36px; }
 .audio-settings { border-top: 1px solid #3c4144; }
 .audio-summary { min-height: 35px; display: flex; align-items: center; gap: 8px; padding: 0 11px; list-style: none; color: #c9ccce; cursor: pointer; }
 .audio-summary::-webkit-details-marker { display: none; }

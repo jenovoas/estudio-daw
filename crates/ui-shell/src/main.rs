@@ -135,6 +135,11 @@ struct AudioImportMetadata {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct MidiNoteSummary {
+    note_on_index: usize,
+    note_off_index: usize,
+    channel: u8,
+    start_tick: u64,
+    end_tick: u64,
     start_beats: f64,
     duration_beats: f64,
     key: u8,
@@ -645,30 +650,140 @@ fn add_midi_note(
     Ok(summarize(application, connected))
 }
 
+#[tauri::command]
+fn update_midi_note(
+    clip_id: String,
+    note_on_index: usize,
+    note_off_index: usize,
+    expected_start_tick: u64,
+    expected_end_tick: u64,
+    expected_key: u8,
+    expected_channel: u8,
+    start_tick: u64,
+    duration_ticks: u64,
+    key: u8,
+    velocity: u8,
+    state: State<'_, DesktopState>,
+) -> Result<UiSnapshot, String> {
+    let mut application = state
+        .application
+        .lock()
+        .map_err(|_| "el estado de la aplicación quedó bloqueado".to_owned())?;
+    let application = application
+        .as_mut()
+        .ok_or_else(|| "primero abre un proyecto".to_owned())?;
+    application
+        .execute_project(ProjectCommand::UpdateMidiNote {
+            clip_id,
+            note_on_index,
+            note_off_index,
+            expected_start_tick,
+            expected_end_tick,
+            expected_key,
+            expected_channel,
+            start_tick,
+            duration_ticks,
+            key,
+            velocity,
+        })
+        .map_err(|error| error.to_string())?;
+    let project = application.snapshot().project.project;
+    let mut audio = state
+        .audio
+        .lock()
+        .map_err(|_| "el estado del motor de audio quedó bloqueado".to_owned())?;
+    let connected = audio.is_connected();
+    if connected {
+        let settings = load_audio_runtime_settings().map_err(|error| error.to_string())?;
+        audio
+            .refresh_project(&project, settings.active())
+            .map_err(|error| {
+                format!("la nota se editó, pero no se pudo actualizar el plan de audio: {error}")
+            })?;
+    }
+    Ok(summarize(application, connected))
+}
+
+#[tauri::command]
+fn remove_midi_note(
+    clip_id: String,
+    note_on_index: usize,
+    note_off_index: usize,
+    expected_start_tick: u64,
+    expected_end_tick: u64,
+    expected_key: u8,
+    expected_channel: u8,
+    state: State<'_, DesktopState>,
+) -> Result<UiSnapshot, String> {
+    let mut application = state
+        .application
+        .lock()
+        .map_err(|_| "el estado de la aplicación quedó bloqueado".to_owned())?;
+    let application = application
+        .as_mut()
+        .ok_or_else(|| "primero abre un proyecto".to_owned())?;
+    application
+        .execute_project(ProjectCommand::RemoveMidiNote {
+            clip_id,
+            note_on_index,
+            note_off_index,
+            expected_start_tick,
+            expected_end_tick,
+            expected_key,
+            expected_channel,
+        })
+        .map_err(|error| error.to_string())?;
+    let project = application.snapshot().project.project;
+    let mut audio = state
+        .audio
+        .lock()
+        .map_err(|_| "el estado del motor de audio quedó bloqueado".to_owned())?;
+    let connected = audio.is_connected();
+    if connected {
+        let settings = load_audio_runtime_settings().map_err(|error| error.to_string())?;
+        audio
+            .refresh_project(&project, settings.active())
+            .map_err(|error| {
+                format!("la nota se borró, pero no se pudo actualizar el plan de audio: {error}")
+            })?;
+    }
+    Ok(summarize(application, connected))
+}
+
 fn summarize_midi_notes(clip: &MidiClip) -> Vec<MidiNoteSummary> {
     let ppq = f64::from(clip.take.ppq.max(1));
-    let mut active_notes = Vec::<(u8, u8, u64, u8)>::new();
+    let mut active_notes = Vec::<(u8, u8, u64, u8, usize)>::new();
     let mut notes = Vec::new();
-    for event in &clip.take.events {
+    for (event_index, event) in clip.take.events.iter().enumerate() {
         match &event.message {
             RecordedMidiMessage::NoteOn {
                 channel,
                 note,
                 velocity,
-            } if *velocity > 0 => {
-                active_notes.push((*channel, *note, event.tick, (*velocity).clamp(1, 127) as u8))
-            }
+            } if *velocity > 0 => active_notes.push((
+                *channel,
+                *note,
+                event.tick,
+                (*velocity).clamp(1, 127) as u8,
+                event_index,
+            )),
             RecordedMidiMessage::NoteOff { channel, note, .. }
             | RecordedMidiMessage::NoteOn { channel, note, .. } => {
                 if let Some(index) =
                     active_notes
                         .iter()
-                        .rposition(|(active_channel, active_note, _, _)| {
+                        .rposition(|(active_channel, active_note, _, _, _)| {
                             active_channel == channel && active_note == note
                         })
                 {
-                    let (_, key, start_tick, velocity) = active_notes.remove(index);
+                    let (channel, key, start_tick, velocity, note_on_index) =
+                        active_notes.remove(index);
                     notes.push(MidiNoteSummary {
+                        note_on_index,
+                        note_off_index: event_index,
+                        channel,
+                        start_tick,
+                        end_tick: event.tick,
                         start_beats: start_tick as f64 / ppq,
                         duration_beats: event.tick.saturating_sub(start_tick) as f64 / ppq,
                         key,
@@ -1914,6 +2029,8 @@ fn main() {
             duplicate_midi_clip,
             split_midi_clip,
             add_midi_note,
+            update_midi_note,
+            remove_midi_note,
             audio_waveform,
             audio_preview,
             audio_preview_file,

@@ -157,6 +157,28 @@ pub enum ProjectCommand {
         key: u8,
         velocity: u8,
     },
+    UpdateMidiNote {
+        clip_id: String,
+        note_on_index: usize,
+        note_off_index: usize,
+        expected_start_tick: u64,
+        expected_end_tick: u64,
+        expected_key: u8,
+        expected_channel: u8,
+        start_tick: u64,
+        duration_ticks: u64,
+        key: u8,
+        velocity: u8,
+    },
+    RemoveMidiNote {
+        clip_id: String,
+        note_on_index: usize,
+        note_off_index: usize,
+        expected_start_tick: u64,
+        expected_end_tick: u64,
+        expected_key: u8,
+        expected_channel: u8,
+    },
     RemoveAudioClip {
         clip_id: String,
     },
@@ -1079,6 +1101,49 @@ impl CommandRuntime {
                     Ok(())
                 })
                 .map_err(|error| CommandError::Project(error.to_string()))?,
+            ProjectCommand::UpdateMidiNote { clip_id, note_on_index, note_off_index, expected_start_tick, expected_end_tick, expected_key, expected_channel, start_tick, duration_ticks, key, velocity } => self
+                .project_history.transact("edit MIDI note", |project| -> Result<(), String> {
+                    let clip = project.midi_clips.iter_mut().find(|clip| clip.id == clip_id)
+                        .ok_or_else(|| format!("unknown MIDI clip: {clip_id}"))?;
+                    if key > 127 || velocity == 0 || velocity > 127 || duration_ticks == 0 {
+                        return Err("invalid MIDI note parameters".into());
+                    }
+                    let end_tick = start_tick.checked_add(duration_ticks).ok_or_else(|| "MIDI note end exceeds tick range".to_owned())?;
+                    let channel = match clip.take.events.get(note_on_index).map(|event| (&event.message, event.tick)) {
+                        Some((RecordedMidiMessage::NoteOn { channel, note, .. }, tick)) if tick == expected_start_tick && *note == expected_key && *channel == expected_channel => *channel,
+                        _ => return Err("MIDI note changed since it was selected".into()),
+                    };
+                    match clip.take.events.get(note_off_index).map(|event| &event.message) {
+                        Some(RecordedMidiMessage::NoteOff { channel: off_channel, note, .. }) if *off_channel == channel && *note == expected_key && clip.take.events[note_off_index].tick == expected_end_tick => (),
+                        _ => return Err("MIDI note release changed since it was selected".into()),
+                    }
+                    let ppq = clip.take.ppq.max(1);
+                    let tempo = clip.take.tempo_bpm.max(1);
+                    let micros_at = |tick: u64| (u128::from(tick) * 60_000_000 / (u128::from(ppq) * u128::from(tempo))).min(u128::from(u64::MAX)) as u64;
+                    let on = clip.take.events.get_mut(note_on_index).expect("validated note-on index");
+                    on.tick = start_tick;
+                    on.micros_since_start = micros_at(start_tick);
+                    on.message = RecordedMidiMessage::NoteOn { channel, note: key, velocity };
+                    let off = clip.take.events.get_mut(note_off_index).expect("validated note-off index");
+                    off.tick = end_tick;
+                    off.micros_since_start = micros_at(end_tick);
+                    off.message = RecordedMidiMessage::NoteOff { channel, note: key, release_velocity: 0 };
+                    clip.take.events.sort_by_key(|event| event.tick);
+                    clip.duration_ticks = clip.duration_ticks.max(end_tick);
+                    Ok(())
+                }).map_err(|error| CommandError::Project(error.to_string()))?,
+            ProjectCommand::RemoveMidiNote { clip_id, note_on_index, note_off_index, expected_start_tick, expected_end_tick, expected_key, expected_channel } => self
+                .project_history.transact("remove MIDI note", |project| -> Result<(), String> {
+                    let clip = project.midi_clips.iter_mut().find(|clip| clip.id == clip_id)
+                        .ok_or_else(|| format!("unknown MIDI clip: {clip_id}"))?;
+                    let valid_on = matches!(clip.take.events.get(note_on_index), Some(event) if event.tick == expected_start_tick && matches!(event.message, RecordedMidiMessage::NoteOn { channel, note, .. } if note == expected_key && channel == expected_channel));
+                    let valid_off = matches!(clip.take.events.get(note_off_index), Some(event) if event.tick == expected_end_tick && matches!(event.message, RecordedMidiMessage::NoteOff { channel, note, .. } if note == expected_key && channel == expected_channel));
+                    if !valid_on || !valid_off || note_on_index == note_off_index { return Err("MIDI note changed since it was selected".into()); }
+                    let (high, low) = if note_on_index > note_off_index {(note_on_index, note_off_index)} else {(note_off_index, note_on_index)};
+                    clip.take.events.remove(high);
+                    clip.take.events.remove(low);
+                    Ok(())
+                }).map_err(|error| CommandError::Project(error.to_string()))?,
             ProjectCommand::RemoveAudioClip { clip_id } => self
                 .project_history
                 .transact("remove audio clip", |project| -> Result<(), String> {
@@ -2204,6 +2269,83 @@ mod tests {
                 .len(),
             4
         );
+    }
+
+    #[test]
+    fn update_and_remove_midi_note_are_reversible_and_validate_event_identity() {
+        let mut runtime = CommandRuntime::new(project());
+        runtime
+            .apply(envelope(
+                "add-note-edit",
+                DomainCommand::Project(ProjectCommand::AddMidiNote {
+                    clip_id: "midi-clip-1".into(),
+                    start_tick: 960,
+                    duration_ticks: 480,
+                    key: 67,
+                    velocity: 80,
+                }),
+            ))
+            .unwrap();
+        runtime
+            .apply(envelope(
+                "edit-note-1",
+                DomainCommand::Project(ProjectCommand::UpdateMidiNote {
+                    clip_id: "midi-clip-1".into(),
+                    note_on_index: 2,
+                    note_off_index: 3,
+                    expected_start_tick: 960,
+                    expected_end_tick: 1_440,
+                    expected_key: 67,
+                    expected_channel: 0,
+                    start_tick: 1_000,
+                    duration_ticks: 600,
+                    key: 69,
+                    velocity: 105,
+                }),
+            ))
+            .unwrap();
+        let clip = &runtime.snapshot().project.project.midi_clips[0];
+        assert!(clip.take.events.iter().any(|event| matches!(event.message, RecordedMidiMessage::NoteOn { note: 69, velocity: 105, .. } if event.tick == 1_000)));
+        assert!(clip.take.events.iter().any(|event| matches!(event.message, RecordedMidiMessage::NoteOff { note: 69, .. } if event.tick == 1_600)));
+        runtime
+            .apply(envelope(
+                "remove-note-1",
+                DomainCommand::Project(ProjectCommand::RemoveMidiNote {
+                    clip_id: "midi-clip-1".into(),
+                    note_on_index: 2,
+                    note_off_index: 3,
+                    expected_start_tick: 1_000,
+                    expected_end_tick: 1_600,
+                    expected_key: 69,
+                    expected_channel: 0,
+                }),
+            ))
+            .unwrap();
+        assert!(!runtime.snapshot().project.project.midi_clips[0]
+            .take
+            .events
+            .iter()
+            .any(|event| matches!(event.message, RecordedMidiMessage::NoteOn { note: 69, .. })));
+        runtime
+            .apply(envelope(
+                "undo-remove-note-1",
+                DomainCommand::Project(ProjectCommand::Undo),
+            ))
+            .unwrap();
+        assert!(runtime.snapshot().project.project.midi_clips[0].take.events.iter().any(|event| matches!(event.message, RecordedMidiMessage::NoteOn { note: 69, velocity: 105, .. } if event.tick == 1_000)));
+        let result = runtime.apply(envelope(
+            "stale-remove-note",
+            DomainCommand::Project(ProjectCommand::RemoveMidiNote {
+                clip_id: "midi-clip-1".into(),
+                note_on_index: 2,
+                note_off_index: 3,
+                expected_start_tick: 1_000,
+                expected_end_tick: 1_600,
+                expected_key: 67,
+                expected_channel: 0,
+            }),
+        ));
+        assert!(result.is_err());
     }
 
     #[test]
