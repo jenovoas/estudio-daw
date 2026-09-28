@@ -2419,6 +2419,8 @@ mod tests {
             record_armed: false,
             channel_config: TrackChannelConfig::default(),
             color: "#58a6b8".into(),
+            marker: String::new(),
+            annotation: String::new(),
             group_name: None,
             mixer: TrackMixerState::default(),
             notes: Vec::new(),

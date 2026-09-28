@@ -822,6 +822,12 @@ pub struct Track {
     /// Color belongs to the project so Session and Arrangement remain visually linked.
     #[serde(default = "default_track_color")]
     pub color: String,
+    /// Marca breve elegida por la persona para reconocer visualmente el instrumento.
+    #[serde(default)]
+    pub marker: String,
+    /// Apunte libre de la persona sobre el papel o la toma de esta pista.
+    #[serde(default)]
+    pub annotation: String,
     /// Grupo organizativo persistente; no vincula el estado del mezclador.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub group_name: Option<String>,
@@ -886,6 +892,8 @@ impl Default for TrackChannelConfig {
 pub enum TrackValidationError {
     #[error("track id and name must not be empty")]
     EmptyIdentity,
+    #[error("el color, la marca o la nota de pista no cumplen el formato admitido")]
+    InvalidTrackIdentity,
     #[error("track id is duplicated: {0}")]
     DuplicateId(String),
     #[error("role is incompatible with the track media kind")]
@@ -945,6 +953,8 @@ impl Track {
                 output_channels: 2,
             },
             color: default_track_color(),
+            marker: String::new(),
+            annotation: String::new(),
             group_name: None,
             mixer: TrackMixerState::default(),
             notes: Vec::new(),
@@ -959,6 +969,14 @@ impl Track {
     pub fn validate(&self) -> Result<(), TrackValidationError> {
         if self.id.trim().is_empty() || self.name.trim().is_empty() {
             return Err(TrackValidationError::EmptyIdentity);
+        }
+        if self.color.len() != 7
+            || !self.color.starts_with('#')
+            || !self.color[1..].bytes().all(|byte| byte.is_ascii_hexdigit())
+            || self.marker.chars().count() > 4
+            || self.annotation.chars().count() > 256
+        {
+            return Err(TrackValidationError::InvalidTrackIdentity);
         }
         let role_matches_kind = matches!(
             (&self.kind, self.role),
@@ -1337,6 +1355,8 @@ pub fn import_project_xml(xml: &str) -> Result<ImportResult, ProjectError> {
                     output_channels: 2,
                 },
                 color: default_track_color(),
+                marker: String::new(),
+                annotation: String::new(),
                 group_name: None,
                 mixer: TrackMixerState::default(),
                 notes,
@@ -2104,6 +2124,9 @@ mod tests {
         assert_eq!(project.tracks[0].notes[0].time_beats, 0.5);
         assert_eq!(project.tracks[0].mixer, TrackMixerState::default());
         assert_eq!(project.tracks[0].role, TrackRole::Instrument);
+        assert_eq!(project.tracks[0].color, default_track_color());
+        assert!(project.tracks[0].marker.is_empty());
+        assert!(project.tracks[0].annotation.is_empty());
     }
 
     #[test]

@@ -44,6 +44,8 @@ struct TrackSummary {
     role: &'static str,
     note_count: usize,
     color: String,
+    marker: String,
+    annotation: String,
     input_channels: Option<u32>,
     input_route: Option<TrackInputRoute>,
     record_armed: bool,
@@ -277,6 +279,8 @@ fn summarize(application: &ProjectApplication, audio_engine_connected: bool) -> 
                     .filter(|event| matches!(&event.message, RecordedMidiMessage::NoteOn { velocity, .. } if *velocity > 0))
                     .count(),
             color: track.color.clone(),
+            marker: track.marker.clone(),
+            annotation: track.annotation.clone(),
             input_channels: track.channel_config.input_channels,
             input_route: track.input_route.clone(),
             record_armed: track.record_armed,
@@ -850,6 +854,8 @@ fn add_track(kind: String, state: State<'_, DesktopState>) -> Result<UiSnapshot,
             output_channels: 2,
         },
         color: "#58a6b8".into(),
+        marker: String::new(),
+        annotation: String::new(),
         group_name: None,
         mixer: TrackMixerState::default(),
         notes: Vec::new(),
@@ -1258,6 +1264,8 @@ fn new_project_model() -> Project {
             record_armed: false,
             channel_config: TrackChannelConfig::default(),
             color: "#58a6b8".into(),
+            marker: String::new(),
+            annotation: String::new(),
             group_name: None,
             mixer: TrackMixerState::default(),
             notes: Vec::new(),
@@ -1800,6 +1808,37 @@ fn set_track_mixer(
 }
 
 #[tauri::command]
+fn set_track_identity(
+    track_id: String,
+    color: String,
+    marker: String,
+    annotation: String,
+    state: State<'_, DesktopState>,
+) -> Result<UiSnapshot, String> {
+    let mut application = state
+        .application
+        .lock()
+        .map_err(|_| "el estado de la aplicación quedó bloqueado".to_owned())?;
+    let application = application
+        .as_mut()
+        .ok_or_else(|| "primero abre un proyecto".to_owned())?;
+    application
+        .execute_project(ProjectCommand::SetTrackIdentity {
+            track_id,
+            color,
+            marker,
+            annotation,
+        })
+        .map_err(|error| error.to_string())?;
+    let connected = state
+        .audio
+        .lock()
+        .map_err(|_| "el estado del motor de audio quedó bloqueado".to_owned())?
+        .is_connected();
+    Ok(summarize(application, connected))
+}
+
+#[tauri::command]
 fn set_track_output(
     track_id: String,
     output_track_id: Option<String>,
@@ -2050,6 +2089,7 @@ fn main() {
             save_project_as,
             set_transport,
             set_track_mixer,
+            set_track_identity,
             set_track_output,
             set_track_input_route,
             set_track_record_arm,

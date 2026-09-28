@@ -43,6 +43,7 @@ const elements = {
   tracks: document.querySelector("#track-list"),
   lanes: document.querySelector("#arrangement-lanes"),
   ruler: document.querySelector("#timeline-ruler"),
+  overview: document.querySelector("#arrangement-overview"),
   arrangementView: document.querySelector(".arrangement-scroll"),
   sessionView: document.querySelector("#session-view"),
   mixerView: document.querySelector("#mixer-view"),
@@ -56,6 +57,7 @@ const elements = {
   railSettings: document.querySelector("#rail-settings"),
   audioSettings: document.querySelector("#audio-settings"),
   clipInspector: document.querySelector("#clip-inspector"),
+  editor: document.querySelector(".editor"),
   trackCount: document.querySelector("#track-count"),
   midiCount: document.querySelector("#midi-count"),
   audioCount: document.querySelector("#audio-count"),
@@ -64,6 +66,9 @@ const elements = {
   engine: document.querySelector("#engine-status"),
   noticeTitle: document.querySelector("#notice-title"),
   noticeText: document.querySelector("#notice-text"),
+  notice: document.querySelector(".status-message"),
+  noticeIcon: document.querySelector(".status-icon"),
+  connectionDot: document.querySelector(".connection-dot"),
   play: document.querySelector("#play"),
   record: document.querySelector("#record"),
   pause: document.querySelector("#pause"),
@@ -100,6 +105,9 @@ let selectedTrackIds = new Set();
 let trackGroupDraft = "";
 let pendingAudioPath = null;
 let editCursorTick = 0;
+let arrangementVisibleBars = 16;
+let arrangementStartBar = 1;
+let arrangementTotalBars = 16;
 let editCursorProjectId = null;
 let selectedClipId = null;
 let selectedMidiNote = null;
@@ -378,6 +386,15 @@ async function loadAudioSettings() {
 function setNotice(title, text) {
   elements.noticeTitle.textContent = title;
   elements.noticeText.textContent = text;
+  const tone = /no se pudo|fall[oó]|inv[aá]lid|error/i.test(title)
+    ? "error"
+    : /incidencia|no disponible|pendiente/i.test(title)
+      ? "warning"
+      : /actualizad[oa]|guardad[oa]|cread[oa]|importad[oa]|lista/i.test(title)
+        ? "success"
+        : "info";
+  elements.notice.dataset.tone = tone;
+  elements.noticeIcon.textContent = ({ error: "!", warning: "⚠", success: "✓", info: "i" })[tone];
 }
 
 function updateUiZoomControls() {
@@ -712,6 +729,77 @@ function createTrackSelectionControl(track) {
   return label;
 }
 
+function createTrackIdentityControl(track) {
+  if (track.virtualMaster) return null;
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "track-identity-button";
+  button.textContent = track.marker || "◉";
+  button.style.setProperty("--track-color", track.color);
+  button.title = ["Editar color e identidad de pista", track.annotation].filter(Boolean).join(" · ");
+  button.setAttribute("aria-label", `Editar color, marca y nota de ${track.name}`);
+  button.addEventListener("click", () => editTrackIdentity(track));
+  return button;
+}
+
+function editTrackIdentity(track) {
+  const dialog = document.createElement("dialog");
+  dialog.className = "track-identity-dialog";
+  const form = document.createElement("form");
+  form.method = "dialog";
+  const heading = document.createElement("h2");
+  heading.textContent = `Identidad de ${track.name}`;
+  const colorLabel = document.createElement("label");
+  colorLabel.textContent = "Color del instrumento";
+  const color = document.createElement("input");
+  color.type = "color";
+  color.value = /^#[\da-f]{6}$/i.test(track.color) ? track.color : "#58a6b8";
+  colorLabel.append(color);
+  const markerLabel = document.createElement("label");
+  markerLabel.textContent = "Marca para reconocerlo";
+  const marker = document.createElement("select");
+  for (const [value, label] of [["", "Sin marca"], ["🎹", "Teclas / piano"], ["🥁", "Batería / percusión"], ["🎸", "Guitarra / bajo"], ["🎤", "Voz"], ["🎻", "Cuerdas"], ["🎺", "Vientos"], ["🎛️", "Sintetizador"], ["♪", "Instrumento MIDI"], ["◖", "Audio"]]) {
+    marker.append(new Option(label, value));
+  }
+  marker.value = track.marker ?? "";
+  markerLabel.append(marker);
+  const noteLabel = document.createElement("label");
+  noteLabel.textContent = "Nota de pista";
+  const annotation = document.createElement("textarea");
+  annotation.maxLength = 256;
+  annotation.rows = 3;
+  annotation.placeholder = "Por ejemplo: bajo principal, toma 2, entra en el estribillo…";
+  annotation.value = track.annotation ?? "";
+  noteLabel.append(annotation);
+  const actions = document.createElement("div");
+  actions.className = "track-identity-actions";
+  const cancel = document.createElement("button");
+  cancel.type = "button";
+  cancel.textContent = "Cancelar";
+  cancel.addEventListener("click", () => dialog.close());
+  const save = document.createElement("button");
+  save.type = "submit";
+  save.className = "button-accent";
+  save.textContent = "Guardar";
+  actions.append(cancel, save);
+  form.append(heading, colorLabel, markerLabel, noteLabel, actions);
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    save.disabled = true;
+    const saved = await runCommand("Identidad de pista actualizada", () => platform.setTrackIdentity(track.id, {
+      color: color.value,
+      marker: marker.value,
+      annotation: annotation.value,
+    }));
+    if (saved) dialog.close();
+    else save.disabled = false;
+  });
+  dialog.append(form);
+  dialog.addEventListener("close", () => dialog.remove(), { once: true });
+  document.body.append(dialog);
+  dialog.showModal();
+}
+
 function createTrackRemovalButton(track) {
   if (track.virtualMaster || track.role === "master") return null;
   const button = document.createElement("button");
@@ -859,6 +947,8 @@ function renderSessionSurface(snapshot) {
     header.dataset.trackId = track.id;
     header.style.setProperty("--track-color", track.color);
     header.append(createTrackSelectionControl(track));
+    const identity = createTrackIdentityControl(track);
+    if (identity) header.append(identity);
     const name = document.createElement("strong");
     name.textContent = track.name;
     const type = document.createElement("small");
@@ -924,6 +1014,8 @@ function renderSessionSurface(snapshot) {
     for (const track of tracks) {
       const cell = document.createElement("div");
       cell.className = "session-cell";
+      cell.style.setProperty("--track-color", track.color);
+      if (track.annotation) cell.title = track.annotation;
       const slot = (snapshot.clipSlots ?? []).find((item) => item.sceneId === scene.id && item.trackId === track.id);
       const select = document.createElement("select");
       select.setAttribute("aria-label", `Clip de ${track.name} en ${scene.name}`);
@@ -1025,6 +1117,8 @@ function renderMixerSurface(tracks) {
     const channelHeading = document.createElement("div");
     channelHeading.className = "mixer-channel-heading";
     if (selection) channelHeading.append(selection);
+    const identity = createTrackIdentityControl(track);
+    if (identity) channelHeading.append(identity);
     channelHeading.append(title);
     if (orderControls) channelHeading.append(orderControls);
     if (removeButton) channelHeading.append(removeButton);
@@ -1069,6 +1163,9 @@ function renderSnapshot(snapshot) {
     trackGroupDraft = "";
     editCursorTick = 0;
     transportPositionTick = 0;
+    arrangementVisibleBars = 16;
+    arrangementStartBar = 1;
+    arrangementTotalBars = 16;
     editCursorProjectId = snapshot.projectId;
   }
   const validTrackIds = new Set(snapshot.tracks.map((track) => track.id));
@@ -1117,6 +1214,7 @@ function renderSnapshot(snapshot) {
   elements.engine.textContent = snapshot.audioEngineConnected
     ? "Core listo · motor de audio conectado"
     : "Core listo · motor de audio aún no conectado";
+  elements.connectionDot.classList.toggle("is-connected", snapshot.audioEngineConnected);
   elements.undo.disabled = !snapshot.canUndo;
   elements.redo.disabled = !snapshot.canRedo;
   if (!document.querySelector(".track-group-toolbar")) {
@@ -1143,7 +1241,19 @@ function renderSnapshot(snapshot) {
 
   elements.tracks.replaceChildren();
   elements.lanes.replaceChildren();
-  renderTimelineRuler(snapshot.beatsPerBar || 4);
+  const beatsPerBar = snapshot.beatsPerBar || 4;
+  const clipEnds = [
+    ...snapshot.midiClips.map((clip) => (Number(clip.startBeats) || 0) + (Number(clip.durationBeats) || 0)),
+    ...(snapshot.audioClips ?? []).map((clip) => (Number(clip.startBeats) || 0) + (Number(clip.durationBeats) || 0)),
+  ];
+  arrangementTotalBars = Math.max(16, Math.ceil(Math.max(0, ...clipEnds) / beatsPerBar) + 1);
+  arrangementStartBar = Math.min(arrangementStartBar, Math.max(1, arrangementTotalBars - arrangementVisibleBars + 1));
+  elements.ruler.style.setProperty("--visible-bars", String(arrangementVisibleBars));
+  elements.ruler.style.setProperty("--bar-width", `${100 / arrangementVisibleBars}%`);
+  elements.lanes.style.setProperty("--visible-bars", String(arrangementVisibleBars));
+  elements.lanes.style.setProperty("--bar-width", `${100 / arrangementVisibleBars}%`);
+  renderTimelineRuler(beatsPerBar);
+  renderArrangementOverview(snapshot, beatsPerBar);
   if (snapshot.tracks.length === 0) {
     const empty = document.createElement("div");
     empty.className = "empty-state";
@@ -1160,14 +1270,15 @@ function renderSnapshot(snapshot) {
     return;
   }
 
-  for (const [trackIndex, track] of snapshot.tracks.entries()) {
+  for (const track of snapshot.tracks) {
     const row = document.createElement("div");
     row.className = "track-row";
     row.dataset.trackId = track.id;
     row.style.setProperty("--track-color", track.color);
     const icon = document.createElement("span");
     icon.className = `track-icon ${track.kind}`;
-    icon.textContent = track.role === "master" ? "M" : track.role === "bus" ? "B" : track.kind === "audio" ? "◖" : "♫";
+    icon.textContent = track.marker || (track.role === "master" ? "M" : track.role === "bus" ? "B" : track.kind === "audio" ? "◖" : "♫");
+    icon.title = track.annotation || track.name;
     const label = document.createElement("span");
     label.textContent = track.name;
     const details = document.createElement("span");
@@ -1179,6 +1290,8 @@ function renderSnapshot(snapshot) {
     name.append(createTrackSelectionControl(track), icon, label);
     const headingRow = document.createElement("div");
     headingRow.className = "track-row-heading";
+    const identity = createTrackIdentityControl(track);
+    if (identity) headingRow.append(identity);
     headingRow.append(name);
     const removeButton = createTrackRemovalButton(track);
     const orderControls = createTrackOrderControls(track, snapshot.tracks);
@@ -1205,15 +1318,17 @@ function renderSnapshot(snapshot) {
       block.dataset.clipId = clip.id;
       block.dataset.ppq = String(clip.ppq);
       if (selectedClipId === clip.id) block.classList.add("is-inspected");
-      block.style.setProperty("--clip-hue", String((trackIndex * 54 + 24) % 360));
+      block.style.setProperty("--track-color", track.color);
       block.title = `${clip.name} · ${clip.noteCount} notas`;
       block.tabIndex = 0;
       block.setAttribute("aria-label", `Seleccionar clip MIDI ${clip.name}, ${clip.noteCount} notas. Arrastra para mover.`);
       bindClipSelection(block, clip.id, snapshot);
       const left = Math.max(0, Number(clip.startBeats) || 0);
       const width = Math.max(0.25, Number(clip.durationBeats) || 0.25);
-      block.style.left = `${left / (snapshot.beatsPerBar * 16) * 100}%`;
-      block.style.width = `${Math.min(width / (snapshot.beatsPerBar * 16) * 100, 100)}%`;
+      const viewportBeats = (snapshot.beatsPerBar || 4) * arrangementVisibleBars;
+      const offsetBeats = (snapshot.beatsPerBar || 4) * (arrangementStartBar - 1);
+      block.style.left = `${(left - offsetBeats) / viewportBeats * 100}%`;
+      block.style.width = `${Math.min(width / viewportBeats * 100, 100)}%`;
       bindMidiClipMovement(block, lane, clip, snapshot.beatsPerBar);
       const clipLabel = document.createElement("span");
       clipLabel.className = "clip-label";
@@ -1239,6 +1354,7 @@ function renderSnapshot(snapshot) {
     for (const clip of audioClips) {
       const block = document.createElement("div");
       block.className = "audio-clip";
+      block.style.setProperty("--track-color", track.color);
       block.dataset.clipId = clip.id;
       if (selectedClipId === clip.id) block.classList.add("is-inspected");
       block.tabIndex = 0;
@@ -1247,8 +1363,10 @@ function renderSnapshot(snapshot) {
       bindClipSelection(block, clip.id, snapshot);
       const left = Math.max(0, Number(clip.startBeats) || 0);
       const width = Math.max(0.25, Number(clip.durationBeats) || 0.25);
-      block.style.left = `${left / (snapshot.beatsPerBar * 16) * 100}%`;
-      block.style.width = `${Math.min(width / (snapshot.beatsPerBar * 16) * 100, 100)}%`;
+      const viewportBeats = (snapshot.beatsPerBar || 4) * arrangementVisibleBars;
+      const offsetBeats = (snapshot.beatsPerBar || 4) * (arrangementStartBar - 1);
+      block.style.left = `${(left - offsetBeats) / viewportBeats * 100}%`;
+      block.style.width = `${Math.min(width / viewportBeats * 100, 100)}%`;
       const label = document.createElement("span");
       label.className = "clip-label";
       label.textContent = clip.name;
@@ -1317,6 +1435,7 @@ function renderSnapshot(snapshot) {
 function renderClipInspector(snapshot) {
   elements.clipInspector.replaceChildren();
   const midiClip = snapshot.midiClips.find((clip) => clip.id === selectedClipId);
+  elements.editor.classList.toggle("has-midi-editor", Boolean(midiClip));
   const audioClip = (snapshot.audioClips ?? []).find((clip) => clip.id === selectedClipId);
   const clip = audioClip ?? midiClip;
   if (!clip) {
@@ -1327,8 +1446,19 @@ function renderClipInspector(snapshot) {
     return;
   }
   const track = snapshot.tracks.find((item) => item.id === clip.trackId);
+  const title = document.createElement("div");
+  title.className = "clip-view-title";
   const name = document.createElement("strong");
   name.textContent = clip.name;
+  const titleType = document.createElement("span");
+  titleType.textContent = audioClip ? "VISTA DE CLIP · AUDIO" : "VISTA DE CLIP · MIDI";
+  title.append(name, titleType);
+  const body = document.createElement("div");
+  body.className = `clip-view-body${audioClip ? " audio" : ""}`;
+  const properties = document.createElement("aside");
+  properties.className = "clip-properties";
+  elements.clipInspector.append(title, body);
+  body.append(properties);
   const type = document.createElement("span");
   type.className = "clip-inspector-type";
   type.textContent = audioClip ? "AUDIO" : "MIDI";
@@ -1340,12 +1470,12 @@ function renderClipInspector(snapshot) {
   length.textContent = audioClip
     ? `Duración: ${audioClip.durationBeats.toFixed(2)} pulsos · ${audioClip.sampleRateHz} Hz · ${audioClip.channels} canales`
     : `Duración: ${midiClip.durationBeats.toFixed(2)} pulsos · ${midiClip.noteCount} notas`;
-  elements.clipInspector.append(type, name, trackName, position, length);
+  properties.append(type, trackName, position, length);
   if (audioClip?.sourceName) {
     const source = document.createElement("span");
     source.className = "clip-inspector-source";
     source.textContent = `Fuente: ${audioClip.sourceName}`;
-    elements.clipInspector.append(source);
+    properties.append(source);
   }
   if (audioClip) {
     const positionInput = makeInspectorNumber("Inicio (pulsos)", audioClip.startBeats, 0, null, 0.25, async (beats) => {
@@ -1374,7 +1504,7 @@ function renderClipInspector(snapshot) {
         fadeOutSamples: Math.round((edge === "out" ? boundedMs : fadeOutMs) * audioClip.sampleRateHz / 1000),
       }));
     };
-    elements.clipInspector.append(
+    properties.append(
       positionInput,
       gainInput,
       makeInspectorNumber("Entrada (ms)", fadeInMs, 0, Math.max(0, durationMs - fadeOutMs), 1, (value) => saveFades("in", value)),
@@ -1383,10 +1513,32 @@ function renderClipInspector(snapshot) {
   } else if (midiClip) {
     const pianoRoll = document.createElement("div");
     pianoRoll.className = "piano-roll";
+    if (track?.color) pianoRoll.style.setProperty("--track-color", track.color);
+    const toolbar = document.createElement("div");
+    toolbar.className = "piano-roll-toolbar";
     const heading = document.createElement("strong");
-    heading.className = "piano-roll-heading";
-    heading.textContent = "Piano roll · clic inserta una corchea · arrastra para mover o ajustar duración";
-    pianoRoll.append(heading);
+    heading.textContent = "Editor MIDI";
+    const instruction = document.createElement("span");
+    instruction.textContent = "Clic en la rejilla para añadir · arrastra una nota para moverla";
+    toolbar.append(heading, instruction);
+    pianoRoll.append(toolbar);
+    const ruler = document.createElement("div");
+    ruler.className = "piano-roll-ruler";
+    const rulerSpacer = document.createElement("span");
+    rulerSpacer.className = "piano-roll-ruler-key";
+    ruler.append(rulerSpacer);
+    const rulerCells = document.createElement("div");
+    rulerCells.className = "piano-roll-ruler-cells";
+    rulerCells.style.setProperty("--steps", String(Math.min(256, Math.max(16, Math.ceil(midiClip.durationTicks / Math.max(1, midiClip.ppq / 2) / 16) * 16))));
+    const rulerStepCount = Math.min(256, Math.max(16, Math.ceil(midiClip.durationTicks / Math.max(1, midiClip.ppq / 2) / 16) * 16));
+    for (let step = 0; step < rulerStepCount; step += 1) {
+      const marker = document.createElement("span");
+      marker.className = step % Math.max(1, Math.round((snapshot.beatsPerBar || 4) * 2)) === 0 ? "bar-start" : "";
+      if (step % Math.max(1, Math.round((snapshot.beatsPerBar || 4) * 2)) === 0) marker.textContent = String(Math.floor(step / Math.max(1, Math.round((snapshot.beatsPerBar || 4) * 2))) + 1);
+      rulerCells.append(marker);
+    }
+    ruler.append(rulerCells);
+    pianoRoll.append(ruler);
     const grid = document.createElement("div");
     grid.className = "piano-roll-grid";
     const stepsPerBar = Math.max(1, Math.round((snapshot.beatsPerBar || 4) * 2));
@@ -1415,7 +1567,8 @@ function renderClipInspector(snapshot) {
     });
     for (let key = 83; key >= 48; key--) {
       const lane = document.createElement("div");
-      lane.className = `piano-roll-row${key % 12 === 0 ? " octave" : ""}`;
+      const blackKey = [1, 3, 6, 8, 10].includes(key % 12);
+      lane.className = `piano-roll-row${key % 12 === 0 ? " octave" : ""}${blackKey ? " black-key" : ""}`;
       const label = document.createElement("span");
       label.className = "piano-roll-key";
       label.textContent = key % 12 === 0 ? `C${Math.floor(key / 12) - 1}` : "";
@@ -1496,6 +1649,25 @@ function renderClipInspector(snapshot) {
       row.append(block);
     }
     pianoRoll.append(grid);
+    const velocityLane = document.createElement("div");
+    velocityLane.className = "piano-roll-velocity";
+    const velocityLabel = document.createElement("span");
+    velocityLabel.textContent = "VEL";
+    const velocityEvents = document.createElement("div");
+    velocityEvents.className = "piano-roll-velocity-events";
+    for (const note of midiClip.notes) {
+      const stem = document.createElement("button");
+      stem.type = "button";
+      stem.className = `velocity-stem${selectedMidiNote?.noteOnIndex === note.noteOnIndex ? " selected" : ""}`;
+      stem.style.left = `${Math.max(0, note.startTick / Math.max(1, midiClip.durationTicks) * 100)}%`;
+      stem.style.height = `${Math.max(8, note.velocity / 127 * 100)}%`;
+      stem.title = `Velocidad ${note.velocity} · clic para seleccionar nota`;
+      stem.setAttribute("aria-label", `Seleccionar nota, velocidad ${note.velocity}`);
+      stem.addEventListener("click", () => { selectedMidiNote = { clipId: midiClip.id, ...note }; renderClipInspector(lastSnapshot); });
+      velocityEvents.append(stem);
+    }
+    velocityLane.append(velocityLabel, velocityEvents);
+    pianoRoll.append(velocityLane);
     const selected = midiClip.notes.find((note) => selectedMidiNote?.clipId === midiClip.id
       && selectedMidiNote.noteOnIndex === note.noteOnIndex
       && selectedMidiNote.noteOffIndex === note.noteOffIndex
@@ -1553,7 +1725,7 @@ function renderClipInspector(snapshot) {
       editor.append(start, duration, key, velocity, apply, remove);
       pianoRoll.append(editor);
     }
-    elements.clipInspector.append(pianoRoll);
+    body.append(pianoRoll);
   }
 }
 
@@ -1677,7 +1849,9 @@ function makeAudioTrimHandle(edge, name) {
 }
 
 function bindMidiClipMovement(block, lane, clip, beatsPerBar) {
-  const timelineBeats = Math.max(1, Number(beatsPerBar) || 4) * 16;
+  const timelineBeats = Math.max(1, Number(beatsPerBar) || 4) * arrangementVisibleBars;
+  const offsetBeats = Math.max(1, Number(beatsPerBar) || 4) * (arrangementStartBar - 1);
+  const totalBeats = Math.max(1, Number(beatsPerBar) || 4) * arrangementTotalBars;
   const originalLeft = Math.max(0, Number(clip.startBeats) || 0);
   const duration = Math.max(0.25, Number(clip.durationBeats) || 0.25);
   const ppq = Math.max(1, Number(clip.ppq) || 480);
@@ -1696,8 +1870,8 @@ function bindMidiClipMovement(block, lane, clip, beatsPerBar) {
   block.addEventListener("pointermove", (event) => {
     if (!gesture || gesture.pointerId !== event.pointerId) return;
     const deltaBeats = (event.clientX - gesture.startX) / gesture.laneWidth * timelineBeats;
-    const left = Math.max(0, Math.min(timelineBeats - duration, originalLeft + deltaBeats));
-    block.style.left = `${left / timelineBeats * 100}%`;
+    const left = Math.max(0, Math.min(totalBeats - duration, originalLeft + deltaBeats));
+    block.style.left = `${(left - offsetBeats) / timelineBeats * 100}%`;
   });
 
   const finish = async (event) => {
@@ -1705,19 +1879,19 @@ function bindMidiClipMovement(block, lane, clip, beatsPerBar) {
     const current = gesture;
     gesture = null;
     block.classList.remove("is-editing");
-    const restore = () => { block.style.left = `${originalLeft / timelineBeats * 100}%`; };
+    const restore = () => { block.style.left = `${(originalLeft - offsetBeats) / timelineBeats * 100}%`; };
     if (event.type === "pointercancel" || Math.abs(event.clientX - current.startX) < 2) {
       restore();
       return;
     }
-    const rawBeats = Math.max(0, Math.min(timelineBeats - duration,
+    const rawBeats = Math.max(0, Math.min(totalBeats - duration,
       originalLeft + (event.clientX - current.startX) / current.laneWidth * timelineBeats));
     const snapValue = elements.gridSnap.value;
     const snapBeats = snapValue === "bar"
       ? Math.max(1, Number(beatsPerBar) || 4)
       : Number(snapValue);
     const snappedBeats = snapBeats > 0 ? Math.round(rawBeats / snapBeats) * snapBeats : rawBeats;
-    const startTick = Math.round(Math.max(0, Math.min(timelineBeats - duration, snappedBeats)) * ppq);
+    const startTick = Math.round(Math.max(0, Math.min(totalBeats - duration, snappedBeats)) * ppq);
     if (startTick === Math.round(originalLeft * ppq)) {
       restore();
       return;
@@ -1737,7 +1911,9 @@ function bindMidiClipMovement(block, lane, clip, beatsPerBar) {
 }
 
 function bindAudioRegionEditing(block, lane, clip, beatsPerBar, tempoBpm) {
-  const timelineBeats = Math.max(1, Number(beatsPerBar) || 4) * 16;
+  const timelineBeats = Math.max(1, Number(beatsPerBar) || 4) * arrangementVisibleBars;
+  const offsetBeats = Math.max(1, Number(beatsPerBar) || 4) * (arrangementStartBar - 1);
+  const totalBeats = Math.max(1, Number(beatsPerBar) || 4) * arrangementTotalBars;
   const originalLeft = Math.max(0, Number(clip.startBeats) || 0);
   const originalWidth = Math.max(0.25, Number(clip.durationBeats) || 0.25);
   let gesture = null;
@@ -1764,12 +1940,12 @@ function bindAudioRegionEditing(block, lane, clip, beatsPerBar, tempoBpm) {
     const delta = event.clientX - gesture.startX;
     const deltaPercent = delta / gesture.laneWidth * 100;
     if (gesture.edge === "move") {
-      const originalLeftPercent = originalLeft / timelineBeats * 100;
+      const originalLeftPercent = (originalLeft - offsetBeats) / timelineBeats * 100;
       const widthPercent = originalWidth / timelineBeats * 100;
-      block.style.left = `${Math.max(0, Math.min(100 - widthPercent, originalLeftPercent + deltaPercent))}%`;
+      block.style.left = `${Math.max(-widthPercent, Math.min(100, originalLeftPercent + deltaPercent))}%`;
     } else if (gesture.edge === "left") {
       const trim = Math.max(0, Math.min(deltaPercent, originalWidth / timelineBeats * 100 - 0.3));
-      block.style.left = `${originalLeft / timelineBeats * 100 + trim}%`;
+      block.style.left = `${(originalLeft - offsetBeats) / timelineBeats * 100 + trim}%`;
       block.style.width = `${originalWidth / timelineBeats * 100 - trim}%`;
     } else {
       const trim = Math.min(0, Math.max(deltaPercent, -originalWidth / timelineBeats * 100 + 0.3));
@@ -1783,13 +1959,13 @@ function bindAudioRegionEditing(block, lane, clip, beatsPerBar, tempoBpm) {
     gesture = null;
     block.classList.remove("is-editing");
     if (event.type === "pointercancel") {
-      block.style.left = `${originalLeft / timelineBeats * 100}%`;
+      block.style.left = `${(originalLeft - offsetBeats) / timelineBeats * 100}%`;
       block.style.width = `${originalWidth / timelineBeats * 100}%`;
       return;
     }
     const delta = event.clientX - current.startX;
     if (Math.abs(delta) < 2) {
-      block.style.left = `${originalLeft / timelineBeats * 100}%`;
+      block.style.left = `${(originalLeft - offsetBeats) / timelineBeats * 100}%`;
       block.style.width = `${originalWidth / timelineBeats * 100}%`;
       return;
     }
@@ -1806,13 +1982,13 @@ function bindAudioRegionEditing(block, lane, clip, beatsPerBar, tempoBpm) {
       edit = {
         action: "move",
         clipId: clip.id,
-        startTick: Math.round(Math.max(0, Math.min(timelineBeats - originalWidth, snappedStart)) * 480),
+        startTick: Math.round(Math.max(0, Math.min(totalBeats - originalWidth, snappedStart)) * 480),
       };
     } else {
       const rawTrimBeats = current.edge === "left" ? Math.max(0, deltaBeats) : Math.max(0, -deltaBeats);
       const trimBeats = snapBeats > 0 ? Math.round(rawTrimBeats / snapBeats) * snapBeats : rawTrimBeats;
       if (trimBeats === 0) {
-        block.style.left = `${originalLeft / timelineBeats * 100}%`;
+        block.style.left = `${(originalLeft - offsetBeats) / timelineBeats * 100}%`;
         block.style.width = `${originalWidth / timelineBeats * 100}%`;
         return;
       }
@@ -2010,10 +2186,30 @@ async function loadWaveform(sourceId, sourceDigest, container) {
 
 function renderTimelineRuler(beatsPerBar) {
   elements.ruler.replaceChildren();
-  for (let bar = 1; bar <= 16; bar += 1) {
+  const controls = document.createElement("div");
+  controls.className = "timeline-ruler-controls";
+  const zoomOut = document.createElement("button");
+  zoomOut.type = "button";
+  zoomOut.textContent = "−";
+  zoomOut.title = "Mostrar más compases";
+  zoomOut.setAttribute("aria-label", zoomOut.title);
+  zoomOut.disabled = arrangementVisibleBars >= arrangementTotalBars;
+  zoomOut.addEventListener("click", () => setArrangementZoom(Math.min(arrangementTotalBars, arrangementVisibleBars * 2)));
+  const readout = document.createElement("span");
+  readout.textContent = `${arrangementVisibleBars} compases`;
+  const zoomIn = document.createElement("button");
+  zoomIn.type = "button";
+  zoomIn.textContent = "+";
+  zoomIn.title = "Ampliar compases";
+  zoomIn.setAttribute("aria-label", zoomIn.title);
+  zoomIn.disabled = arrangementVisibleBars <= 4;
+  zoomIn.addEventListener("click", () => setArrangementZoom(Math.max(4, Math.floor(arrangementVisibleBars / 2))));
+  controls.append(zoomOut, readout, zoomIn);
+  elements.ruler.append(controls);
+  for (let offset = 0; offset < arrangementVisibleBars; offset += 1) {
     const tick = document.createElement("span");
     tick.className = "bar-tick";
-    tick.textContent = String(bar);
+    tick.textContent = String(arrangementStartBar + offset);
     elements.ruler.append(tick);
   }
   const cursor = document.createElement("span");
@@ -2028,12 +2224,78 @@ function renderTimelineRuler(beatsPerBar) {
   renderEditCursor();
 }
 
+function setArrangementZoom(bars) {
+  arrangementVisibleBars = Math.max(4, Math.min(arrangementTotalBars, Math.round(bars)));
+  arrangementStartBar = Math.min(arrangementStartBar, Math.max(1, arrangementTotalBars - arrangementVisibleBars + 1));
+  if (lastSnapshot) renderSnapshot(lastSnapshot);
+}
+
+function renderArrangementOverview(snapshot, beatsPerBar) {
+  const overview = elements.overview;
+  overview.replaceChildren();
+  for (const track of snapshot.tracks) {
+    const row = document.createElement("div");
+    row.className = "overview-track";
+    row.style.setProperty("--track-color", track.color);
+    const clips = [
+      ...snapshot.midiClips.filter((clip) => clip.trackId === track.id).map((clip) => ({ ...clip, kind: "midi" })),
+      ...(snapshot.audioClips ?? []).filter((clip) => clip.trackId === track.id).map((clip) => ({ ...clip, kind: "audio" })),
+    ];
+    for (const clip of clips) {
+      const mark = document.createElement("span");
+      mark.className = `overview-clip${clip.kind === "audio" ? " audio" : ""}`;
+      const startBar = (Number(clip.startBeats) || 0) / beatsPerBar;
+      const durationBars = Math.max(0.02, (Number(clip.durationBeats) || 0) / beatsPerBar);
+      mark.style.left = `${startBar / arrangementTotalBars * 100}%`;
+      mark.style.width = `${Math.max(.35, durationBars / arrangementTotalBars * 100)}%`;
+      row.append(mark);
+    }
+    overview.append(row);
+  }
+  const viewport = document.createElement("button");
+  viewport.type = "button";
+  viewport.className = "overview-window";
+  viewport.title = "Arrastra para desplazarte por el arreglo; pulsa para centrar la vista";
+  viewport.setAttribute("aria-label", viewport.title);
+  const updateWindow = () => {
+    viewport.style.left = `${(arrangementStartBar - 1) / arrangementTotalBars * 100}%`;
+    viewport.style.width = `${Math.min(100, arrangementVisibleBars / arrangementTotalBars * 100)}%`;
+  };
+  updateWindow();
+  let drag = null;
+  viewport.addEventListener("pointerdown", (event) => {
+    if (event.button !== 0) return;
+    drag = { x: event.clientX, start: arrangementStartBar };
+    viewport.setPointerCapture(event.pointerId);
+    event.preventDefault();
+  });
+  viewport.addEventListener("pointermove", (event) => {
+    if (!drag) return;
+    const width = overview.getBoundingClientRect().width;
+    const deltaBars = width > 0 ? (event.clientX - drag.x) / width * arrangementTotalBars : 0;
+    const maxStart = Math.max(1, arrangementTotalBars - arrangementVisibleBars + 1);
+    arrangementStartBar = Math.max(1, Math.min(maxStart, drag.start + Math.round(deltaBars)));
+    updateWindow();
+  });
+  viewport.addEventListener("pointerup", () => { if (drag) { drag = null; renderSnapshot(lastSnapshot); } });
+  viewport.addEventListener("pointercancel", () => { drag = null; renderSnapshot(lastSnapshot); });
+  overview.append(viewport);
+  overview.addEventListener("pointerdown", (event) => {
+    if (event.target === viewport || event.button !== 0) return;
+    const bounds = overview.getBoundingClientRect();
+    const bar = Math.max(1, Math.min(arrangementTotalBars, Math.floor((event.clientX - bounds.left) / bounds.width * arrangementTotalBars) + 1));
+    arrangementStartBar = Math.max(1, Math.min(arrangementTotalBars - arrangementVisibleBars + 1, bar - Math.floor(arrangementVisibleBars / 2)));
+    renderSnapshot(lastSnapshot);
+  });
+}
+
 function renderTransportPosition(ticks) {
   transportPositionTick = Math.max(0, Number(ticks) || 0);
   const beatsPerBar = Number(elements.ruler.dataset.beatsPerBar) || 4;
   const ticksPerBar = beatsPerBar * 960;
-  const timelineTicks = ticksPerBar * 16;
-  const left = `${Math.max(0, Math.min(100, transportPositionTick / timelineTicks * 100))}%`;
+  const timelineTicks = ticksPerBar * arrangementVisibleBars;
+  const offsetTicks = ticksPerBar * (arrangementStartBar - 1);
+  const left = `${Math.max(0, Math.min(100, (transportPositionTick - offsetTicks) / timelineTicks * 100))}%`;
   document.querySelectorAll(".playhead").forEach((playhead) => { playhead.style.left = left; });
   const bar = Math.floor(transportPositionTick / ticksPerBar) + 1;
   const beatPosition = (transportPositionTick % ticksPerBar) / 960;
@@ -2052,8 +2314,9 @@ function formatBarBeat(ticks) {
 
 function renderEditCursor() {
   const beatsPerBar = Number(elements.ruler.dataset.beatsPerBar) || 4;
-  const timelineTicks = beatsPerBar * 16 * 480;
-  const left = `${Math.max(0, Math.min(100, editCursorTick / timelineTicks * 100))}%`;
+  const timelineTicks = beatsPerBar * arrangementVisibleBars * 480;
+  const offsetTicks = beatsPerBar * (arrangementStartBar - 1) * 480;
+  const left = `${Math.max(0, Math.min(100, (editCursorTick - offsetTicks) / timelineTicks * 100))}%`;
   document.querySelectorAll(".edit-cursor").forEach((cursor) => { cursor.style.left = left; });
   const bar = Math.floor(editCursorTick / (beatsPerBar * 480)) + 1;
   const beat = ((editCursorTick % (beatsPerBar * 480)) / 480) + 1;
@@ -2064,9 +2327,10 @@ function renderEditCursor() {
 function setEditCursorFromX(clientX, bounds) {
   if (bounds.width <= 0) return;
   const beatsPerBar = Number(elements.ruler.dataset.beatsPerBar) || 4;
-  const timelineTicks = beatsPerBar * 16 * 480;
+  const timelineTicks = beatsPerBar * arrangementVisibleBars * 480;
+  const offsetTicks = beatsPerBar * (arrangementStartBar - 1) * 480;
   const fraction = Math.max(0, Math.min(1, (clientX - bounds.left) / bounds.width));
-  editCursorTick = Math.round(fraction * timelineTicks / 120) * 120;
+  editCursorTick = offsetTicks + Math.round(fraction * timelineTicks / 120) * 120;
   renderEditCursor();
 }
 
@@ -2076,8 +2340,10 @@ async function runCommand(title, operation) {
     if (!snapshot) return;
     renderSnapshot(snapshot);
     setNotice(title, "Cambios aplicados al estado del proyecto.");
+    return true;
   } catch (error) {
     setNotice("La operación falló", String(error));
+    return false;
   }
 }
 
@@ -2339,6 +2605,34 @@ document.addEventListener("keydown", (event) => {
   });
 });
 renderApplicationMenu();
+
+document.querySelector(".panel-grip").addEventListener("pointerdown", (event) => {
+  if (!elements.editor.classList.contains("has-midi-editor")) return;
+  event.preventDefault();
+  const startY = event.clientY;
+  const startHeight = document.querySelector(".lower-panel").getBoundingClientRect().height;
+  const editorHeight = elements.editor.getBoundingClientRect().height;
+  const minHeight = editorHeight <= 680 ? 190 : 330;
+  const maxHeight = Math.max(minHeight, editorHeight - 240);
+  const resize = (moveEvent) => {
+    const height = Math.max(minHeight, Math.min(maxHeight, startHeight + startY - moveEvent.clientY));
+    elements.editor.style.setProperty("--detail-height", `${height}px`);
+  };
+  const finish = () => {
+    document.removeEventListener("pointermove", resize);
+    document.removeEventListener("pointerup", finish);
+  };
+  document.addEventListener("pointermove", resize);
+  document.addEventListener("pointerup", finish);
+});
+document.querySelector(".panel-grip").addEventListener("keydown", (event) => {
+  if (!elements.editor.classList.contains("has-midi-editor") || !["ArrowUp", "ArrowDown"].includes(event.key)) return;
+  event.preventDefault();
+  const current = document.querySelector(".lower-panel").getBoundingClientRect().height;
+  const minHeight = elements.editor.clientHeight <= 680 ? 190 : 330;
+  const next = current + (event.key === "ArrowUp" ? 24 : -24);
+  elements.editor.style.setProperty("--detail-height", `${Math.max(minHeight, Math.min(elements.editor.clientHeight - 240, next))}px`);
+});
 
 // Este shell inicial sólo resume datos compactos; jamás solicita PCM o buffers
 // GPU al core a través del bridge.

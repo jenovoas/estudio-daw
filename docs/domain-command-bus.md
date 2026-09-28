@@ -38,7 +38,9 @@ mutación.
 ## Operaciones disponibles
 
 - transporte: los comandos `SessionCommand` existentes;
-- pistas: agregar, duplicar, renombrar, reordenar, activar y quitar; ajustar
+- pistas: agregar, duplicar, renombrar, reordenar, activar y quitar; asignar de
+  forma reversible el color, la marca visual y la nota musical descriptiva con
+  `SetTrackIdentity`; ajustar
   silencio, solo, ganancia y panorama; asignar/quitar un nombre de grupo a una
   selección de pistas en una sola operación reversible, sin vincular sus valores
   de mezcla; asignar una entrada física opaca a una pista de audio y una salida

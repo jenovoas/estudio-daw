@@ -99,6 +99,13 @@ buses encadenados) antes de publicar el plan y usa buffers por pista reservados
 antes del callback. Esto no selecciona puertos físicos independientes por
 pista ni implementa entradas, envíos, retornos o procesadores.
 
+La identidad musical de pista también pertenece al proyecto: color elegido por
+la persona, marca breve del instrumento y nota descriptiva. `SetTrackIdentity`
+actualiza esos campos juntos y participa en deshacer/rehacer. Arrangement, Session,
+Mezclador, clips y piano roll comparten el color de la pista; el tipo MIDI/audio
+se distingue por su forma y función, sin sustituir el color que el músico usa
+como memoria visual.
+
 Los ajustes de aplicación permiten escoger un sink PipeWire para el stream
 Master del próximo inicio. La opción automática conserva la preferencia por
 AudioBox y usa el destino predeterminado cuando no hay una disponible. El

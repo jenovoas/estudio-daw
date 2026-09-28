@@ -6,6 +6,50 @@ Este cambio corrige una pasada anterior de interfaz que trató un DAW como un pa
 
 La implementación actual es una ventana Tauri con apertura/guardado de proyectos, reproducción MIDI/audio, transporte con posición basada en frames procesados, historial y ajustes de perfil de audio. La reproducción decodifica regiones en workers y las mezcla desde rings acotados; permite iniciar y buscar desde el cursor de Arreglo, reconstruir estados MIDI dentro de clips y coordinar el rango A/B durante Play. El runtime recompila el plan activo al cambiar regiones o mezcla. La captura de entrada por pista graba las pistas armadas a WAV y añade regiones al detener, pendiente de QA física. El ruteo interno de pista a bus/audio y de éstos a Master se procesa con un nodo compuesto y scratch por pista reservado antes del stream; permanecen incompletos el ruteo de salidas físicas por pista, envíos, retornos y procesamiento por complementos. Session muestra una matriz editable de escenas/casillas para clips existentes; el lanzamiento reproducible sigue pendiente del planificador cuantizado. El código fuente y las comprobaciones ejecutables, no este documento, determinan las capacidades presentes.
 
+## Identidad musical y complementos de pista
+
+La identidad de la pista es información de composición elegida por la persona, no
+una etiqueta de formato. `Track.color`, una marca breve (`Track.marker`) y una
+nota descriptiva (`Track.annotation`) se guardan con la pista. `SetTrackIdentity`
+actualiza los tres valores como una transacción reversible. Al leer proyectos
+anteriores, los campos ausentes reciben color predeterminado, marca vacía y nota
+vacía. La interfaz ofrece un editor compacto desde el encabezado y conserva el
+color/marca en Arreglo, Sesión, Mezclador y piano roll; la nota se muestra al
+volver a editar la identidad.
+
+Analog Lab y sus VST instalados en Wine son un objetivo explícito de integración
+en pista. La persona usuaria confirma que la aplicación independiente funciona
+en Arch mediante Wine sin latencia perceptible y aclara que también tiene los
+VST instalados en Wine. Estudio DAW debe ofrecer las dos formas reales de uso:
+cargar el VST en el flujo de instrumento de una pista, y abrir/reutilizar la
+aplicación independiente como instrumento externo. No se considera completa la
+integración si sólo ofrece una etiqueta/preset, si exige reemplazar el flujo
+standalone que ya funciona o si deja el alojamiento VST para un futuro indefinido.
+
+En este equipo se encontraron Wine, `Analog Lab V.exe`, el bundle Windows
+`Analog Lab V.vst3` en `~/.wine/drive_c/Program Files/Common Files/VST3` y PipeWire
+con puente MIDI ALSA. No se encontró `yabridgectl` en PATH, lo cual sólo describe
+el estado instalado: queda investigar e integrar un adaptador de host/bridge
+compatible con los plugins VST de ese prefijo. [yabridge](https://github.com/robbert-vdh/yabridge)
+es una alternativa documentada para exponer VST Windows a hosts Linux; no se
+asume que ya esté instalada ni se fija como decisión hasta verificar la carga
+real, estado, MIDI, audio y editor de Analog Lab dentro de Estudio DAW. Su
+[documentación de arquitectura](https://github.com/robbert-vdh/yabridge/blob/master/docs/architecture.md)
+describe la comunicación entre el host Linux y el proceso Wine, incluidos los
+buffers de audio compartidos; el adaptador debe respetar esos límites de tiempo
+real en el motor de Estudio DAW.
+
+La configuración de proyecto debe distinguir una instancia VST alojada en la
+pista de una aplicación standalone asociada a puertos MIDI/audio. Ambas guardan
+identidad y estado recuperable; ambas conservan una GUI real y muestran fallos
+sin sustituciones silenciosas. Lanzamiento, descubrimiento de puertos,
+serialización y bridge quedan fuera del callback. La ruta VST bridged debe
+procesarse en un worker desacoplado con buffers acotados si el IPC del host lo
+requiere; se medirán latencia y estabilidad antes de integrarla al plan de audio.
+La latencia perceptible ausente del flujo standalone actual se registra como
+requisito de experiencia de la persona usuaria, no como medida de la ruta VST aún
+no integrada.
+
 ## Auditoría de referencia: Ableton Live 12.4.6
 
 El diseño toma de Live el flujo creativo y la jerarquía de superficies, sin copiar recursos gráficos ni marca protegidos.

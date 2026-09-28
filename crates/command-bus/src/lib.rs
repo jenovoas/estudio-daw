@@ -67,6 +67,12 @@ pub enum ProjectCommand {
         track_id: String,
         name: String,
     },
+    SetTrackIdentity {
+        track_id: String,
+        color: String,
+        marker: String,
+        annotation: String,
+    },
     MoveTrack {
         track_id: String,
         index: usize,
@@ -636,8 +642,29 @@ impl CommandRuntime {
                         .tracks
                         .iter_mut()
                         .find(|item| item.id == track_id)
-                        .ok_or_else(|| format!("unknown track: {track_id}"))?;
+                        .ok_or_else(|| format!("pista desconocida: {track_id}"))?;
                     track.name = name;
+                    Ok(())
+                })
+                .map_err(|error| CommandError::Project(error.to_string()))?,
+            ProjectCommand::SetTrackIdentity { track_id, color, marker, annotation } => self
+                .project_history
+                .transact("set track identity", |project| -> Result<(), String> {
+                    let color = color.trim();
+                    if color.len() != 7 || !color.starts_with('#') || !color[1..].bytes().all(|b| b.is_ascii_hexdigit()) {
+                        return Err(String::from("el color de pista debe usar formato #RRGGBB"));
+                    }
+                    if marker.chars().count() > 4 {
+                        return Err(String::from("la marca de pista admite hasta cuatro caracteres"));
+                    }
+                    if annotation.chars().count() > 256 {
+                        return Err(String::from("la nota de pista admite hasta 256 caracteres"));
+                    }
+                    let track = project.tracks.iter_mut().find(|item| item.id == track_id)
+                        .ok_or_else(|| format!("pista desconocida: {track_id}"))?;
+                    track.color = color.to_ascii_lowercase();
+                    track.marker = marker.trim().to_owned();
+                    track.annotation = annotation.trim().to_owned();
                     Ok(())
                 })
                 .map_err(|error| CommandError::Project(error.to_string()))?,
@@ -1415,6 +1442,8 @@ mod tests {
                     record_armed: false,
                     channel_config: TrackChannelConfig::default(),
                     color: "#58a6b8".into(),
+                    marker: String::new(),
+                    annotation: String::new(),
                     group_name: None,
                     mixer: TrackMixerState::default(),
                     notes: Vec::new(),
@@ -1435,6 +1464,8 @@ mod tests {
                         output_channels: 2,
                     },
                     color: "#58a6b8".into(),
+                    marker: String::new(),
+                    annotation: String::new(),
                     group_name: None,
                     mixer: TrackMixerState::default(),
                     notes: Vec::new(),
@@ -1644,6 +1675,59 @@ mod tests {
         assert!(restored.audio_playlists.iter().any(|playlist| {
             playlist.track_id == "track-audio" && playlist.region_ids == ["clip-1"]
         }));
+    }
+
+    #[test]
+    fn track_identity_changes_are_reversible_and_validated() {
+        let mut runtime = CommandRuntime::new(project());
+        runtime
+            .apply(envelope(
+                "track-identity",
+                DomainCommand::Project(ProjectCommand::SetTrackIdentity {
+                    track_id: "track-midi".into(),
+                    color: "#CC8844".into(),
+                    marker: "🎹".into(),
+                    annotation: "Lead de la estrofa".into(),
+                }),
+            ))
+            .unwrap();
+        let track = &runtime.snapshot().project.project.tracks[0];
+        assert_eq!(track.color, "#cc8844");
+        assert_eq!(track.marker, "🎹");
+        assert_eq!(track.annotation, "Lead de la estrofa");
+
+        runtime
+            .apply(envelope(
+                "undo-track-identity",
+                DomainCommand::Project(ProjectCommand::Undo),
+            ))
+            .unwrap();
+        let track = &runtime.snapshot().project.project.tracks[0];
+        assert_eq!(track.color, "#58a6b8");
+        assert!(track.marker.is_empty());
+        assert!(track.annotation.is_empty());
+
+        runtime
+            .apply(envelope(
+                "redo-track-identity",
+                DomainCommand::Project(ProjectCommand::Redo),
+            ))
+            .unwrap();
+        assert_eq!(
+            runtime.snapshot().project.project.tracks[0].annotation,
+            "Lead de la estrofa"
+        );
+
+        let result = runtime.apply(envelope(
+            "invalid-track-color",
+            DomainCommand::Project(ProjectCommand::SetTrackIdentity {
+                track_id: "track-midi".into(),
+                color: "rojo".into(),
+                marker: String::new(),
+                annotation: String::new(),
+            }),
+        ));
+        assert!(result.is_err());
     }
 
     #[test]

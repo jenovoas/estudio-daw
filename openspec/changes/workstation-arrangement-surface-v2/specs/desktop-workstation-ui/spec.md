@@ -2,6 +2,55 @@
 
 ## ADDED Requirements
 
+### Requirement: la identidad visual de cada pista pertenece a la persona
+
+Cada pista DEBE (MUST) conservar color, marca visual y nota asignados por la persona en el proyecto. El color identifica mentalmente el instrumento o su papel musical; NO DEBE derivarse del orden de pista ni del formato MIDI/audio. La identidad DEBE mantenerse en Arreglo, Session, Mezclador, clips y editor de notas. Editarla DEBE usar un comando reversible y guardar el cambio con el proyecto. Las marcas y notas DEBEN poder editarse desde el encabezado de pista y tener nombres accesibles; el tipo de medio puede indicarse aparte sin reemplazar la identidad musical.
+
+#### Scenario: asignar identidad musical a una pista
+
+- **CUANDO** la persona cambia el color, elige una marca para reconocer el instrumento o escribe una nota sobre el papel/toma
+- **ENTONCES** los encabezados, clips y editor de notas reflejan el color y la marca en todas las vistas conectadas
+- **Y** la nota queda asociada a esa pista y disponible como referencia al volver a ella
+- **Y** deshacer y rehacer restauran el conjunto de valores
+
+#### Scenario: conservar la identidad al reorganizar pistas
+
+- **CUANDO** se mueve o cambia de vista una pista MIDI o de audio
+- **ENTONCES** conserva su color, marca y nota sin importar su posición o formato de medio
+- **Y** sus clips mantienen el mismo color que el encabezado de pista
+
+### Requirement: los instrumentos y complementos aparecen sólo cuando están cargados de verdad
+
+La asignación de instrumento a una pista DEBE (MUST) representar una instancia ejecutable y persistir su identidad y estado recuperable. La persona DEBE poder cargarla desde el flujo de pista y volver a abrir sus controles. Analog Lab y sus VST instalados junto con él en el prefijo Wine de Arch son un objetivo explícito. Estudio DAW DEBE permitir cargar el VST real en una pista con su GUI, MIDI, audio y estado; también DEBE conservar la opción de abrir/reutilizar Analog Lab standalone y conectar sus puertos MIDI/audio. La persona usuaria confirma que la aplicación independiente ya funciona sin latencia perceptible. La integración VST debe encontrar un adaptador Wine/bridge compatible con los plugins instalados; no se exige soporte nativo del fabricante para Linux. Ninguna de las dos rutas puede presentarse mediante nombres, presets o controles simulados. El lanzamiento, bridge, comunicación y ruteo NO DEBEN bloquear ni hacer I/O desde el callback de audio; se deben medir latencia y estabilidad por ruta.
+
+#### Scenario: cargar el VST de Analog Lab en una pista
+
+- **CUANDO** la persona elige el VST de Analog Lab instalado en Wine desde el flujo de instrumento
+- **ENTONCES** se crea una instancia real en la pista, se procesa MIDI/audio y se conserva su estado recuperable
+- **Y** se puede abrir la GUI nativa y automatizar o editar sus controles disponibles
+- **Y** cualquier error de host/bridge aparece como diagnóstico concreto, sin sustitución por otro sintetizador
+
+#### Scenario: abrir Analog Lab standalone como instrumento externo
+
+- **CUANDO** la persona asigna Analog Lab a una pista MIDI y elige sus puertos disponibles
+- **ENTONCES** el DAW abre o reutiliza Analog Lab en Wine, persiste su asociación y destino MIDI, envía los eventos de esa pista y mezcla el retorno de audio en la misma pista
+- **Y** puede abrir la ventana real de Analog Lab desde los controles de instrumento de la pista
+- **Y** presenta un diagnóstico accionable si no existe la aplicación o alguno de los puertos seleccionados
+
+#### Scenario: recuperar una asignación de Analog Lab o su VST
+
+- **CUANDO** se vuelve a abrir un proyecto con una pista asignada a Analog Lab
+- **ENTONCES** se restaura la instancia alojada o la aplicación/prefijo y asociación de puertos de la ruta standalone
+- **Y** se valida la disponibilidad del instrumento/bridge o aplicación/puertos antes de iniciar reproducción
+- **Y** no se reemplaza silenciosamente la instancia por SineSynth, FluidSynth u otra fuente
+- **Y** el estado de la aplicación y de sus puertos refleja la conexión externa real
+
+#### Scenario: Analog Lab o alguno de sus puertos no está disponible
+
+- **CUANDO** el proyecto se abre sin Analog Lab, sin su destino MIDI o sin su retorno de audio
+- **ENTONCES** la pista conserva su identidad musical y muestra qué parte de la ruta externa falta
+- **Y** el sistema no reemplaza Analog Lab silenciosamente ni simula sus controles o su audio
+
 ### Requirement: los menús de la estación de trabajo exponen el mapa completo de comandos
 
 La estación DEBE (MUST) organizar las acciones admitidas en familias localizables: Proyecto/Sesión, Edición, Crear, Vista/Ventana, Pista, Clip/Región, Transporte, Audio/MIDI, Ajustes/Opciones y Ayuda. DEBE ofrecer menús contextuales y atajos para flujos frecuentes. Las familias de comandos auditadas en `../../design.md` son el inventario mínimo del producto; la hoja de ruta DEBE contabilizar cada familia y PUEDE ampliarla con análisis musical, notación, programación y edición asistida propias de Estudio DAW. Cada opción DEBE corresponder a un comando tipado, una acción real de vista/estado o un adaptador de plataforma. Cada opción DEBE tener una condición de disponibilidad correcta, política de deshacer si modifica el proyecto, etiqueta accesible e información veraz de resultado/error. Una acción no implementada NO DEBE mostrarse habilitada ni completada.

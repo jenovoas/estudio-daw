@@ -525,6 +525,8 @@ mod tests {
                     output_channels: 2,
                 },
                 color: "#58a6b8".into(),
+                marker: String::new(),
+                annotation: String::new(),
                 group_name: None,
                 mixer: estudio_daw_project_model::TrackMixerState::default(),
                 notes: Vec::new(),
