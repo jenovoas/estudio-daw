@@ -1,5 +1,11 @@
 # Handoff de continuación — 2026-09-27
 
+## Punto de reanudación actual — Session audio, rejilla y loop (2026-09-28)
+
+- Session lanza MIDI y audio a la rejilla del transporte (1/16–compás o ahora). El clip se repite hasta ■: MIDI 64 compases, audio 8 vueltas predecodificadas. El audio de Session entra por un mixer de pista con comando try_lock; no se recrean workers VST3. Analog Lab 4.6 sigue pendiente de QA en Tauri.
+- Verificación: `cargo check -p estudio-daw-ui-shell`, pruebas `session`, formato, ambos `node --check`. Sin suite ni QA visual/auditiva.
+- OpenSpec 10/44. 4.4/3.2 avanzan y siguen abiertas.
+
 ## Punto de reanudación actual — lanzamiento Session MIDI (2026-09-28)
 
 - Sobre `066bc28`, Session lanza clips MIDI al siguiente compás sin cerrar PipeWire. ▶ en casilla o escena requiere Play/pausa; ■ detiene esa pista. El clip usa su PPQ y apaga las voces de la pista al entrar. Audio de Session, modos de lanzamiento y loop de clip siguen pendientes. 4.6 permanece abierta por QA Analog Lab.

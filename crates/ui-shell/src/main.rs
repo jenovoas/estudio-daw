@@ -1550,6 +1550,7 @@ fn set_clip_slot(
 fn launch_session_slot(
     scene_id: String,
     track_id: String,
+    grid_ticks: u64,
     state: State<'_, DesktopState>,
 ) -> Result<SessionLaunchView, String> {
     let application = state
@@ -1564,7 +1565,7 @@ fn launch_session_slot(
         .audio
         .lock()
         .map_err(|_| "el estado del motor de audio quedó bloqueado".to_owned())?
-        .launch_session_slot(&project, &scene_id, &track_id)
+        .launch_session_slot(&project, &scene_id, &track_id, grid_ticks)
 }
 
 #[tauri::command]

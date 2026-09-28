@@ -1137,11 +1137,24 @@ function updateTrackMeters(meters) {
   }
 }
 
+function sessionQuantizeTicks() {
+  const snap = elements.gridSnap.value;
+  const beatsPerBar = Number(lastSnapshot?.beatsPerBar) || 4;
+  if (snap === "0") return 0;
+  if (snap === "bar") return Math.round(beatsPerBar * 960);
+  return Math.max(0, Math.round(Number(snap) * 960));
+}
+
+function sessionQuantizeLabel() {
+  if (elements.gridSnap.value === "0") return "ahora";
+  return `en la rejilla (${elements.gridSnap.selectedOptions[0]?.textContent ?? "compás"})`;
+}
+
 async function launchSessionSlot(sceneId, trackId) {
   try {
-    const launch = await platform.launchSessionSlot(sceneId, trackId);
+    const launch = await platform.launchSessionSlot(sceneId, trackId, sessionQuantizeTicks());
     sessionLaunches = sessionLaunches.filter((item) => item.trackId !== trackId).concat(launch);
-    setNotice("Clip en cola", launch.state === "queued" ? "Sonará en el siguiente compás." : "El clip ya está sonando en esa pista.");
+    setNotice("Clip en cola", launch.state === "queued" ? `Sonará ${sessionQuantizeLabel()}.` : "El clip ya está sonando y se repetirá hasta detenerlo.");
     if (lastSnapshot) renderSnapshot(lastSnapshot);
   } catch (error) {
     setNotice("No se pudo lanzar el clip", String(error));
@@ -1149,17 +1162,18 @@ async function launchSessionSlot(sceneId, trackId) {
 }
 
 async function launchSessionScene(sceneId, snapshot) {
-  const slots = (snapshot.clipSlots ?? []).filter((slot) => slot.sceneId === sceneId && slot.clipKind === "midi" && slot.clipId);
+  const slots = (snapshot.clipSlots ?? []).filter((slot) => slot.sceneId === sceneId && slot.clipId && (slot.clipKind === "midi" || slot.clipKind === "audio"));
   if (!slots.length) {
-    setNotice("Escena vacía", "Asigna clips MIDI antes de lanzar la escena.");
+    setNotice("Escena vacía", "Asigna clips MIDI o de audio antes de lanzar la escena.");
     return;
   }
   try {
+    const gridTicks = sessionQuantizeTicks();
     for (const slot of slots) {
-      const launch = await platform.launchSessionSlot(sceneId, slot.trackId);
+      const launch = await platform.launchSessionSlot(sceneId, slot.trackId, gridTicks);
       sessionLaunches = sessionLaunches.filter((item) => item.trackId !== slot.trackId).concat(launch);
     }
-    setNotice("Escena en cola", "Los clips MIDI de la escena salen en el siguiente compás.");
+    setNotice("Escena en cola", `Los clips de la escena salen ${sessionQuantizeLabel()} y se repiten.`);
     renderSnapshot(snapshot);
   } catch (error) {
     setNotice("No se pudo lanzar la escena", String(error));
@@ -1185,7 +1199,7 @@ function renderSessionSurface(snapshot) {
   const title = document.createElement("strong");
   title.textContent = "SESSION";
   const hint = document.createElement("span");
-  hint.textContent = "Matriz de escenas y clips · lanzamiento pendiente del planificador";
+  hint.textContent = "Lanza MIDI y audio a la rejilla; el clip se repite hasta ■";
   const addScene = document.createElement("button");
   addScene.className = "button button-accent session-add-scene";
   addScene.type = "button";
@@ -1275,13 +1289,13 @@ function renderSessionSurface(snapshot) {
     launchScene.type = "button";
     launchScene.className = "session-launch session-launch-scene";
     launchScene.textContent = "▶";
-    const sceneHasMidi = tracks.some((track) => (snapshot.clipSlots ?? []).some((slot) => slot.sceneId === scene.id && slot.trackId === track.id && slot.clipKind === "midi"));
+    const sceneHasClips = tracks.some((track) => (snapshot.clipSlots ?? []).some((slot) => slot.sceneId === scene.id && slot.trackId === track.id && slot.clipId));
     const engineReady = ["playing", "paused"].includes(projectTransportState);
-    launchScene.disabled = !sceneHasMidi || !engineReady;
-    launchScene.title = !sceneHasMidi
-      ? "Asigna clips MIDI a esta escena"
+    launchScene.disabled = !sceneHasClips || !engineReady;
+    launchScene.title = !sceneHasClips
+      ? "Asigna clips MIDI o de audio a esta escena"
       : engineReady
-        ? `Lanzar ${scene.name} al siguiente compás`
+        ? `Lanzar ${scene.name} ${sessionQuantizeLabel()}`
         : "Dale a Play para lanzar la escena";
     launchScene.setAttribute("aria-label", launchScene.title);
     launchScene.addEventListener("click", () => launchSessionScene(scene.id, snapshot));
@@ -1318,10 +1332,6 @@ function renderSessionSurface(snapshot) {
         launch.disabled = true;
         launch.title = "Asigna un clip existente a esta casilla";
         launch.addEventListener("click", () => select.focus());
-      } else if (slot.clipKind === "audio") {
-        launch.textContent = "▶";
-        launch.disabled = true;
-        launch.title = "El lanzamiento de audio en Session sigue pendiente";
       } else if (playing?.state === "playing") {
         launch.textContent = "■";
         launch.disabled = !engineReady;
@@ -1331,7 +1341,7 @@ function renderSessionSurface(snapshot) {
         launch.textContent = playing?.state === "queued" ? "○" : "▶";
         launch.disabled = !engineReady;
         launch.title = engineReady
-          ? `Lanzar clip al siguiente compás en ${track.name}`
+          ? `Lanzar clip ${sessionQuantizeLabel()} en ${track.name}`
           : "Dale a Play para lanzar el clip";
         launch.addEventListener("click", () => launchSessionSlot(scene.id, track.id));
       }

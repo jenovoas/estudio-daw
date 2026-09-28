@@ -40,7 +40,7 @@ window.estudioPlatform = {
   },
   inspectVst3Plugin: (path) => invoke("inspect_vst3_plugin", { path }),
   setVst3Editor: (trackId, open) => invoke("set_vst3_editor", { trackId, open }),
-  launchSessionSlot: (sceneId, trackId) => invoke("launch_session_slot", { sceneId, trackId }),
+  launchSessionSlot: (sceneId, trackId, gridTicks) => invoke("launch_session_slot", { sceneId, trackId, gridTicks }),
   stopSessionTrack: (trackId) => invoke("stop_session_track", { trackId }),
   sessionLaunches: () => invoke("session_launches"),
   openStandaloneInstrument: ({ trackId, applicationPath, winePrefix }) => invoke("open_standalone_instrument", { trackId, applicationPath, winePrefix }),

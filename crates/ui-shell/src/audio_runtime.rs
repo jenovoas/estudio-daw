@@ -13,8 +13,8 @@ use estudio_daw_audio_platform::{
 };
 use estudio_daw_midi_engine::{LiveMidiOutputWorker, RecordedMidiMessage};
 use estudio_daw_project_model::{
-    AudioClip, ClipReference, InstrumentConfig, MidiClip, PluginStateReference, Project, Track,
-    TrackKind, TrackRole, TransportLoopRange,
+    AudioClip, AudioSource, ClipReference, InstrumentConfig, MidiClip, PluginStateReference,
+    Project, Track, TrackKind, TrackRole, TransportLoopRange,
 };
 use estudio_daw_runtime_diagnostics::{audio_devices, DeviceInfo};
 use estudio_daw_synth::{
@@ -214,20 +214,59 @@ impl TrackMeter {
     }
 }
 
+enum SessionAudioCommand {
+    Replace(Vec<AudioClipStream>),
+    Clear,
+}
+
+struct SessionAudioSlot {
+    command: Mutex<Option<SessionAudioCommand>>,
+}
+
 struct AudioClipMixerNode {
     streams: Vec<AudioClipStream>,
+    session_streams: Vec<AudioClipStream>,
+    session_slot: Option<Arc<SessionAudioSlot>>,
+    mute_arrangement: bool,
     source_scratch: Vec<f32>,
     mix_scratch: Vec<f32>,
     frame_cursor: u64,
 }
 
 impl AudioClipMixerNode {
-    fn new(streams: Vec<AudioClipStream>, max_samples: usize) -> Self {
+    fn new(
+        streams: Vec<AudioClipStream>,
+        session_slot: Option<Arc<SessionAudioSlot>>,
+        max_samples: usize,
+    ) -> Self {
         Self {
             streams,
+            session_streams: Vec::new(),
+            session_slot,
+            mute_arrangement: false,
             source_scratch: vec![0.0; max_samples],
             mix_scratch: vec![0.0; max_samples],
             frame_cursor: 0,
+        }
+    }
+
+    fn take_session_command(&mut self) {
+        let Some(slot) = &self.session_slot else {
+            return;
+        };
+        let Ok(mut pending) = slot.command.try_lock() else {
+            return;
+        };
+        match pending.take() {
+            Some(SessionAudioCommand::Replace(streams)) => {
+                self.session_streams = streams;
+                self.mute_arrangement = true;
+            }
+            Some(SessionAudioCommand::Clear) => {
+                self.session_streams.clear();
+                self.mute_arrangement = false;
+            }
+            None => {}
         }
     }
 }
@@ -239,8 +278,14 @@ impl AudioNode for AudioClipMixerNode {
         }
         let frames = interleaved.len() / 2;
         let block_start = self.frame_cursor;
+        self.take_session_command();
         self.mix_scratch[..interleaved.len()].fill(0.0);
-        for stream in &self.streams {
+        let arrangement = if self.mute_arrangement {
+            [].as_slice()
+        } else {
+            self.streams.as_slice()
+        };
+        for stream in arrangement.iter().chain(self.session_streams.iter()) {
             let block_offset_frames = stream.start_frame.saturating_sub(block_start);
             if block_offset_frames >= frames as u64 {
                 continue;
@@ -337,6 +382,7 @@ impl ProjectRoutingNode {
         project: &Project,
         mut sources_by_track: HashMap<String, Vec<Box<dyn AudioNode>>>,
         mut audio_streams: HashMap<String, Vec<AudioClipStream>>,
+        session_audio_slots: &mut HashMap<String, Arc<SessionAudioSlot>>,
         global_sources: Vec<Box<dyn AudioNode>>,
         max_samples: usize,
         route_audibility: &[bool],
@@ -349,8 +395,21 @@ impl ProjectRoutingNode {
         let mut tracks = Vec::with_capacity(project.tracks.len());
         for (index, track) in project.tracks.iter().enumerate() {
             let mut sources = sources_by_track.remove(&track.id).unwrap_or_default();
-            if let Some(streams) = audio_streams.remove(&track.id) {
-                sources.push(Box::new(AudioClipMixerNode::new(streams, max_samples)));
+            let streams = audio_streams.remove(&track.id).unwrap_or_default();
+            if track.role != TrackRole::Master {
+                let slot = session_audio_slots
+                    .entry(track.id.clone())
+                    .or_insert_with(|| {
+                        Arc::new(SessionAudioSlot {
+                            command: Mutex::new(None),
+                        })
+                    })
+                    .clone();
+                sources.push(Box::new(AudioClipMixerNode::new(
+                    streams,
+                    Some(slot),
+                    max_samples,
+                )));
             }
             let audible = route_audibility.get(index).copied().unwrap_or(false);
             let enabled = if track.role == TrackRole::Master {
@@ -1313,11 +1372,20 @@ struct ManagedStandaloneProcess {
     child: Child,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum SessionClipKind {
+    Midi,
+    Audio,
+}
+
+#[derive(Clone)]
 struct SessionLaunch {
     scene_id: String,
     clip_id: String,
+    kind: SessionClipKind,
     launch_tick: u64,
     end_tick: u64,
+    looping: bool,
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -1362,6 +1430,8 @@ pub struct AudioRuntimeHost {
     standalone_processes: HashMap<String, ManagedStandaloneProcess>,
     plugin_state_root: Option<PathBuf>,
     session_launches: Arc<Mutex<HashMap<String, SessionLaunch>>>,
+    session_audio_slots: Arc<Mutex<HashMap<String, Arc<SessionAudioSlot>>>>,
+    session_audio_pumps: HashMap<String, Vec<AudioDecodePump>>,
 }
 
 impl Default for AudioRuntimeHost {
@@ -1375,6 +1445,8 @@ impl Default for AudioRuntimeHost {
             standalone_processes: HashMap::new(),
             plugin_state_root: None,
             session_launches: Arc::new(Mutex::new(HashMap::new())),
+            session_audio_slots: Arc::new(Mutex::new(HashMap::new())),
+            session_audio_pumps: HashMap::new(),
         }
     }
 }
@@ -1502,7 +1574,7 @@ impl AudioRuntimeHost {
             .map(|(track_id, launch)| {
                 let state = if position < launch.launch_tick {
                     "queued"
-                } else if position < launch.end_tick {
+                } else if launch.looping || position < launch.end_tick {
                     "playing"
                 } else {
                     "finished"
@@ -1525,6 +1597,7 @@ impl AudioRuntimeHost {
         project: &Project,
         scene_id: &str,
         track_id: &str,
+        grid_ticks: u64,
     ) -> Result<SessionLaunchView, String> {
         let playback = self
             .playback
@@ -1536,34 +1609,59 @@ impl AudioRuntimeHost {
             .iter()
             .find(|slot| slot.scene_id == scene_id && slot.track_id == track_id)
             .ok_or_else(|| "esa casilla de Session no existe".to_owned())?;
-        let Some(ClipReference::Midi(clip_id)) = slot.clip.as_ref() else {
-            return Err(
-                "este corte lanza clips MIDI; el audio de Session sigue pendiente del planificador"
-                    .to_owned(),
-            );
-        };
-        let clip = project
-            .midi_clips
-            .iter()
-            .find(|clip| clip.id == *clip_id && clip.track_id == track_id)
-            .ok_or_else(|| "el clip MIDI de la casilla ya no está en el proyecto".to_owned())?;
-        let bar_ticks = ticks_per_bar(&project.transport.time_signature);
         let position = self.position_ticks();
-        let launch_tick = next_quantized_tick(position, bar_ticks);
-        let events = session_midi_events(clip, launch_tick, project.transport.tempo_bpm);
-        let end_tick = launch_tick.saturating_add(clip_duration_session_ticks(clip));
-        playback
-            .schedule
-            .send(SchedulerCommand::LaunchTrack {
-                track_id: track_id.to_owned(),
-                launch_tick,
-                events,
-            })
-            .map_err(|_| "el scheduler MIDI terminó antes de recibir el lanzamiento".to_owned())?;
+        let launch_tick = next_quantized_tick(position, grid_ticks);
+        let bpm = if project.transport.tempo_bpm.is_finite() {
+            project.transport.tempo_bpm.clamp(20.0, 999.0)
+        } else {
+            120.0
+        };
+        let bar_ticks = ticks_per_bar(&project.transport.time_signature);
+        let horizon = launch_tick.saturating_add(bar_ticks.saturating_mul(64));
+        let (kind, clip_id, end_tick) = match slot.clip.as_ref() {
+            Some(ClipReference::Midi(clip_id)) => {
+                let clip = project
+                    .midi_clips
+                    .iter()
+                    .find(|clip| clip.id == *clip_id && clip.track_id == track_id)
+                    .ok_or_else(|| {
+                        "el clip MIDI de la casilla ya no está en el proyecto".to_owned()
+                    })?;
+                let events = session_midi_events_looped(clip, launch_tick, bpm, horizon);
+                playback
+                    .schedule
+                    .send(SchedulerCommand::LaunchTrack {
+                        track_id: track_id.to_owned(),
+                        launch_tick,
+                        events,
+                    })
+                    .map_err(|_| {
+                        "el scheduler MIDI terminó antes de recibir el lanzamiento".to_owned()
+                    })?;
+                (SessionClipKind::Midi, clip.id.clone(), horizon)
+            }
+            Some(ClipReference::Audio(clip_id)) => {
+                let clip = project
+                    .audio_clips
+                    .iter()
+                    .find(|clip| clip.id == *clip_id && clip.track_id == track_id)
+                    .ok_or_else(|| {
+                        "el clip de audio de la casilla ya no está en el proyecto".to_owned()
+                    })?;
+                self.replace_session_audio(project, track_id, clip, launch_tick, bpm)?;
+                let duration = audio_clip_duration_session_ticks(clip, bpm).max(1);
+                (
+                    SessionClipKind::Audio,
+                    clip.id.clone(),
+                    horizon.max(launch_tick.saturating_add(duration)),
+                )
+            }
+            None => return Err("la casilla está vacía".to_owned()),
+        };
         let view = SessionLaunchView {
             track_id: track_id.to_owned(),
             scene_id: scene_id.to_owned(),
-            clip_id: clip.id.clone(),
+            clip_id: clip_id.clone(),
             launch_tick,
             end_tick,
             state: if position < launch_tick {
@@ -1579,12 +1677,74 @@ impl AudioRuntimeHost {
                 track_id.to_owned(),
                 SessionLaunch {
                     scene_id: scene_id.to_owned(),
-                    clip_id: clip.id.clone(),
+                    clip_id,
+                    kind,
                     launch_tick,
                     end_tick,
+                    looping: true,
                 },
             );
         Ok(view)
+    }
+
+    fn replace_session_audio(
+        &mut self,
+        project: &Project,
+        track_id: &str,
+        clip: &AudioClip,
+        launch_tick: u64,
+        bpm: f64,
+    ) -> Result<(), String> {
+        let sample_rate = PipeWireStreamConfig::default().sample_rate;
+        let source_id = clip
+            .source_id
+            .as_ref()
+            .ok_or_else(|| format!("el clip '{}' no tiene fuente de audio", clip.name))?;
+        let source = project
+            .audio_sources
+            .iter()
+            .find(|source| source.id == *source_id)
+            .ok_or_else(|| format!("no está la fuente de '{}'", clip.name))?;
+        let streams = session_audio_streams(
+            clip,
+            source,
+            launch_tick,
+            self.position_ticks(),
+            bpm,
+            sample_rate,
+        )?;
+        let mut pumps = Vec::with_capacity(streams.len());
+        let mut live_streams = Vec::with_capacity(streams.len());
+        for prepared in streams {
+            let pump = AudioDecodePump::start(prepared.decoder, Arc::clone(&prepared.stream.ring))?;
+            pump.wait_until_primed(
+                ((sample_rate as usize / 10) * 2).max(2),
+                Duration::from_secs(5),
+            )?;
+            pumps.push(pump);
+            live_streams.push(prepared.stream);
+        }
+        let slot = {
+            let mut slots = self
+                .session_audio_slots
+                .lock()
+                .map_err(|_| "el audio de Session quedó bloqueado".to_owned())?;
+            slots
+                .entry(track_id.to_owned())
+                .or_insert_with(|| {
+                    Arc::new(SessionAudioSlot {
+                        command: Mutex::new(None),
+                    })
+                })
+                .clone()
+        };
+        *slot
+            .command
+            .lock()
+            .map_err(|_| "el audio de Session quedó bloqueado".to_owned())? =
+            Some(SessionAudioCommand::Replace(live_streams));
+        self.session_audio_pumps.insert(track_id.to_owned(), pumps);
+        Ok(())
     }
 
     pub fn stop_session_track(&mut self, track_id: &str) -> Result<(), String> {
@@ -1599,6 +1759,26 @@ impl AudioRuntimeHost {
                 track_id: track_id.to_owned(),
             })
             .map_err(|_| "el scheduler MIDI terminó antes de detener la pista".to_owned())?;
+        let kind = self
+            .session_launches
+            .lock()
+            .ok()
+            .and_then(|launches| launches.get(track_id).map(|launch| launch.kind));
+        if kind == Some(SessionClipKind::Audio) {
+            if let Some(slot) = self
+                .session_audio_slots
+                .lock()
+                .map_err(|_| "el audio de Session quedó bloqueado".to_owned())?
+                .get(track_id)
+            {
+                *slot
+                    .command
+                    .lock()
+                    .map_err(|_| "el audio de Session quedó bloqueado".to_owned())? =
+                    Some(SessionAudioCommand::Clear);
+            }
+            self.session_audio_pumps.remove(track_id);
+        }
         self.session_launches
             .lock()
             .map_err(|_| "el estado de lanzamiento de Session quedó bloqueado".to_owned())?
@@ -1792,6 +1972,12 @@ impl AudioRuntimeHost {
             revision: AtomicU64::new(0),
         });
         let active_project_revision = Arc::new(AtomicU64::new(0));
+        let mut session_audio_slots = self
+            .session_audio_slots
+            .lock()
+            .map_err(|_| "el audio de Session quedó bloqueado".to_owned())?;
+        session_audio_slots.clear();
+        self.session_audio_pumps.clear();
         let (plan, senders, schedule) = build_project_playback_with_end(
             project,
             config.sample_rate,
@@ -1805,6 +1991,7 @@ impl AudioRuntimeHost {
             loop_range.map(|range| range.end_tick),
             input_rings.clone(),
             self.plugin_state_root.clone(),
+            &mut session_audio_slots,
         )?;
         let (control, processor) = render_plan_exchange(plan);
         let control = Arc::new(std::sync::Mutex::new(control));
@@ -1824,10 +2011,12 @@ impl AudioRuntimeHost {
                 Some(range.end_tick),
                 input_rings.clone(),
                 self.plugin_state_root.clone(),
+                &mut session_audio_slots,
             )?)
         } else {
             None
         };
+        drop(session_audio_slots);
         for track in project
             .tracks
             .iter()
@@ -2023,6 +2212,7 @@ impl AudioRuntimeHost {
                     let loop_active_revision = Arc::clone(&active_project_revision);
                     let loop_profile = profile;
                     let loop_plugin_state_root = self.plugin_state_root.clone();
+                    let loop_session_audio_slots = Arc::clone(&self.session_audio_slots);
                     let loop_error = Arc::clone(&self.playback.as_ref().unwrap().loop_error);
                     let handle = thread::Builder::new()
                         .name("estudio-daw-loop-coordinator".into())
@@ -2044,6 +2234,7 @@ impl AudioRuntimeHost {
                                 loop_input_rings,
                                 loop_active_revision,
                                 loop_plugin_state_root,
+                                loop_session_audio_slots,
                             ) {
                                 if let Ok(mut state) = loop_error.lock() {
                                     *state = Some(error);
@@ -2229,6 +2420,10 @@ impl AudioRuntimeHost {
                 position_ticks
             }
         });
+        let mut session_audio_slots = self
+            .session_audio_slots
+            .lock()
+            .map_err(|_| "el audio de Session quedó bloqueado".to_owned())?;
         let (plan, senders, events) = build_project_playback_with_end(
             project,
             sample_rate,
@@ -2242,7 +2437,9 @@ impl AudioRuntimeHost {
             range.map(|range| range.end_tick),
             playback.input_rings.clone(),
             self.plugin_state_root.clone(),
+            &mut session_audio_slots,
         )?;
+        drop(session_audio_slots);
         if control.publish(plan).is_err() {
             return Err("el motor aún está aplicando un cambio anterior de plan".to_owned());
         }
@@ -2308,6 +2505,10 @@ impl AudioRuntimeHost {
         self.plugin_state_root = None;
         if let Ok(mut launches) = self.session_launches.lock() {
             launches.clear();
+        }
+        self.session_audio_pumps.clear();
+        if let Ok(mut slots) = self.session_audio_slots.lock() {
+            slots.clear();
         }
         thread_result?;
         Ok(finished_recordings)
@@ -2499,6 +2700,7 @@ fn build_project_playback(
         None,
         HashMap::new(),
         None,
+        &mut HashMap::new(),
     )
 }
 
@@ -2530,6 +2732,7 @@ fn build_project_playback_with_end(
     end_position_ticks: Option<u64>,
     mut input_rings: HashMap<String, Arc<SampleRingBuffer>>,
     plugin_state_root: Option<PathBuf>,
+    session_audio_slots: &mut HashMap<String, Arc<SessionAudioSlot>>,
 ) -> Result<
     (
         estudio_daw_audio_engine::RenderPlan,
@@ -3056,6 +3259,7 @@ fn build_project_playback_with_end(
         project,
         sources_by_track,
         audio_streams,
+        session_audio_slots,
         global_sources,
         max_samples,
         &route_audibility,
@@ -3117,6 +3321,7 @@ fn coordinate_loop(
     input_rings: HashMap<String, Arc<SampleRingBuffer>>,
     active_project_revision: Arc<AtomicU64>,
     plugin_state_root: Option<PathBuf>,
+    session_audio_slots: Arc<Mutex<HashMap<String, Arc<SessionAudioSlot>>>>,
 ) -> Result<(), String> {
     let mut prepared_revision = project_model.revision.load(Ordering::Acquire);
     while !stop.load(Ordering::Acquire) {
@@ -3138,6 +3343,7 @@ fn coordinate_loop(
                 Arc::clone(&track_meters),
                 input_rings.clone(),
                 plugin_state_root.clone(),
+                Arc::clone(&session_audio_slots),
             )?;
         }
         let (plan, senders, events) = prepared;
@@ -3160,6 +3366,7 @@ fn coordinate_loop(
                 Arc::clone(&track_meters),
                 input_rings.clone(),
                 plugin_state_root.clone(),
+                Arc::clone(&session_audio_slots),
             )?;
             continue;
         }
@@ -3199,6 +3406,7 @@ fn coordinate_loop(
             Arc::clone(&track_meters),
             input_rings.clone(),
             plugin_state_root.clone(),
+            Arc::clone(&session_audio_slots),
         )?;
     }
     Ok(())
@@ -3216,6 +3424,7 @@ fn prepare_latest_loop_plan(
     track_meters: Arc<Mutex<HashMap<String, Arc<TrackMeter>>>>,
     input_rings: HashMap<String, Arc<SampleRingBuffer>>,
     plugin_state_root: Option<PathBuf>,
+    session_audio_slots: Arc<Mutex<HashMap<String, Arc<SessionAudioSlot>>>>,
 ) -> Result<
     (
         (
@@ -3229,6 +3438,9 @@ fn prepare_latest_loop_plan(
 > {
     loop {
         let (project, revision) = project_model.snapshot()?;
+        let mut session_slots = session_audio_slots
+            .lock()
+            .map_err(|_| "el audio de Session quedó bloqueado".to_owned())?;
         let prepared = build_project_playback_with_end(
             &project,
             sample_rate,
@@ -3242,8 +3454,10 @@ fn prepare_latest_loop_plan(
             Some(range.end_tick),
             input_rings.clone(),
             plugin_state_root.clone(),
+            &mut session_slots,
         )
         .map_err(|error| format!("no se pudo preparar la siguiente vuelta A/B: {error}"))?;
+        drop(session_slots);
         if project_model.revision.load(Ordering::Acquire) == revision {
             return Ok((prepared, revision));
         }
@@ -3337,6 +3551,92 @@ fn clip_duration_session_ticks(clip: &MidiClip) -> u64 {
     clip.duration_ticks
         .saturating_mul(u64::from(estudio_daw_application::TICKS_PER_QUARTER))
         / ppq
+}
+
+const SESSION_AUDIO_REPEATS: u32 = 8;
+
+fn session_midi_events_looped(
+    clip: &MidiClip,
+    launch_tick: u64,
+    bpm: f64,
+    horizon_tick: u64,
+) -> Vec<ScheduledEvent> {
+    let duration = clip_duration_session_ticks(clip).max(1);
+    let mut events = Vec::new();
+    let mut start = launch_tick;
+    while start < horizon_tick {
+        events.extend(session_midi_events(clip, start, bpm));
+        start = start.saturating_add(duration);
+        if duration == 0 {
+            break;
+        }
+    }
+    events
+}
+
+fn audio_clip_duration_session_ticks(clip: &AudioClip, bpm: f64) -> u64 {
+    let micros = (u128::from(clip.duration_samples).saturating_mul(1_000_000)
+        / u128::from(clip.sample_rate.max(1)))
+    .min(u128::from(u64::MAX)) as u64;
+    micros_to_session_ticks(micros, bpm)
+}
+
+struct PreparedSessionAudio {
+    decoder: estudio_daw_media_adapter::AudioPcmDecoder,
+    stream: AudioClipStream,
+}
+
+fn session_audio_streams(
+    clip: &AudioClip,
+    source: &AudioSource,
+    launch_tick: u64,
+    position_ticks: u64,
+    bpm: f64,
+    sample_rate: u32,
+) -> Result<Vec<PreparedSessionAudio>, String> {
+    let source_rate = source.sample_rate_hz.unwrap_or(clip.sample_rate);
+    let to_output_frames = |source_samples: u64| -> u64 {
+        ((u128::from(source_samples) * u128::from(sample_rate)) / u128::from(source_rate.max(1)))
+            .min(u128::from(u64::MAX)) as u64
+    };
+    let delay_ticks = launch_tick.saturating_sub(position_ticks);
+    let delay_micros =
+        ticks_to_micros(delay_ticks, estudio_daw_application::TICKS_PER_QUARTER, bpm);
+    let start_frame = ((u128::from(delay_micros) * u128::from(sample_rate)) / 1_000_000)
+        .min(u128::from(u64::MAX)) as u64;
+    let duration_frames = to_output_frames(clip.duration_samples).max(1);
+    let gain = 10.0_f32.powf(clip.gain_db / 20.0);
+    let mut prepared = Vec::new();
+    for repeat in 0..SESSION_AUDIO_REPEATS {
+        let decoder = estudio_daw_media_adapter::AudioPcmDecoder::spawn(
+            &source.media.original_path,
+            source_rate,
+            source.channels.unwrap_or(clip.channels),
+            &clip.source_channel_selection,
+            clip.source_start_samples,
+            clip.duration_samples.max(1),
+            sample_rate,
+        )
+        .map_err(|error| format!("no se pudo preparar '{}': {error}", clip.name))?;
+        let ring = Arc::new(SampleRingBuffer::new(
+            (sample_rate as usize).saturating_mul(2).max(2),
+        ));
+        prepared.push(PreparedSessionAudio {
+            decoder,
+            stream: AudioClipStream {
+                ring,
+                start_frame: start_frame
+                    .saturating_add(duration_frames.saturating_mul(u64::from(repeat))),
+                duration_frames,
+                clip_offset_frames: 0,
+                fade_in_frames: to_output_frames(clip.fade_in_samples),
+                fade_out_frames: to_output_frames(clip.fade_out_samples),
+                gain_left: gain,
+                gain_right: gain,
+            },
+        });
+    }
+    Ok(prepared)
 }
 
 fn session_midi_events(clip: &MidiClip, launch_tick: u64, bpm: f64) -> Vec<ScheduledEvent> {
@@ -3880,6 +4180,11 @@ mod tests {
             SynthMidiEvent::NoteOn { note: 60, .. }
         ));
         assert_eq!(clip_duration_session_ticks(&clip), 960);
+        let looped = session_midi_events_looped(&clip, 0, 120.0, 2880);
+        assert_eq!(looped.len(), 3);
+        assert_eq!(looped[0].at_tick, 0);
+        assert_eq!(looped[1].at_tick, 960);
+        assert_eq!(looped[2].at_tick, 1920);
     }
 
     #[test]
