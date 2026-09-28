@@ -261,12 +261,6 @@ impl AudioBackend for CpalBackend {
     }
 }
 
-impl Default for CpalBackend {
-    fn default() -> Self {
-        Self::new().expect("Failed to create CPAL backend")
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -26,6 +26,11 @@ use crate::{
 /// parameter changes; pushes beyond it are dropped rather than blocking.
 const SIDE_CHANNEL_CAPACITY: usize = 4096;
 
+fn require_default_device<D>(device: Option<D>, direction: &str) -> Result<D> {
+    device
+        .ok_or_else(|| Error::AudioBackendError(format!("No default {direction} device available")))
+}
+
 /// A control command queued by a UI/control thread and applied on the audio thread (inside the
 /// callback, under the plugin lock it already holds) at the start of the next block.
 enum HybridCommand {
@@ -524,9 +529,7 @@ pub fn play_with_backend<B: AudioBackend>(
     plugin: Plugin,
     config: AudioConfig,
 ) -> Result<AudioHandle> {
-    let device = backend
-        .default_output_device()
-        .ok_or_else(|| Error::AudioBackendError("No default output device available".into()))?;
+    let device = require_default_device(backend.default_output_device(), "output")?;
 
     let channels = config.output_channels;
     let sample_rate = config.sample_rate;
@@ -607,12 +610,8 @@ pub fn play_with_input_backend<B: AudioBackend>(
     plugin: Plugin,
     config: AudioConfig,
 ) -> Result<AudioHandle> {
-    let in_device = backend
-        .default_input_device()
-        .ok_or_else(|| Error::AudioBackendError("No default input device available".into()))?;
-    let out_device = backend
-        .default_output_device()
-        .ok_or_else(|| Error::AudioBackendError("No default output device available".into()))?;
+    let in_device = require_default_device(backend.default_input_device(), "input")?;
+    let out_device = require_default_device(backend.default_output_device(), "output")?;
 
     let in_channels = config.input_channels.max(1);
     let out_channels = config.output_channels;
@@ -720,9 +719,7 @@ pub fn play_realtime_with_backend<B: AudioBackend>(
     config: AudioConfig,
     command_capacity: usize,
 ) -> Result<RtAudioHandle> {
-    let device = backend
-        .default_output_device()
-        .ok_or_else(|| Error::AudioBackendError("No default output device available".into()))?;
+    let device = require_default_device(backend.default_output_device(), "output")?;
 
     let channels = config.output_channels;
     let sample_rate = config.sample_rate;
@@ -768,6 +765,15 @@ pub fn play_realtime_with_backend<B: AudioBackend>(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn missing_default_device_is_a_recoverable_backend_error() {
+        let error = require_default_device::<u8>(None, "output").unwrap_err();
+        assert!(error
+            .to_string()
+            .contains("No default output device available"));
+        assert_eq!(require_default_device(Some(7_u8), "input").unwrap(), 7);
+    }
 
     #[test]
     fn interleaves_two_channels() {

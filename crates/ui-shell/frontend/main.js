@@ -728,12 +728,24 @@ function createTrackInstrumentControl(track) {
     choose.textContent = "Cambiar";
     choose.disabled = projectTransportState !== "stopped";
     choose.addEventListener("click", chooseVst3);
+    const revokeTrust = document.createElement("button");
+    revokeTrust.type = "button";
+    revokeTrust.textContent = "Revocar confianza local";
+    revokeTrust.disabled = projectTransportState !== "stopped";
+    revokeTrust.addEventListener("click", async () => {
+      try {
+        await platform.revokeExternalCode(currentVst3.plugin.path);
+        setNotice("Confianza revocada", "Este plugin volverá a pedir aprobación antes de inspeccionarse o cargarse.");
+      } catch (error) {
+        setNotice("No se pudo revocar la confianza", String(error));
+      }
+    });
     const help = document.createElement("small");
     const bridge = currentVst3.plugin?.bridge ? `${currentVst3.plugin.bridge} · ` : "";
     help.textContent = engineReady
       ? `${bridge}El instrumento está en esta pista. CONTROLES abre su ventana real; la primera vez puede tardar unos segundos.`
       : `${bridge}Play carga el instrumento. Después CONTROLES abre su ventana.`;
-    panel.append(name, show, choose, help);
+    panel.append(name, show, choose, revokeTrust, help);
     return panel;
   }
   const current = track.instrument?.backend === "standalone" ? track.instrument : null;
@@ -763,15 +775,48 @@ function createTrackInstrumentControl(track) {
     const path = await platform.selectStandaloneInstrument();
     if (path) {
       application.value = path;
+      void refreshLocalWinePrefix(path);
       updateSaveAvailability();
     }
   });
 
   const prefix = document.createElement("input");
   prefix.type = "text";
-  prefix.placeholder = "Prefijo Wine (vacío = predeterminado)";
-  prefix.value = current?.wine_prefix ?? "";
-  prefix.setAttribute("aria-label", `Prefijo Wine de ${track.name}`);
+  prefix.readOnly = true;
+  prefix.placeholder = "Prefijo Wine local (vacío = predeterminado)";
+  prefix.setAttribute("aria-label", `Prefijo Wine local de ${track.name}`);
+  const refreshLocalWinePrefix = async (path) => {
+    prefix.value = path ? await platform.getLocalWinePrefix(path) ?? "" : "";
+  };
+  if (application.value) void refreshLocalWinePrefix(application.value);
+  const choosePrefix = document.createElement("button");
+  choosePrefix.type = "button";
+  choosePrefix.textContent = "Elegir prefijo local";
+  choosePrefix.disabled = projectTransportState !== "stopped" || !application.value;
+  choosePrefix.addEventListener("click", async () => {
+    if (!application.value) return;
+    const path = await platform.selectWinePrefix();
+    if (!path) return;
+    try {
+      prefix.value = await platform.setLocalWinePrefix(application.value, path) ?? "";
+      setNotice("Prefijo Wine local guardado", "Este ajuste queda en la configuración de usuario y no dentro del proyecto.");
+    } catch (error) {
+      setNotice("No se pudo guardar el prefijo Wine", String(error));
+    }
+  });
+  const clearPrefix = document.createElement("button");
+  clearPrefix.type = "button";
+  clearPrefix.textContent = "Usar prefijo predeterminado";
+  clearPrefix.disabled = projectTransportState !== "stopped" || !application.value;
+  clearPrefix.addEventListener("click", async () => {
+    if (!application.value) return;
+    try {
+      prefix.value = await platform.setLocalWinePrefix(application.value, null) ?? "";
+      setNotice("Prefijo Wine local quitado", "Wine usará su prefijo predeterminado local.");
+    } catch (error) {
+      setNotice("No se pudo quitar el prefijo Wine", String(error));
+    }
+  });
   const open = document.createElement("button");
   open.type = "button";
   open.textContent = "Abrir y buscar puertos";
@@ -782,7 +827,6 @@ function createTrackInstrumentControl(track) {
       await platform.openStandaloneInstrument({
         trackId: track.id,
         applicationPath: application.value,
-        winePrefix: prefix.value.trim() || null,
       });
       setNotice("Analog Lab abierto", "Buscando sus puertos MIDI y de audio en PipeWire…");
       await new Promise((resolve) => setTimeout(resolve, 1500));
@@ -790,6 +834,18 @@ function createTrackInstrumentControl(track) {
       renderSnapshot(lastSnapshot);
     } catch (error) {
       setNotice("No se pudo abrir Analog Lab", String(error));
+    }
+  });
+  const revokeTrust = document.createElement("button");
+  revokeTrust.type = "button";
+  revokeTrust.textContent = "Revocar confianza local";
+  revokeTrust.disabled = projectTransportState !== "stopped" || !current?.application_path;
+  revokeTrust.addEventListener("click", async () => {
+    try {
+      await platform.revokeExternalCode(current.application_path);
+      setNotice("Confianza revocada", "Esta aplicación volverá a pedir aprobación antes de abrirse.");
+    } catch (error) {
+      setNotice("No se pudo revocar la confianza", String(error));
     }
   });
 
@@ -818,6 +874,8 @@ function createTrackInstrumentControl(track) {
   save.textContent = "Usar en esta pista";
   const updateSaveAvailability = () => {
     save.disabled = projectTransportState !== "stopped" || !application.value || !midi.value || !audio.value;
+    choosePrefix.disabled = projectTransportState !== "stopped" || !application.value;
+    clearPrefix.disabled = projectTransportState !== "stopped" || !application.value;
   };
   midi.addEventListener("change", updateSaveAvailability);
   audio.addEventListener("change", updateSaveAvailability);
@@ -836,7 +894,7 @@ function createTrackInstrumentControl(track) {
     const instrument = {
       backend: "standalone",
       application_path: application.value,
-      wine_prefix: prefix.value.trim() || null,
+      wine_prefix: current?.wine_prefix ?? null,
       midi_output: midiOutput,
       audio_input: audioInput,
     };
@@ -853,7 +911,7 @@ function createTrackInstrumentControl(track) {
       ? `Falta elegir ${missingRoutes.join(" y ")}.`
       : "Se abrirá al reproducir. MIDI sale por el puerto elegido; el retorno pasa por esta pista y el mezclador.")
     : "Abre la app para descubrir sus puertos. El retorno se suma a esta pista y no usa el monitor general.";
-  panel.append(application, choose, prefix, open, midi, audio, save, help);
+  panel.append(application, choose, prefix, choosePrefix, clearPrefix, open, revokeTrust, midi, audio, save, help);
   return panel;
 }
 

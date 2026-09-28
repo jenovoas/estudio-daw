@@ -38,13 +38,24 @@ window.estudioPlatform = {
     });
     return typeof path === "string" ? path : null;
   },
+  async selectWinePrefix() {
+    const path = await open({
+      multiple: false,
+      directory: true,
+      title: "Elegir prefijo Wine local",
+    });
+    return typeof path === "string" ? path : null;
+  },
+  getLocalWinePrefix: (applicationPath) => invoke("get_local_wine_prefix", { applicationPath }),
+  setLocalWinePrefix: (applicationPath, winePrefix) => invoke("set_local_wine_prefix", { applicationPath, winePrefix }),
   inspectVst3Plugin: (path) => invoke("inspect_vst3_plugin", { path }),
+  revokeExternalCode: (path) => invoke("revoke_external_code", { path }),
   setVst3Editor: (trackId, open) => invoke("set_vst3_editor", { trackId, open }),
   launchSessionSlot: (sceneId, trackId, gridTicks, respectClipQuantization = true) => invoke("launch_session_slot", { sceneId, trackId, gridTicks, respectClipQuantization }),
   launchSessionScene: (sceneId, gridTicks) => invoke("launch_session_scene", { sceneId, gridTicks }),
   stopSessionTrack: (trackId) => invoke("stop_session_track", { trackId }),
   sessionLaunches: () => invoke("session_launches"),
-  openStandaloneInstrument: ({ trackId, applicationPath, winePrefix }) => invoke("open_standalone_instrument", { trackId, applicationPath, winePrefix }),
+  openStandaloneInstrument: ({ trackId, applicationPath }) => invoke("open_standalone_instrument", { trackId, applicationPath }),
   setTrackInstrument: (trackId, instrument) => invoke("set_track_instrument", { trackId, instrument }),
   importAudio({ path, trackId, copyIntoProject, startTick, sourceChannelSelection }) {
     return invoke("import_audio", { path, trackId, copyIntoProject, startTick, sourceChannelSelection });

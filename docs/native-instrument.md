@@ -48,6 +48,13 @@ descartes. El SoundFont se carga y el preset se valida antes de iniciar el
 stream; si falla, el comando muestra el diagnóstico y no modifica ningún
 proyecto. El sinte sinusoidal se conserva como fallback explícito.
 
+Los comandos de clips de audio de Session se preparan en el hilo de control y
+se publican por una cola lock-free acotada. Cada grupo conserva sus `Vec` y
+referencias al ring mientras está activo; al reemplazar o limpiar, el callback
+traslada esos grupos a una cola inversa preasignada. El hilo de control vacía
+esa cola y libera allí los recursos. Si la cola de comandos está llena, la
+operación devuelve un error; el callback no espera ni destruye buffers.
+
 Al terminar `midi-synth-live` o `midi-synth-play`, el CLI informa la ocupación
 actual y el máximo observado del ring PCM, su capacidad, la duración equivalente
 del pico (`frames / sample_rate`) y el periodo PipeWire solicitado. La ocupación
@@ -127,6 +134,33 @@ objetivo PCM se aplica por separado a cada worker SoundFont. El shell Tauri
 reproduce `AudioClip` y captura a WAV las entradas de pistas armadas para crear
 regiones al detener. El control de MIDI entrante desde ese shell sigue pendiente.
 
+## Confianza local para instrumentos externos
+
+Los proyectos guardan referencias a ejecutables standalone y bundles VST3, pero
+esas rutas por sí solas no autorizan su ejecución. Antes de abrir una aplicación,
+inspeccionar un VST3 o iniciar Play con un instrumento externo, Estudio DAW
+resuelve y muestra la ruta canónica y la huella SHA-256 en un diálogo nativo.
+La aprobación queda en la configuración local del usuario, no en el proyecto;
+un cambio de destino o contenido vuelve a solicitar consentimiento. El control
+«Revocar confianza local» de la pista elimina la aprobación después de detener el
+transporte. Revocar no finaliza por sí mismo un proceso standalone abierto.
+
+La huella de un bundle VST3 incluye sus archivos internos, con límite de
+inspección para evitar leer bundles desmesurados. Los enlaces simbólicos que
+salen del bundle se rechazan. El permiso sólo significa que el usuario acepta
+cargar ese código; no constituye sandboxing del plugin.
+
+En el helper VST3, `LoadPlugin` y `UnloadPlugin` recuperan el guard del mutex
+envenenado para reemplazar o limpiar el estado; los comandos que requieren un
+plugin válido responden con un error del protocolo si el mutex permanece
+envenenado. Una operación fallida no provoca pánicos repetidos.
+
+El prefijo Wine efectivo se configura localmente por ejecutable mediante
+«Elegir prefijo local» y se guarda junto al registro local de confianza. Un
+proyecto puede conservar su campo `wine_prefix` heredado al migrar o guardar,
+pero Play y la apertura directa lo ignoran; si no hay prefijo local configurado,
+Wine usa su valor predeterminado del entorno local.
+
 ## Probar SineSynth
 
 ```bash
@@ -205,6 +239,11 @@ el objetivo de frames de la cola PCM. La medición de ataques
 10–14 ms descrita arriba corresponde sólo al render y al monitor digital de
 Estudio DAW; no mide ni emula la protección de reproducción de Studio One.
 Referencias del fabricante: [manual de AudioBox USB 96](https://pae-web.presonusmusic.com/downloads/products/pdf/AudioBoxUSB96_Manual_del_propietario_ES_26062018.pdf), [Dropout Protection y monitoreo de baja latencia en Studio One](https://support.presonus.com/hc/en-us/articles/9223446792461-Studio-One-6-Audio-Dropout-Protection-and-Low-Latency-Monitoring-FAQ).
+
+El backend VST3 CPAL se construye con `CpalBackend::new() -> Result<_>`; no
+implementa `Default`. La API representa un dispositivo predeterminado ausente
+como `None`, y las rutas de reproducción lo convierten en un error de backend
+explícito antes de iniciar el stream.
 
 ### Perfiles de Estudio DAW
 

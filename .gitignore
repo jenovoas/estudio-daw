@@ -10,5 +10,6 @@ __pycache__/
 *.ogg
 /projects/
 /tmp/
+.codebase-memory/graph.db.zst
 .env
 .DS_Store

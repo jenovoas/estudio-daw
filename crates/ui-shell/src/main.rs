@@ -4,6 +4,7 @@
 //! ni buffers de GPU por IPC y no accede al motor RT desde los comandos de UI.
 
 mod audio_runtime;
+mod project_security;
 
 use estudio_daw_application::{
     load_audio_runtime_settings, save_audio_runtime_settings, AudioRuntimeSettings,
@@ -20,7 +21,7 @@ use estudio_daw_runtime_diagnostics::audio_devices;
 use serde::Serialize;
 use std::{
     collections::HashMap,
-    path::PathBuf,
+    path::{Path, PathBuf},
     sync::Mutex,
     time::{SystemTime, UNIX_EPOCH},
 };
@@ -33,6 +34,12 @@ struct DesktopState {
     // desde comandos de UI, nunca desde el callback de audio.
     application: Mutex<Option<ProjectApplication>>,
     audio: Mutex<AudioRuntimeHost>,
+}
+
+#[derive(Debug, Clone, Default)]
+struct AuthorizedExternalCode {
+    canonical_path: PathBuf,
+    wine_prefix: Option<PathBuf>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -1744,11 +1751,29 @@ fn save_project_as(path: String, state: State<'_, DesktopState>) -> Result<UiSna
 }
 
 #[tauri::command]
-fn set_transport(
+async fn set_transport(
     command: String,
     position_ticks: Option<u64>,
     state: State<'_, DesktopState>,
+    app_handle: tauri::AppHandle,
 ) -> Result<UiSnapshot, String> {
+    let authorized_external_code = if command == "play" || command == "record" {
+        let project = {
+            let current = state
+                .application
+                .lock()
+                .map_err(|_| "el estado de la aplicación quedó bloqueado".to_owned())?;
+            current
+                .as_ref()
+                .ok_or_else(|| "primero abre un proyecto".to_owned())?
+                .snapshot()
+                .project
+                .project
+        };
+        Some(authorize_project_external_code(&app_handle, &project).await?)
+    } else {
+        None
+    };
     let mut application = state
         .application
         .lock()
@@ -1841,7 +1866,8 @@ fn set_transport(
         .map_err(|e| e.to_string())?;
     match session_command {
         SessionCommand::Play => {
-            let project = application.snapshot().project.project;
+            let mut project = application.snapshot().project.project;
+            apply_authorized_external_code(&mut project, authorized_external_code.as_ref());
             let settings = settings
                 .as_ref()
                 .ok_or_else(|| "faltan preferencias para iniciar audio".to_owned())?;
@@ -1859,16 +1885,7 @@ fn set_transport(
             ) {
                 // Keep the domain transport stopped if device/backend startup
                 // fails after the command was accepted.
-                let rollback = application.execute(
-                    DomainCommand::Session(SessionCommand::Stop),
-                    CommandAuthor::User,
-                );
-                return match rollback {
-                    Ok(_) => Err(error),
-                    Err(rollback_error) => Err(format!(
-                        "{error}; además no se pudo revertir el transporte: {rollback_error}"
-                    )),
-                };
+                return Err(rollback_failed_play_start(application, error));
             }
         }
         SessionCommand::Pause => audio.pause(true),
@@ -1881,6 +1898,86 @@ fn set_transport(
         _ => unreachable!("el adaptador sólo acepta play/pause/stop"),
     }
     Ok(summarize(application, audio.is_connected()))
+}
+
+fn rollback_failed_play_start(application: &mut ProjectApplication, error: String) -> String {
+    match application.execute(
+        DomainCommand::Session(SessionCommand::Stop),
+        CommandAuthor::User,
+    ) {
+        Ok(_) => error,
+        Err(rollback_error) => {
+            format!("{error}; además no se pudo revertir el transporte: {rollback_error}")
+        }
+    }
+}
+
+async fn authorize_project_external_code(
+    app_handle: &tauri::AppHandle,
+    project: &Project,
+) -> Result<HashMap<String, AuthorizedExternalCode>, String> {
+    let mut authorized = HashMap::new();
+    for track in &project.tracks {
+        let code = match track.instrument.as_ref() {
+            Some(InstrumentConfig::Standalone {
+                application_path, ..
+            }) => Some((application_path.as_str(), "aplicación standalone", true)),
+            Some(InstrumentConfig::Vst3 { plugin, .. }) => {
+                Some((plugin.path.as_str(), "plugin VST3", false))
+            }
+            _ => None,
+        };
+        let Some((path, code_kind, standalone)) = code else {
+            continue;
+        };
+        let canonical_path =
+            project_security::authorize_external_code(app_handle, Path::new(path), code_kind)
+                .await
+                .map_err(|error| format!("instrumento de '{}': {error}", track.name))?;
+        let wine_prefix = if standalone {
+            project_security::local_wine_prefix(app_handle, &canonical_path)?
+        } else {
+            None
+        };
+        authorized.insert(
+            track.id.clone(),
+            AuthorizedExternalCode {
+                canonical_path,
+                wine_prefix,
+            },
+        );
+    }
+    Ok(authorized)
+}
+
+fn apply_authorized_external_code(
+    project: &mut Project,
+    authorized: Option<&HashMap<String, AuthorizedExternalCode>>,
+) {
+    let Some(authorized) = authorized else {
+        return;
+    };
+    for track in &mut project.tracks {
+        let Some(code) = authorized.get(&track.id) else {
+            continue;
+        };
+        let path = code.canonical_path.to_string_lossy().into_owned();
+        match track.instrument.as_mut() {
+            Some(InstrumentConfig::Standalone {
+                application_path,
+                wine_prefix,
+                ..
+            }) => {
+                *application_path = path;
+                *wine_prefix = code
+                    .wine_prefix
+                    .as_ref()
+                    .map(|prefix| prefix.to_string_lossy().into_owned());
+            }
+            Some(InstrumentConfig::Vst3 { plugin, .. }) => plugin.path = path,
+            _ => {}
+        }
+    }
 }
 
 fn persist_vst3_plugin_states(
@@ -2074,15 +2171,18 @@ fn set_track_instrument(
 }
 
 #[tauri::command]
-fn inspect_vst3_plugin(path: String) -> Result<vst3_host::discovery::DetailedPluginInfo, String> {
+async fn inspect_vst3_plugin(
+    app_handle: tauri::AppHandle,
+    path: String,
+) -> Result<vst3_host::discovery::DetailedPluginInfo, String> {
     if !path.to_ascii_lowercase().ends_with(".vst3") {
         return Err("selecciona un bundle VST3 (.vst3)".into());
     }
-    vst3_host::probe_plugin_info_isolated(
-        std::path::Path::new(&path),
-        std::time::Duration::from_secs(30),
-    )
-    .map_err(|error| format!("no se pudo leer el plugin VST3: {error}"))
+    let path =
+        project_security::authorize_external_code(&app_handle, Path::new(&path), "plugin VST3")
+            .await?;
+    vst3_host::probe_plugin_info_isolated(&path, std::time::Duration::from_secs(30))
+        .map_err(|error| format!("no se pudo leer el plugin VST3: {error}"))
 }
 
 #[tauri::command]
@@ -2099,36 +2199,87 @@ fn set_vst3_editor(
 }
 
 #[tauri::command]
-fn open_standalone_instrument(
+async fn open_standalone_instrument(
+    app_handle: tauri::AppHandle,
     track_id: String,
     application_path: String,
-    wine_prefix: Option<String>,
     state: State<'_, DesktopState>,
 ) -> Result<(), String> {
-    let application = state
-        .application
-        .lock()
-        .map_err(|_| "el estado de la aplicación quedó bloqueado".to_owned())?;
-    let project = application
-        .as_ref()
-        .ok_or_else(|| "primero abre un proyecto".to_owned())?
-        .snapshot()
-        .project
-        .project;
-    let track = project
-        .tracks
-        .iter()
-        .find(|track| track.id == track_id)
-        .ok_or_else(|| "la pista seleccionada ya no existe".to_owned())?;
-    if !matches!(&track.kind, TrackKind::Midi) {
-        return Err("Analog Lab standalone requiere una pista MIDI".into());
+    {
+        let application = state
+            .application
+            .lock()
+            .map_err(|_| "el estado de la aplicación quedó bloqueado".to_owned())?;
+        let project = application
+            .as_ref()
+            .ok_or_else(|| "primero abre un proyecto".to_owned())?
+            .snapshot()
+            .project
+            .project;
+        let track = project
+            .tracks
+            .iter()
+            .find(|track| track.id == track_id)
+            .ok_or_else(|| "la pista seleccionada ya no existe".to_owned())?;
+        if !matches!(&track.kind, TrackKind::Midi) {
+            return Err("Analog Lab standalone requiere una pista MIDI".into());
+        }
     }
-    drop(application);
+    let application_path = project_security::authorize_external_code(
+        &app_handle,
+        Path::new(&application_path),
+        "aplicación standalone",
+    )
+    .await?;
+    let wine_prefix = project_security::local_wine_prefix(&app_handle, &application_path)?
+        .map(|prefix| prefix.to_string_lossy().into_owned());
     state
         .audio
         .lock()
         .map_err(|_| "el estado del motor de audio quedó bloqueado".to_owned())?
-        .open_standalone_application(&track_id, &application_path, wine_prefix.as_deref())
+        .open_standalone_application(
+            &track_id,
+            &application_path.to_string_lossy(),
+            wine_prefix.as_deref(),
+        )
+}
+
+#[tauri::command]
+fn get_local_wine_prefix(
+    application_path: String,
+    app_handle: tauri::AppHandle,
+) -> Result<Option<String>, String> {
+    project_security::local_wine_prefix(&app_handle, Path::new(&application_path))
+        .map(|prefix| prefix.map(|prefix| prefix.to_string_lossy().into_owned()))
+}
+
+#[tauri::command]
+fn set_local_wine_prefix(
+    application_path: String,
+    wine_prefix: Option<String>,
+    app_handle: tauri::AppHandle,
+) -> Result<Option<String>, String> {
+    let prefix = wine_prefix.as_deref().map(Path::new);
+    project_security::set_local_wine_prefix(&app_handle, Path::new(&application_path), prefix)?;
+    project_security::local_wine_prefix(&app_handle, Path::new(&application_path))
+        .map(|prefix| prefix.map(|prefix| prefix.to_string_lossy().into_owned()))
+}
+
+#[tauri::command]
+fn revoke_external_code(
+    path: String,
+    state: State<'_, DesktopState>,
+    app_handle: tauri::AppHandle,
+) -> Result<(), String> {
+    if state
+        .audio
+        .lock()
+        .map_err(|_| "el estado del motor de audio quedó bloqueado".to_owned())?
+        .is_connected()
+    {
+        return Err("detén el transporte antes de revocar confianza de código externo".into());
+    }
+    project_security::revoke_external_code(&app_handle, Path::new(&path))
 }
 
 #[tauri::command]
@@ -2463,6 +2614,9 @@ fn main() {
             inspect_vst3_plugin,
             set_vst3_editor,
             open_standalone_instrument,
+            get_local_wine_prefix,
+            set_local_wine_prefix,
+            revoke_external_code,
             set_track_output,
             set_track_input_route,
             set_track_record_arm,
@@ -2482,6 +2636,23 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn play_start_failure_returns_diagnostic_and_restores_stopped_transport() {
+        let mut application = ProjectApplication::new(new_project_model());
+        application
+            .execute(
+                DomainCommand::Session(SessionCommand::Play),
+                CommandAuthor::User,
+            )
+            .unwrap();
+        assert_eq!(summarize(&application, false).transport_state, "playing");
+
+        let error = rollback_failed_play_start(&mut application, "backend no disponible".into());
+
+        assert_eq!(error, "backend no disponible");
+        assert_eq!(summarize(&application, false).transport_state, "stopped");
+    }
 
     #[test]
     fn new_project_starts_with_one_empty_midi_track_and_enabled_session_state() {

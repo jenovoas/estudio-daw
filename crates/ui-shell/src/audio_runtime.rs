@@ -3,6 +3,7 @@
 //! La preparación de instrumentos y el scheduler corren fuera del callback. El
 //! callback PipeWire sólo procesa el plan ya compilado y memoria preasignada.
 
+use crossbeam_queue::ArrayQueue;
 use estudio_daw_application::{AudioProfileSettings, TransportClock};
 use estudio_daw_audio_engine::{
     render_plan_exchange, AudioNode, AudioNodeError, RenderPlanBuilder, RenderPlanControl,
@@ -41,6 +42,9 @@ use vst3_host::{
 };
 
 const MAX_AUDIO_CLIP_STREAMS: usize = 64;
+const MAX_SESSION_AUDIO_GROUPS: usize = 64;
+const SESSION_AUDIO_COMMAND_CAPACITY: usize = 64;
+const SESSION_AUDIO_RETIRED_CAPACITY: usize = MAX_SESSION_AUDIO_GROUPS + 1;
 
 struct AudioDecodePump {
     stop: Arc<AtomicBool>,
@@ -222,12 +226,36 @@ enum SessionAudioCommand {
 }
 
 struct SessionAudioSlot {
-    command: Mutex<Option<SessionAudioCommand>>,
+    // Boxes move across the callback intact. Their Vec and ring Arcs are only
+    // dropped when the control thread drains `retired`.
+    commands: ArrayQueue<Box<SessionAudioCommand>>,
+    retired: ArrayQueue<Box<SessionAudioCommand>>,
+}
+
+impl SessionAudioSlot {
+    fn new() -> Self {
+        Self {
+            commands: ArrayQueue::new(SESSION_AUDIO_COMMAND_CAPACITY),
+            retired: ArrayQueue::new(SESSION_AUDIO_RETIRED_CAPACITY),
+        }
+    }
+
+    fn reclaim_retired(&self) {
+        while self.retired.pop().is_some() {}
+    }
+
+    fn publish(&self, command: SessionAudioCommand) -> Result<(), String> {
+        self.reclaim_retired();
+        self.commands
+            .push(Box::new(command))
+            .map_err(|_| "la cola acotada de audio de Session está llena".to_owned())
+    }
 }
 
 struct AudioClipMixerNode {
     streams: Vec<AudioClipStream>,
-    session_streams: Vec<AudioClipStream>,
+    session_groups: Vec<Box<SessionAudioCommand>>,
+    pending_session_command: Option<Box<SessionAudioCommand>>,
     session_slot: Option<Arc<SessionAudioSlot>>,
     mute_arrangement: bool,
     source_scratch: Vec<f32>,
@@ -243,7 +271,8 @@ impl AudioClipMixerNode {
     ) -> Self {
         Self {
             streams,
-            session_streams: Vec::new(),
+            session_groups: Vec::with_capacity(MAX_SESSION_AUDIO_GROUPS),
+            pending_session_command: None,
             session_slot,
             mute_arrangement: false,
             source_scratch: vec![0.0; max_samples],
@@ -256,29 +285,78 @@ impl AudioClipMixerNode {
         let Some(slot) = &self.session_slot else {
             return;
         };
-        let Ok(mut pending) = slot.command.try_lock() else {
+        let Some(mut command) = self
+            .pending_session_command
+            .take()
+            .or_else(|| slot.commands.pop())
+        else {
             return;
         };
-        match pending.take() {
-            Some(SessionAudioCommand::Replace(mut streams)) => {
-                for stream in &mut streams {
+        let is_replace = matches!(command.as_ref(), SessionAudioCommand::Replace(_));
+        let is_append = matches!(command.as_ref(), SessionAudioCommand::Append(_));
+        if is_replace {
+            if slot.retired.capacity() - slot.retired.len() < self.session_groups.len() {
+                self.pending_session_command = Some(command);
+                return;
+            }
+            while let Some(retired) = self.session_groups.pop() {
+                let _ = slot.retired.push(retired);
+            }
+            if let SessionAudioCommand::Replace(streams) = command.as_mut() {
+                for stream in streams {
                     stream.start_frame = stream.start_frame.saturating_add(self.frame_cursor);
                 }
-                self.session_streams = streams;
-                self.mute_arrangement = true;
             }
-            Some(SessionAudioCommand::Append(mut streams)) => {
-                for stream in &mut streams {
+            self.session_groups.push(command);
+            self.mute_arrangement = true;
+        } else if is_append {
+            if self.session_groups.len() == MAX_SESSION_AUDIO_GROUPS {
+                self.pending_session_command = Some(command);
+                return;
+            }
+            if let SessionAudioCommand::Append(streams) = command.as_mut() {
+                for stream in streams {
                     stream.start_frame = stream.start_frame.saturating_add(self.frame_cursor);
                 }
-                self.session_streams.extend(streams);
-                self.mute_arrangement = true;
             }
-            Some(SessionAudioCommand::Clear) => {
-                self.session_streams.clear();
-                self.mute_arrangement = false;
+            self.session_groups.push(command);
+            self.mute_arrangement = true;
+        } else {
+            if slot.retired.capacity() - slot.retired.len() < self.session_groups.len() + 1 {
+                self.pending_session_command = Some(command);
+                return;
             }
-            None => {}
+            while let Some(retired) = self.session_groups.pop() {
+                let _ = slot.retired.push(retired);
+            }
+            if slot.retired.push(command).is_err() {
+                unreachable!("espacio reservado para retirar el comando de Session")
+            }
+            self.mute_arrangement = false;
+        }
+    }
+
+    fn reclaim_finished_session_groups(&mut self, frame: u64) {
+        let Some(slot) = &self.session_slot else {
+            return;
+        };
+        let mut index = self.session_groups.len();
+        while index > 0 {
+            index -= 1;
+            let finished = match self.session_groups[index].as_ref() {
+                SessionAudioCommand::Replace(streams) | SessionAudioCommand::Append(streams) => {
+                    streams.iter().all(|stream| {
+                        stream.start_frame.saturating_add(stream.duration_frames) <= frame
+                    })
+                }
+                SessionAudioCommand::Clear => true,
+            };
+            if finished && slot.retired.len() < slot.retired.capacity() {
+                let group = self.session_groups.swap_remove(index);
+                if slot.retired.push(group).is_err() {
+                    unreachable!("el callback es el único productor de la cola de reclamación")
+                }
+            }
         }
     }
 }
@@ -290,6 +368,7 @@ impl AudioNode for AudioClipMixerNode {
         }
         let frames = interleaved.len() / 2;
         let block_start = self.frame_cursor;
+        self.reclaim_finished_session_groups(block_start);
         self.take_session_command();
         self.mix_scratch[..interleaved.len()].fill(0.0);
         let arrangement = if self.mute_arrangement {
@@ -297,7 +376,18 @@ impl AudioNode for AudioClipMixerNode {
         } else {
             self.streams.as_slice()
         };
-        for stream in arrangement.iter().chain(self.session_streams.iter()) {
+        for stream in arrangement
+            .iter()
+            .chain(
+                self.session_groups
+                    .iter()
+                    .flat_map(|group| match group.as_ref() {
+                        SessionAudioCommand::Append(streams)
+                        | SessionAudioCommand::Replace(streams) => streams.as_slice(),
+                        SessionAudioCommand::Clear => &[],
+                    }),
+            )
+        {
             let block_offset_frames = stream.start_frame.saturating_sub(block_start);
             if block_offset_frames >= frames as u64 {
                 continue;
@@ -381,6 +471,11 @@ fn track_audio_input(track: &Track) -> Option<(&str, &[u16])> {
     }
 }
 
+fn compile_input_channel_indices(track: &Track) -> Option<Vec<u16>> {
+    track_audio_input(track)
+        .map(|(_, channels)| channels.iter().map(|channel| (*channel).min(1)).collect())
+}
+
 struct ProjectRoutingNode {
     tracks: Vec<RoutedTrackSignal>,
     order: Vec<usize>,
@@ -411,11 +506,7 @@ impl ProjectRoutingNode {
             if track.role != TrackRole::Master {
                 let slot = session_audio_slots
                     .entry(track.id.clone())
-                    .or_insert_with(|| {
-                        Arc::new(SessionAudioSlot {
-                            command: Mutex::new(None),
-                        })
-                    })
+                    .or_insert_with(|| Arc::new(SessionAudioSlot::new()))
                     .clone();
                 sources.push(Box::new(AudioClipMixerNode::new(
                     streams,
@@ -434,7 +525,7 @@ impl ProjectRoutingNode {
                 sources,
                 scratch: vec![0.0; max_samples],
                 input_ring: input_rings.remove(&track.id),
-                input_channels: track_audio_input(track).map(|(_, channels)| channels.to_vec()),
+                input_channels: compile_input_channel_indices(track),
                 output_index: output_indices[index],
                 gain_left,
                 gain_right,
@@ -1474,6 +1565,11 @@ impl Default for AudioRuntimeHost {
 
 impl AudioRuntimeHost {
     pub fn is_connected(&self) -> bool {
+        if let Ok(slots) = self.session_audio_slots.lock() {
+            for slot in slots.values() {
+                slot.reclaim_retired();
+            }
+        }
         self.playback
             .as_ref()
             .is_some_and(|playback| playback.connected.load(Ordering::Acquire))
@@ -1941,11 +2037,7 @@ impl AudioRuntimeHost {
                 .map_err(|_| "el audio de Session quedó bloqueado".to_owned())?;
             slots
                 .entry(track_id.to_owned())
-                .or_insert_with(|| {
-                    Arc::new(SessionAudioSlot {
-                        command: Mutex::new(None),
-                    })
-                })
+                .or_insert_with(|| Arc::new(SessionAudioSlot::new()))
                 .clone()
         };
         let command = if append {
@@ -1953,10 +2045,7 @@ impl AudioRuntimeHost {
         } else {
             SessionAudioCommand::Replace(live_streams)
         };
-        *slot
-            .command
-            .lock()
-            .map_err(|_| "el audio de Session quedó bloqueado".to_owned())? = Some(command);
+        slot.publish(command)?;
         if append {
             self.session_audio_pumps
                 .entry(track_id.to_owned())
@@ -1992,11 +2081,7 @@ impl AudioRuntimeHost {
                 .map_err(|_| "el audio de Session quedó bloqueado".to_owned())?
                 .get(track_id)
             {
-                *slot
-                    .command
-                    .lock()
-                    .map_err(|_| "el audio de Session quedó bloqueado".to_owned())? =
-                    Some(SessionAudioCommand::Clear);
+                slot.publish(SessionAudioCommand::Clear)?;
             }
             self.session_audio_pumps.remove(track_id);
         }
@@ -2079,6 +2164,9 @@ impl AudioRuntimeHost {
         recording_directory: Option<PathBuf>,
         plugin_state_root: Option<PathBuf>,
     ) -> Result<(), String> {
+        project
+            .validate_persisted_contracts()
+            .map_err(|error| format!("el proyecto no es válido para reproducir: {error}"))?;
         self.ensure_standalone_applications(project)?;
         if let Some(playback) = self
             .playback
@@ -2962,6 +3050,9 @@ fn build_project_playback_with_end(
     ),
     String,
 > {
+    project
+        .validate_persisted_contracts()
+        .map_err(|error| format!("el proyecto no es válido para compilar audio: {error}"))?;
     let channels = 2;
     let bpm = if project.transport.tempo_bpm.is_finite() {
         project.transport.tempo_bpm.clamp(20.0, 999.0)
@@ -4219,6 +4310,71 @@ mod tests {
         assert_eq!(selected_channels, channels);
     }
 
+    #[test]
+    fn compiled_input_channels_are_defensively_limited_to_stereo() {
+        let mut track = midi_track("standalone-return");
+        track.instrument = Some(InstrumentConfig::Standalone {
+            application_path: "/unused/Instrument.exe".into(),
+            wine_prefix: None,
+            midi_output: None,
+            audio_input: Some(estudio_daw_project_model::ExternalAudioPort {
+                node_key: "pipewire:instrument".into(),
+                channels: vec![2, u16::MAX],
+            }),
+        });
+        assert_eq!(compile_input_channel_indices(&track), Some(vec![1, 1]));
+    }
+
+    #[test]
+    fn session_commands_transfer_and_reclaim_outside_audio_node() {
+        let slot = Arc::new(SessionAudioSlot::new());
+        let mut node = AudioClipMixerNode::new(Vec::new(), Some(Arc::clone(&slot)), 2);
+        slot.publish(SessionAudioCommand::Replace(Vec::new()))
+            .unwrap();
+        node.take_session_command();
+        assert_eq!(node.session_groups.len(), 1);
+        assert!(node.mute_arrangement);
+
+        slot.publish(SessionAudioCommand::Clear).unwrap();
+        node.take_session_command();
+        assert!(node.session_groups.is_empty());
+        assert!(!node.mute_arrangement);
+        assert_eq!(slot.retired.len(), 2);
+
+        slot.reclaim_retired();
+        assert_eq!(slot.retired.len(), 0);
+    }
+
+    #[test]
+    fn session_command_queue_reports_full_without_waiting_or_dropping_in_callback() {
+        let slot = SessionAudioSlot::new();
+        for _ in 0..SESSION_AUDIO_COMMAND_CAPACITY {
+            slot.publish(SessionAudioCommand::Clear).unwrap();
+        }
+        assert!(slot.publish(SessionAudioCommand::Clear).is_err());
+        assert_eq!(slot.commands.len(), SESSION_AUDIO_COMMAND_CAPACITY);
+    }
+
+    #[test]
+    fn session_clear_retires_maximum_active_groups_without_releasing_on_callback() {
+        let slot = Arc::new(SessionAudioSlot::new());
+        let mut node = AudioClipMixerNode::new(Vec::new(), Some(Arc::clone(&slot)), 2);
+        for _ in 0..MAX_SESSION_AUDIO_GROUPS {
+            slot.publish(SessionAudioCommand::Append(Vec::new()))
+                .unwrap();
+            node.take_session_command();
+        }
+        assert_eq!(node.session_groups.len(), MAX_SESSION_AUDIO_GROUPS);
+
+        slot.publish(SessionAudioCommand::Clear).unwrap();
+        node.take_session_command();
+
+        assert!(node.session_groups.is_empty());
+        assert_eq!(slot.retired.len(), SESSION_AUDIO_RETIRED_CAPACITY);
+        slot.reclaim_retired();
+        assert_eq!(slot.retired.len(), 0);
+    }
+
     fn project_with_two_clips() -> Project {
         let source = MidiSource { client: 1, port: 0 };
         let take = MidiTake {
@@ -4315,6 +4471,64 @@ mod tests {
         assert_eq!(schedule[2].at, Duration::from_millis(500));
         assert_eq!(schedule[3].at, Duration::from_secs(1));
         assert_ne!(schedule[1].sender, schedule[2].sender);
+    }
+
+    #[test]
+    fn playback_plan_rejects_invalid_input_channel_before_activation() {
+        let mut project = project_with_two_clips();
+        project.tracks[0].instrument = Some(InstrumentConfig::Standalone {
+            application_path: "/unused/Instrument.exe".into(),
+            wine_prefix: None,
+            midi_output: None,
+            audio_input: Some(estudio_daw_project_model::ExternalAudioPort {
+                node_key: "pipewire:instrument".into(),
+                channels: vec![2],
+            }),
+        });
+        let error = match build_project_playback(
+            &project,
+            48_000,
+            512,
+            1024,
+            Arc::new(AtomicBool::new(false)),
+            Arc::new(AtomicU64::new(0)),
+            0,
+        ) {
+            Ok(_) => panic!("el plan aceptó un canal de entrada inválido"),
+            Err(error) => error,
+        };
+        assert!(error.contains("el proyecto no es válido para compilar audio"));
+    }
+
+    #[test]
+    fn invalid_project_play_error_does_not_publish_connected_audio_state() {
+        let mut project = project_with_two_clips();
+        project.tracks[0].instrument = Some(InstrumentConfig::Standalone {
+            application_path: "/must/not/be/launched.exe".into(),
+            wine_prefix: None,
+            midi_output: None,
+            audio_input: Some(estudio_daw_project_model::ExternalAudioPort {
+                node_key: "pipewire:instrument".into(),
+                channels: vec![2],
+            }),
+        });
+        let mut audio = AudioRuntimeHost::default();
+        let error = audio
+            .play(
+                &project,
+                AudioProfileSettings {
+                    device_period_frames: 256,
+                    playback_safety_frames: 512,
+                },
+                0,
+                "pipewire:default",
+                None,
+                None,
+            )
+            .unwrap_err();
+
+        assert!(error.contains("no es válido para reproducir"));
+        assert!(!audio.is_connected());
     }
 
     #[test]

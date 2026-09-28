@@ -115,6 +115,32 @@ fn err<E: std::fmt::Display>(prefix: &str, e: E) -> HostResponse {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn poisoned_plugin_lock_can_unload_and_later_commands_return_protocol_errors() {
+        let plugin: SharedPlugin = Arc::new(Mutex::new(None));
+        let poison_target = Arc::clone(&plugin);
+        let _ = std::thread::spawn(move || {
+            let _guard = poison_target.lock().unwrap();
+            panic!("poison plugin lock for recovery test");
+        })
+        .join();
+
+        let mut sample_rate = 48_000.0;
+        assert!(matches!(
+            handle(HostCommand::UnloadPlugin, &plugin, &mut sample_rate, None),
+            HostResponse::Success { .. }
+        ));
+        assert!(matches!(
+            handle(HostCommand::StartProcessing, &plugin, &mut sample_rate, None),
+            HostResponse::Error { message } if message.contains("poisoned")
+        ));
+    }
+}
+
 /// A GUI request the worker forwards to the main thread (which owns the window).
 #[cfg(any(target_os = "macos", target_os = "linux"))]
 struct GuiRequest {
@@ -178,7 +204,9 @@ fn handle(
                     let info = p.info().clone();
                     let compatibility = p.class_compatibility().to_vec();
                     let output_channels = p.output_channel_count() as i32;
-                    *plugin.lock().unwrap() = Some(p);
+                    *plugin
+                        .lock()
+                        .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(p);
                     HostResponse::PluginInfo {
                         vendor: info.vendor,
                         name: info.name,
@@ -198,7 +226,9 @@ fn handle(
             }
         }
         HostCommand::UnloadPlugin => {
-            *plugin.lock().unwrap() = None;
+            *plugin
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner()) = None;
             HostResponse::Success {
                 message: "Plugin unloaded".to_string(),
             }

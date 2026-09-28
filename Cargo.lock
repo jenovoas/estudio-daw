@@ -1320,6 +1320,7 @@ name = "estudio-daw-ui-shell"
 version = "0.1.0"
 dependencies = [
  "base64 0.22.1",
+ "crossbeam-queue",
  "estudio-daw-application",
  "estudio-daw-audio-engine",
  "estudio-daw-audio-platform",
@@ -1330,6 +1331,7 @@ dependencies = [
  "estudio-daw-synth",
  "serde",
  "serde_json",
+ "sha2",
  "tauri",
  "tauri-build",
  "tauri-plugin-dialog",
