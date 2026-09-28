@@ -17,6 +17,10 @@
 //! `CreateGui`/`CloseGui` are forwarded from the worker to the main thread over a channel.
 //! Audio/control commands stay on the worker thread. Other platforms remain single-threaded
 //! and report GUI as unsupported.
+//!
+//! On Linux the desktop session stays Wayland (Hyprland). Wine/yabridge and VST3
+//! `X11EmbedWindowID` still draw through XWayland (`DISPLAY`), which the helper uses as
+//! the parent window for Analog Lab and other bridged editors.
 
 use std::io::{self, BufRead, Write};
 use std::sync::{Arc, Mutex};
@@ -866,6 +870,8 @@ mod macos {
 
 #[cfg(target_os = "linux")]
 mod linux {
+    //! Editor en una sesión Wayland: la ventana padre es XWayland porque el contrato
+    //! VST3 Linux y yabridge/Wine exponen `X11EmbedWindowID`, no un `wl_surface`.
     use super::*;
     use std::sync::mpsc;
     use std::thread;
@@ -946,14 +952,29 @@ mod linux {
         close_editor(plugin, window.take());
     }
 
+    fn connect_xwayland() -> Result<(xcb::Connection, i32), String> {
+        let display = std::env::var("DISPLAY").unwrap_or_default();
+        if display.trim().is_empty() {
+            return Err(
+                "Analog Lab abre su ventana por XWayland. En Hyprland deja `xwayland:enabled` y vuelve a entrar a la sesión.".to_owned(),
+            );
+        }
+        xcb::Connection::connect(Some(display.as_str())).map_err(|error| {
+            format!(
+                "no se pudo conectar a XWayland ({display}) para la ventana del plugin: {error}"
+            )
+        })
+    }
+
     fn open_editor(plugin: &SharedPlugin) -> Result<(PluginEditorWindow, i32, i32), String> {
-        let (connection, screen_number) = xcb::Connection::connect(None)
-            .map_err(|error| format!("no se pudo conectar con X11 para el editor VST3: {error}"))?;
+        let (connection, screen_number) = connect_xwayland()?;
         let screen = connection
             .get_setup()
             .roots()
             .nth(screen_number as usize)
-            .ok_or_else(|| "X11 no informó una pantalla para el editor VST3".to_string())?;
+            .ok_or_else(|| {
+                "XWayland no informó una pantalla para la ventana del plugin".to_string()
+            })?;
         let window = connection.generate_id();
         let (title, width, height) = {
             let mut guard = plugin

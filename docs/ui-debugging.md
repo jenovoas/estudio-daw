@@ -24,6 +24,12 @@ de esa pista puede interrumpirse unos segundos mientras el plugin crea su
 ventana. Cerrar la ventana del plugin o pulsar OCULTAR usa `CloseGui`. Esto no
 sustituye una prueba de Analog Lab en la ventana Tauri.
 
+La aplicación Tauri corre en la sesión Wayland (Hyprland). Analog Lab y los VST
+de Wine/yabridge dibujan su editor por XWayland (`DISPLAY`, hoy `:0` con
+`xwayland:enabled`). El helper se conecta a ese puente; el contrato VST3 Linux
+sigue siendo `X11EmbedWindowID`. Si `DISPLAY` está vacío, el aviso pide activar
+XWayland en Hyprland.
+
 La salida de esa terminal contiene errores Rust, fallos de inicialización de
 PipeWire y mensajes del proceso Tauri. Los errores de interfaz web/IPC se muestran
 en la consola de desarrollo del visor web y en el aviso inferior de la ventana.
