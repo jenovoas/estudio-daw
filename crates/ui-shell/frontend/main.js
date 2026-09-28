@@ -1385,13 +1385,34 @@ function renderClipInspector(snapshot) {
     pianoRoll.className = "piano-roll";
     const heading = document.createElement("strong");
     heading.className = "piano-roll-heading";
-    heading.textContent = "Piano roll · clic en la rejilla para insertar una corchea";
+    heading.textContent = "Piano roll · clic inserta una corchea · arrastra para mover o ajustar duración";
     pianoRoll.append(heading);
     const grid = document.createElement("div");
     grid.className = "piano-roll-grid";
     const stepsPerBar = Math.max(1, Math.round((snapshot.beatsPerBar || 4) * 2));
     const steps = Math.min(256, Math.max(16, Math.ceil(midiClip.durationTicks / Math.max(1, midiClip.ppq / 2) / 16) * 16));
     grid.style.setProperty("--steps", String(steps));
+    const saveNoteEdit = async (note, changes) => runCommand("Nota MIDI actualizada", async () => {
+      const startTick = changes.startTick ?? note.startTick;
+      const durationTicks = changes.durationTicks ?? (note.endTick - note.startTick);
+      const key = changes.key ?? note.key;
+      const velocity = changes.velocity ?? note.velocity;
+      const updated = await platform.updateMidiNote({
+        clipId: midiClip.id,
+        noteOnIndex: note.noteOnIndex,
+        noteOffIndex: note.noteOffIndex,
+        expectedStartTick: note.startTick,
+        expectedEndTick: note.endTick,
+        expectedKey: note.key,
+        expectedChannel: note.channel,
+        startTick, durationTicks, key, velocity,
+      });
+      const updatedClip = updated.midiClips.find((clipItem) => clipItem.id === midiClip.id);
+      const matches = updatedClip?.notes.filter((item) => item.startTick === startTick && item.endTick === startTick + durationTicks && item.key === key && item.velocity === velocity) ?? [];
+      const updatedNote = matches.sort((a, b) => Math.abs(a.noteOnIndex - note.noteOnIndex) - Math.abs(b.noteOnIndex - note.noteOnIndex))[0];
+      selectedMidiNote = updatedNote ? { clipId: midiClip.id, ...updatedNote } : null;
+      return updated;
+    });
     for (let key = 83; key >= 48; key--) {
       const lane = document.createElement("div");
       lane.className = `piano-roll-row${key % 12 === 0 ? " octave" : ""}`;
@@ -1428,8 +1449,47 @@ function renderClipInspector(snapshot) {
       block.style.left = `calc(34px + ${Math.max(0, note.startBeats * 2 / steps) * 100}%)`;
       block.style.width = `max(8px, ${Math.max(0.008, note.durationBeats * 2 / steps) * 100}%)`;
       block.title = `Nota ${note.key}, velocidad ${note.velocity}`;
+      const resizeHandle = document.createElement("span");
+      resizeHandle.className = "piano-roll-resize-handle";
+      block.append(resizeHandle);
+      let suppressNoteClick = false;
+      const beginNoteDrag = (event, mode) => {
+        if (event.button !== 0) return;
+        event.stopPropagation();
+        const startX = event.clientX;
+        const startY = event.clientY;
+        const cellsBounds = cells.getBoundingClientRect();
+        const tickPerStep = Math.max(1, Math.round(midiClip.ppq / 2));
+        const pixelPerStep = Math.max(1, cellsBounds.width / steps);
+        let moved = false;
+        const move = (moveEvent) => {
+          if (Math.abs(moveEvent.clientX - startX) > 3 || Math.abs(moveEvent.clientY - startY) > 3) moved = true;
+        };
+        const up = (upEvent) => {
+          document.removeEventListener("pointermove", move);
+          document.removeEventListener("pointerup", up);
+          const horizontalSteps = Math.round((upEvent.clientX - startX) / pixelPerStep);
+          const semitones = Math.round((startY - upEvent.clientY) / 14);
+          if (!moved) return;
+          suppressNoteClick = true;
+          const noteLength = note.endTick - note.startTick;
+          if (mode === "resize") {
+            void saveNoteEdit(note, { durationTicks: Math.max(tickPerStep, noteLength + horizontalSteps * tickPerStep) });
+          } else {
+            void saveNoteEdit(note, {
+              startTick: Math.max(0, note.startTick + horizontalSteps * tickPerStep),
+              key: Math.max(0, Math.min(127, note.key + semitones)),
+            });
+          }
+        };
+        document.addEventListener("pointermove", move);
+        document.addEventListener("pointerup", up);
+      };
+      block.addEventListener("pointerdown", (event) => beginNoteDrag(event, "move"));
+      resizeHandle.addEventListener("pointerdown", (event) => beginNoteDrag(event, "resize"));
       block.addEventListener("click", (event) => {
         event.stopPropagation();
+        if (suppressNoteClick) { suppressNoteClick = false; return; }
         selectedMidiNote = { clipId: midiClip.id, ...note };
         renderClipInspector(lastSnapshot);
       });

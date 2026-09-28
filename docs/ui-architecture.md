@@ -164,10 +164,12 @@ un nuevo ataque en notas sostenidas, y SysEx previo no se copia. Los cambios
 usan el historial y el plan activo se actualiza si el motor está conectado. El
 inspector abre un piano roll acotado de 36 teclas y permite insertar corcheas
 con clic, seleccionar notas y editar tono, posición, duración y velocidad o
-borrarlas. Las operaciones conservan los demás eventos y son reversibles; el
-plan activo se actualiza. Los comandos verifican que los índices/eventos de la
-nota seleccionada sigan vigentes. El arrastre para mover/redimensionar y la
-edición de expresión no están implementados; las notas nuevas usan canal 1.
+borrarlas. También se puede arrastrar una nota para moverla/cambiar su tono y
+arrastrar su borde para ajustar duración a la rejilla de corcheas. Las
+operaciones conservan los demás eventos y son reversibles; el plan activo se
+actualiza. Los comandos verifican que los índices/eventos de la nota
+seleccionada sigan vigentes. La expresión MIDI no está implementada; las notas
+nuevas usan canal 1.
 
 El navegador también enumera las regiones de audio importadas del proyecto y
 permite filtrarlas por nombre, fuente, pista y disposición de canales. Cada
