@@ -185,7 +185,7 @@ Opciones comerciales Linux a considerar sin hacerlas dependencias obligatorias:
 - Pianoteq;
 - Bitwig como referencia de arquitectura y flujo Linux.
 
-La compatibilidad de cada plugin dependerá de su formato, arquitectura, licencia, sistema de activación y soporte Linux.
+Ya existe un primer flujo VST3 experimental en la pista MIDI: selecciona un bundle, lo inspecciona en un proceso auxiliar y procesa MIDI/audio mediante helper aislado, worker y ring PCM antes de la mezcla de pista. Analog Lab V 5.12.5.6878 detrás de yabridge 5.1.1 produjo señal en la prueba local de motor. Aún no están listos sus controles gráficos nativos, el guardado/restauración de estado ni la verificación auditiva/latencia desde Tauri; la aplicación independiente conserva su flujo separado. Al desarrollar, compilar los helpers con `cargo build -p vst3-host --bins` antes de lanzar Tauri. La cobertura de cada plugin seguirá dependiendo de su formato, arquitectura, licencia, sistema de activación y bridge disponible.
 
 ### Escalas, tonalidad y armonía
 
@@ -773,6 +773,7 @@ registran Ableton Live 12 como referencia de UX prioritaria y Ardour sólo como
 consulta técnica secundaria para el flujo de audio.
 
 ```bash
+cargo build -p vst3-host --bins
 cargo run -p estudio-daw-ui-shell
 ```
 

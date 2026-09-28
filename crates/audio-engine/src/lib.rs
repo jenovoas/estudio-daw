@@ -150,6 +150,8 @@ impl AudioBlock {
 pub enum AudioNodeError {
     #[error("el bloque de audio tiene una longitud inválida")]
     InvalidBlockLength,
+    #[error("falló un worker externo de audio")]
+    WorkerFailed,
     #[error("fallo DSP: {0}")]
     Dsp(#[from] DspError),
 }

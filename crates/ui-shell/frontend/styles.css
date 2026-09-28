@@ -292,6 +292,13 @@ button:disabled { opacity: .4; cursor: not-allowed !important; }
 .mixer-slider input { width: 100%; height: 12px; margin: 0; accent-color: #d89b63; }
 .mixer-output-select { display: flex; flex-direction: column; gap: 3px; color: #aeb4b6; font-size: 8px; }
 .mixer-output-select select { width: 100%; min-width: 0; border: 1px solid #50575a; border-radius: 3px; padding: 3px 4px; background: #25292b; color: #d4d8da; font-size: 8px; }
+.track-instrument-control { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 5px; min-width: 0; color: #c8cecf; font-size: 9px; }
+.track-instrument-control summary { grid-column: 1 / -1; cursor: pointer; color: #f0a05b; font-weight: 700; }
+.track-instrument-control input, .track-instrument-control select { min-width: 0; width: 100%; border: 1px solid #50575a; border-radius: 3px; padding: 4px 5px; background: #25292b; color: #d4d8da; font-size: 9px; }
+.track-instrument-control button { border: 1px solid #596164; border-radius: 3px; padding: 4px 6px; background: #353a3d; color: #e0e3e4; font-size: 9px; cursor: pointer; }
+.track-instrument-control button:disabled { opacity: .45; cursor: default; }
+.track-instrument-control small { grid-column: 1 / -1; color: #9ca4a7; line-height: 1.4; }
+.track-instrument-control[open] { padding: 6px; border: 1px solid #474e50; border-left: 2px solid #e88a43; border-radius: 3px; background: #24282a; }
 .mixer-controls-compact { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 3px; }
 .mixer-controls-compact .mixer-toggle { grid-column: auto; min-height: 19px; padding: 1px 2px; font-size: 8px; }
 .mixer-controls-compact .mixer-slider { display: none; }

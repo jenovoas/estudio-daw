@@ -21,6 +21,26 @@ window.estudioPlatform = {
     });
     return typeof path === "string" ? path : null;
   },
+  async selectStandaloneInstrument() {
+    const path = await open({
+      multiple: false,
+      directory: false,
+      title: "Elegir instrumento standalone de Wine",
+      filters: [{ name: "Instrumento Windows", extensions: ["exe"] }],
+    });
+    return typeof path === "string" ? path : null;
+  },
+  async selectVst3Plugin() {
+    const path = await open({
+      multiple: false,
+      directory: true,
+      title: "Elegir bundle de instrumento VST3 (.vst3)",
+    });
+    return typeof path === "string" ? path : null;
+  },
+  inspectVst3Plugin: (path) => invoke("inspect_vst3_plugin", { path }),
+  openStandaloneInstrument: ({ trackId, applicationPath, winePrefix }) => invoke("open_standalone_instrument", { trackId, applicationPath, winePrefix }),
+  setTrackInstrument: (trackId, instrument) => invoke("set_track_instrument", { trackId, instrument }),
   importAudio({ path, trackId, copyIntoProject, startTick, sourceChannelSelection }) {
     return invoke("import_audio", { path, trackId, copyIntoProject, startTick, sourceChannelSelection });
   },
@@ -78,5 +98,7 @@ window.estudioPlatform = {
   audioRuntimeSettings: () => invoke("audio_runtime_settings"),
   audioOutputDevices: () => invoke("audio_output_devices"),
   audioInputDevices: () => invoke("audio_input_devices"),
+  audioReturnDevices: () => invoke("audio_return_devices"),
+  midiOutputDevices: () => invoke("midi_output_devices"),
   saveAudioSettings: (settings) => invoke("save_audio_settings", { settings }),
 };

@@ -93,6 +93,8 @@ let hasProject = false;
 let lastSnapshot = null;
 let audioSettings = null;
 let audioInputDevices = [];
+let audioReturnDevices = [];
+let midiOutputDevices = [];
 let audioRecording = false;
 let projectTransportState = "stopped";
 let transportPositionTick = 0;
@@ -365,6 +367,7 @@ async function loadAudioSettings() {
       platform.audioRuntimeSettings(),
     ]);
     audioInputDevices = inputs;
+    await refreshInstrumentPorts();
     audioSettings = view.settings;
     elements.audioProfile.value = audioSettings.activeProfile;
     const options = [new Option("Automática (AudioBox si está disponible)", "pipewire:default")];
@@ -553,6 +556,11 @@ function trackSignalFlow(track, tracks) {
     }
     return `${sources.join(" + ")} → ganancia/pan → medidor → ${destination}`;
   }
+  if (track.instrument?.backend === "standalone") {
+    const midi = track.instrument.midi_output ? "MIDI → Analog Lab" : "MIDI sin destino";
+    const audio = track.instrument.audio_input ? "retorno → pista" : "retorno sin asignar";
+    return `${midi} · ${audio} → ganancia/pan → medidor → ${destination}`;
+  }
   return `Eventos MIDI → instrumento → ganancia/pan → medidor → ${destination}`;
 }
 
@@ -637,6 +645,185 @@ function createTrackInputControl(track) {
   ));
   field.append(caption, select, channelField, arm);
   return field;
+}
+
+function createTrackInstrumentControl(track) {
+  if (track.virtualMaster || track.kind !== "midi") return null;
+  const currentVst3 = track.instrument?.backend === "vst3" ? track.instrument : null;
+  const chooseVst3 = async () => {
+    const path = await platform.selectVst3Plugin();
+    if (!path) return;
+    try {
+      const report = await platform.inspectVst3Plugin(path);
+      const info = report.info;
+      if (!info.has_midi_input || info.audio_outputs < 1) {
+        setNotice("El plugin no es un instrumento MIDI", `${info.name} debe recibir MIDI y ofrecer audio para asignarse a una pista.`);
+        return;
+      }
+      const snapshot = await platform.setTrackInstrument(track.id, {
+        backend: "vst3",
+        plugin: {
+          format: "vst3",
+          path,
+          uniqueId: info.uid,
+          bridge: path.toLowerCase().includes("/yabridge/") ? "yabridge" : null,
+        },
+        state: null,
+      });
+      setNotice("Instrumento asignado", `${info.name} · ${info.vendor} · MIDI y audio listos para revisar.`);
+      renderSnapshot(snapshot);
+    } catch (error) {
+      setNotice("No se pudo leer el VST3", String(error));
+    }
+  };
+  if (currentVst3) {
+    const panel = document.createElement("details");
+    panel.className = "track-instrument-control";
+    const summary = document.createElement("summary");
+    summary.textContent = "Instrumento VST3";
+    const pluginPath = document.createElement("input");
+    pluginPath.type = "text";
+    pluginPath.readOnly = true;
+    pluginPath.value = currentVst3.plugin?.path ?? "";
+    pluginPath.setAttribute("aria-label", `Plugin VST3 de ${track.name}`);
+    const choose = document.createElement("button");
+    choose.type = "button";
+    choose.textContent = "Cambiar instrumento VST3";
+    choose.disabled = projectTransportState !== "stopped";
+    choose.addEventListener("click", chooseVst3);
+    const help = document.createElement("small");
+    help.textContent = "El plugin se procesa en un helper aislado; sus controles nativos y el guardado de presets aún están pendientes.";
+    panel.append(summary, pluginPath, choose, help);
+    return panel;
+  }
+  const current = track.instrument?.backend === "standalone" ? track.instrument : null;
+  const panel = document.createElement("details");
+  panel.className = "track-instrument-control";
+  const summary = document.createElement("summary");
+  summary.textContent = current ? "Instrumento externo · Analog Lab" : "Elegir instrumento";
+  panel.append(summary);
+  const chooseVst3Button = document.createElement("button");
+  chooseVst3Button.type = "button";
+  chooseVst3Button.textContent = "Elegir instrumento VST3";
+  chooseVst3Button.disabled = projectTransportState !== "stopped";
+  chooseVst3Button.addEventListener("click", chooseVst3);
+  panel.append(chooseVst3Button);
+
+  const application = document.createElement("input");
+  application.type = "text";
+  application.readOnly = true;
+  application.placeholder = "Elige el ejecutable de Analog Lab (.exe)";
+  application.value = current?.application_path ?? "";
+  application.setAttribute("aria-label", `Aplicación de instrumento para ${track.name}`);
+  const choose = document.createElement("button");
+  choose.type = "button";
+  choose.textContent = "Elegir Analog Lab";
+  choose.disabled = projectTransportState !== "stopped";
+  choose.addEventListener("click", async () => {
+    const path = await platform.selectStandaloneInstrument();
+    if (path) {
+      application.value = path;
+      updateSaveAvailability();
+    }
+  });
+
+  const prefix = document.createElement("input");
+  prefix.type = "text";
+  prefix.placeholder = "Prefijo Wine (vacío = predeterminado)";
+  prefix.value = current?.wine_prefix ?? "";
+  prefix.setAttribute("aria-label", `Prefijo Wine de ${track.name}`);
+  const open = document.createElement("button");
+  open.type = "button";
+  open.textContent = "Abrir y buscar puertos";
+  open.disabled = projectTransportState !== "stopped";
+  open.addEventListener("click", async () => {
+    if (!application.value) return;
+    try {
+      await platform.openStandaloneInstrument({
+        trackId: track.id,
+        applicationPath: application.value,
+        winePrefix: prefix.value.trim() || null,
+      });
+      setNotice("Analog Lab abierto", "Buscando sus puertos MIDI y de audio en PipeWire…");
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+      await refreshInstrumentPorts();
+      renderSnapshot(lastSnapshot);
+    } catch (error) {
+      setNotice("No se pudo abrir Analog Lab", String(error));
+    }
+  });
+
+  const midi = document.createElement("select");
+  midi.setAttribute("aria-label", `Entrada MIDI de Analog Lab para ${track.name}`);
+  midi.append(new Option("Entrada MIDI de Analog Lab", ""));
+  for (const port of midiOutputDevices) midi.append(new Option(port.label, port.key));
+  if (current?.midi_output?.portName && !midiOutputDevices.some((port) => port.key === current.midi_output.portName)) {
+    midi.append(new Option(`No disponible · ${current.midi_output.portName}`, current.midi_output.portName));
+  }
+  midi.value = current?.midi_output?.portName ?? "";
+
+  const audio = document.createElement("select");
+  audio.setAttribute("aria-label", `Retorno de audio de Analog Lab para ${track.name}`);
+  audio.append(new Option("Retorno de audio a la pista", ""));
+  for (const device of audioReturnDevices) {
+    audio.append(new Option(device.description ? `${device.description} · ${device.name}` : device.name, device.key));
+  }
+  if (current?.audio_input?.nodeKey && !audioReturnDevices.some((device) => device.key === current.audio_input.nodeKey)) {
+    audio.append(new Option(`No disponible · ${current.audio_input.nodeKey}`, current.audio_input.nodeKey));
+  }
+  audio.value = current?.audio_input?.nodeKey ?? "";
+
+  const save = document.createElement("button");
+  save.type = "button";
+  save.textContent = "Usar en esta pista";
+  const updateSaveAvailability = () => {
+    save.disabled = projectTransportState !== "stopped" || !application.value || !midi.value || !audio.value;
+  };
+  midi.addEventListener("change", updateSaveAvailability);
+  audio.addEventListener("change", updateSaveAvailability);
+  updateSaveAvailability();
+  save.addEventListener("click", () => {
+    if (!application.value || !midi.value || !audio.value) {
+      setNotice("Falta completar el ruteo", "Elige Analog Lab, su entrada MIDI y su retorno de audio a esta pista.");
+      return;
+    }
+    const midiOutput = midi.value
+      ? { deviceKey: midi.value, portName: midi.value, channel: null }
+      : null;
+    const audioInput = audio.value
+      ? { nodeKey: audio.value, channels: [0, 1] }
+      : null;
+    const instrument = {
+      backend: "standalone",
+      application_path: application.value,
+      wine_prefix: prefix.value.trim() || null,
+      midi_output: midiOutput,
+      audio_input: audioInput,
+    };
+    void runCommand("Analog Lab asignado a la pista", () => platform.setTrackInstrument(track.id, instrument));
+  });
+
+  const help = document.createElement("small");
+  const missingRoutes = [
+    !current?.midi_output && "entrada MIDI",
+    !current?.audio_input && "retorno de audio",
+  ].filter(Boolean);
+  help.textContent = current
+    ? (missingRoutes.length
+      ? `Falta elegir ${missingRoutes.join(" y ")}.`
+      : "Se abrirá al reproducir. MIDI sale por el puerto elegido; el retorno pasa por esta pista y el mezclador.")
+    : "Abre la app para descubrir sus puertos. El retorno se suma a esta pista y no usa el monitor general.";
+  panel.append(application, choose, prefix, open, midi, audio, save, help);
+  return panel;
+}
+
+async function refreshInstrumentPorts() {
+  const [midi, audio] = await Promise.all([
+    platform.midiOutputDevices().catch(() => []),
+    platform.audioReturnDevices().catch(() => []),
+  ]);
+  midiOutputDevices = midi;
+  audioReturnDevices = audio;
 }
 
 function createTrackMixerControls(track, compact = false) {
@@ -1123,6 +1310,8 @@ function renderMixerSurface(tracks) {
     if (orderControls) channelHeading.append(orderControls);
     if (removeButton) channelHeading.append(removeButton);
     channel.append(channelHeading, role, routing, mix);
+    const instrumentControl = createTrackInstrumentControl(track);
+    if (instrumentControl) channel.append(instrumentControl);
     if (inputControl) channel.append(inputControl);
     if (outputControl) channel.append(outputControl);
     const meter = createTrackMeter(track);
@@ -1298,6 +1487,8 @@ function renderSnapshot(snapshot) {
     if (orderControls) headingRow.append(orderControls);
     if (removeButton) headingRow.append(removeButton);
     row.append(headingRow, details);
+    const instrumentControl = createTrackInstrumentControl(track);
+    if (instrumentControl) row.append(instrumentControl);
     const meter = createTrackMeter(track);
     if (meter) row.append(meter);
     const mixerControls = createTrackMixerControls(track, true);

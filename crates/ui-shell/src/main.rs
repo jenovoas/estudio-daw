@@ -43,6 +43,7 @@ struct TrackSummary {
     kind: &'static str,
     role: &'static str,
     note_count: usize,
+    instrument: Option<InstrumentConfig>,
     color: String,
     marker: String,
     annotation: String,
@@ -72,6 +73,13 @@ struct AudioOutputDeviceSummary {
     key: String,
     name: String,
     description: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct MidiOutputDeviceSummary {
+    key: String,
+    label: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -278,6 +286,7 @@ fn summarize(application: &ProjectApplication, audio_engine_connected: bool) -> 
                     .flat_map(|clip| &clip.take.events)
                     .filter(|event| matches!(&event.message, RecordedMidiMessage::NoteOn { velocity, .. } if *velocity > 0))
                     .count(),
+            instrument: track.instrument.clone(),
             color: track.color.clone(),
             marker: track.marker.clone(),
             annotation: track.annotation.clone(),
@@ -1839,6 +1848,81 @@ fn set_track_identity(
 }
 
 #[tauri::command]
+fn set_track_instrument(
+    track_id: String,
+    instrument: Option<InstrumentConfig>,
+    state: State<'_, DesktopState>,
+) -> Result<UiSnapshot, String> {
+    let mut application = state
+        .application
+        .lock()
+        .map_err(|_| "el estado de la aplicación quedó bloqueado".to_owned())?;
+    let application = application
+        .as_mut()
+        .ok_or_else(|| "primero abre un proyecto".to_owned())?;
+    if state
+        .audio
+        .lock()
+        .map_err(|_| "el estado del motor de audio quedó bloqueado".to_owned())?
+        .is_connected()
+    {
+        return Err("detén el transporte antes de cambiar el instrumento de pista".into());
+    }
+    application
+        .execute_project(ProjectCommand::SetTrackInstrument {
+            track_id,
+            instrument,
+        })
+        .map_err(|error| error.to_string())?;
+    Ok(summarize(application, false))
+}
+
+#[tauri::command]
+fn inspect_vst3_plugin(path: String) -> Result<vst3_host::discovery::DetailedPluginInfo, String> {
+    if !path.to_ascii_lowercase().ends_with(".vst3") {
+        return Err("selecciona un bundle VST3 (.vst3)".into());
+    }
+    vst3_host::probe_plugin_info_isolated(
+        std::path::Path::new(&path),
+        std::time::Duration::from_secs(30),
+    )
+    .map_err(|error| format!("no se pudo leer el plugin VST3: {error}"))
+}
+
+#[tauri::command]
+fn open_standalone_instrument(
+    track_id: String,
+    application_path: String,
+    wine_prefix: Option<String>,
+    state: State<'_, DesktopState>,
+) -> Result<(), String> {
+    let application = state
+        .application
+        .lock()
+        .map_err(|_| "el estado de la aplicación quedó bloqueado".to_owned())?;
+    let project = application
+        .as_ref()
+        .ok_or_else(|| "primero abre un proyecto".to_owned())?
+        .snapshot()
+        .project
+        .project;
+    let track = project
+        .tracks
+        .iter()
+        .find(|track| track.id == track_id)
+        .ok_or_else(|| "la pista seleccionada ya no existe".to_owned())?;
+    if !matches!(&track.kind, TrackKind::Midi) {
+        return Err("Analog Lab standalone requiere una pista MIDI".into());
+    }
+    drop(application);
+    state
+        .audio
+        .lock()
+        .map_err(|_| "el estado del motor de audio quedó bloqueado".to_owned())?
+        .open_standalone_application(&track_id, &application_path, wine_prefix.as_deref())
+}
+
+#[tauri::command]
 fn set_track_output(
     track_id: String,
     output_track_id: Option<String>,
@@ -2034,6 +2118,76 @@ fn audio_input_devices() -> Result<Vec<AudioOutputDeviceSummary>, String> {
 }
 
 #[tauri::command]
+fn audio_return_devices() -> Result<Vec<AudioOutputDeviceSummary>, String> {
+    audio_devices()
+        .map_err(|error| format!("no se pudieron consultar los retornos de audio: {error}"))
+        .map(|devices| {
+            devices
+                .into_iter()
+                .filter(|device| {
+                    let class = device.media_class.to_ascii_lowercase();
+                    class.contains("stream/output/audio")
+                        && !class.contains("monitor")
+                        && !device.name.to_ascii_lowercase().contains(".monitor")
+                })
+                .map(|device| AudioOutputDeviceSummary {
+                    key: format!("pipewire:{}", device.name),
+                    name: device.name,
+                    description: device.description,
+                })
+                .collect()
+        })
+}
+
+#[tauri::command]
+fn midi_output_devices() -> Result<Vec<MidiOutputDeviceSummary>, String> {
+    let output = std::process::Command::new("pw-link")
+        .args(["-i", "-v"])
+        .output()
+        .map_err(|error| {
+            format!("no se pudieron consultar los puertos MIDI de PipeWire: {error}")
+        })?;
+    if !output.status.success() {
+        return Err(String::from_utf8_lossy(&output.stderr).trim().to_owned());
+    }
+    Ok(parse_pipewire_midi_inputs(&String::from_utf8_lossy(
+        &output.stdout,
+    )))
+}
+
+fn parse_pipewire_midi_inputs(output: &str) -> Vec<MidiOutputDeviceSummary> {
+    let mut ports = Vec::new();
+    let (mut current_port, mut is_midi) = (None::<String>, false);
+    let flush = |port: Option<String>, is_midi: bool, ports: &mut Vec<MidiOutputDeviceSummary>| {
+        if is_midi {
+            if let Some(port) = port {
+                ports.push(MidiOutputDeviceSummary {
+                    key: port.clone(),
+                    label: port,
+                });
+            }
+        }
+    };
+    for line in output.lines() {
+        if !line.chars().next().is_some_and(char::is_whitespace) {
+            flush(current_port.take(), is_midi, &mut ports);
+            current_port = Some(line.trim().to_owned());
+            let port = line.to_ascii_lowercase();
+            is_midi =
+                port.contains("midi") || port.contains("events-in") || port.contains("event-in");
+        } else {
+            let metadata = line.to_ascii_lowercase();
+            is_midi |= metadata.contains("alsa:seq")
+                || metadata.contains("midi")
+                || metadata.contains("events-in")
+                || metadata.contains("event-in");
+        }
+    }
+    flush(current_port, is_midi, &mut ports);
+    ports
+}
+
+#[tauri::command]
 fn save_audio_settings(
     settings: AudioRuntimeSettings,
     state: State<'_, DesktopState>,
@@ -2090,6 +2244,9 @@ fn main() {
             set_transport,
             set_track_mixer,
             set_track_identity,
+            set_track_instrument,
+            inspect_vst3_plugin,
+            open_standalone_instrument,
             set_track_output,
             set_track_input_route,
             set_track_record_arm,
@@ -2098,6 +2255,8 @@ fn main() {
             audio_runtime_settings,
             audio_output_devices,
             audio_input_devices,
+            audio_return_devices,
+            midi_output_devices,
             save_audio_settings
         ])
         .run(tauri::generate_context!())
@@ -2206,6 +2365,43 @@ mod tests {
         assert!(value.get("samples").is_none());
         assert!(value.get("pcm").is_none());
         assert!(value.get("gpu_buffers").is_none());
+    }
+
+    #[test]
+    fn ui_track_snapshot_exposes_standalone_instrument_assignment() {
+        let mut project = new_project_model();
+        project.tracks[0].instrument = Some(InstrumentConfig::Standalone {
+            application_path: "/wine/Analog Lab V.exe".into(),
+            wine_prefix: Some("/wine-prefix".into()),
+            midi_output: Some(estudio_daw_project_model::ExternalMidiPort {
+                device_key: "AnalogLab:events-in".into(),
+                port_name: "AnalogLab:events-in".into(),
+                channel: None,
+            }),
+            audio_input: None,
+        });
+        let application = ProjectApplication::new(project);
+        let snapshot = serde_json::to_value(summarize(&application, false)).unwrap();
+        assert_eq!(snapshot["tracks"][0]["instrument"]["backend"], "standalone");
+        assert_eq!(
+            snapshot["tracks"][0]["instrument"]["application_path"],
+            "/wine/Analog Lab V.exe"
+        );
+    }
+
+    #[test]
+    fn pipewire_midi_port_discovery_skips_audio_and_keeps_jack_midi_inputs() {
+        let ports = parse_pipewire_midi_inputs(
+            "alsa_output:playback_FL\n  alsa:acp:device:playback_0\nAnalogLab:events-in\n  jack:AnalogLab:events-in\nMidi-Bridge:Arturia KeyLab: MID (playback)\n  alsa:seq:default:client_28:playback_0\n",
+        );
+        let labels: Vec<_> = ports.iter().map(|port| port.label.as_str()).collect();
+        assert_eq!(
+            labels,
+            [
+                "AnalogLab:events-in",
+                "Midi-Bridge:Arturia KeyLab: MID (playback)"
+            ]
+        );
     }
 
     #[test]

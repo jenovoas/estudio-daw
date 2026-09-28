@@ -8,9 +8,9 @@ use estudio_daw_midi_types::{MidiSource, MidiTake, RecordedMidiEvent, RecordedMi
 use estudio_daw_project_model::{
     add_audio_clip, add_audio_clip_for_source, append_media_source, attach_media_source,
     attach_midi_take, quantize_midi_clip, set_audio_clip_fades, set_audio_clip_gain,
-    split_midi_clip, trim_audio_clip, AudioClip, ClipReference, ClipSlot, MediaSource, Project,
-    ProjectEvent, ProjectHistory, ProjectSnapshot, ProxyAsset, Scene, Track, TrackInputRoute,
-    TrackKind, TrackMixerState, TrackRole, TransportLoopRange,
+    split_midi_clip, trim_audio_clip, AudioClip, ClipReference, ClipSlot, InstrumentConfig,
+    MediaSource, Project, ProjectEvent, ProjectHistory, ProjectSnapshot, ProxyAsset, Scene, Track,
+    TrackInputRoute, TrackKind, TrackMixerState, TrackRole, TransportLoopRange,
 };
 use estudio_daw_session::{Session, SessionCommand, TransportSnapshot, TransportState};
 use serde::{Deserialize, Serialize};
@@ -72,6 +72,10 @@ pub enum ProjectCommand {
         color: String,
         marker: String,
         annotation: String,
+    },
+    SetTrackInstrument {
+        track_id: String,
+        instrument: Option<InstrumentConfig>,
     },
     MoveTrack {
         track_id: String,
@@ -666,6 +670,30 @@ impl CommandRuntime {
                     track.marker = marker.trim().to_owned();
                     track.annotation = annotation.trim().to_owned();
                     Ok(())
+                })
+                .map_err(|error| CommandError::Project(error.to_string()))?,
+            ProjectCommand::SetTrackInstrument { track_id, instrument } => self
+                .project_history
+                .transact("set track instrument", |project| -> Result<(), String> {
+                    let track = project
+                        .tracks
+                        .iter_mut()
+                        .find(|item| item.id == track_id)
+                        .ok_or_else(|| format!("pista desconocida: {track_id}"))?;
+                    if !matches!(&track.kind, TrackKind::Midi)
+                        || !matches!(track.role, TrackRole::Midi | TrackRole::Instrument)
+                    {
+                        return Err(String::from("el instrumento requiere una pista MIDI"));
+                    }
+                    track.role = if instrument.is_some() {
+                        TrackRole::Instrument
+                    } else {
+                        TrackRole::Midi
+                    };
+                    track.instrument = instrument;
+                    project
+                        .validate_persisted_contracts()
+                        .map_err(|error| error.to_string())
                 })
                 .map_err(|error| CommandError::Project(error.to_string()))?,
             ProjectCommand::MoveTrack { track_id, index } => self
@@ -1728,6 +1756,95 @@ mod tests {
             }),
         ));
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn external_instrument_assignment_is_reversible_and_keeps_track_identity() {
+        let mut runtime = CommandRuntime::new(project());
+        let instrument = InstrumentConfig::Vst3 {
+            plugin: estudio_daw_project_model::PluginReference {
+                format: "vst3".into(),
+                path: "/home/music/.vst3/yabridge/Analog Lab V.vst3".into(),
+                unique_id: "Arturia.AnalogLabV".into(),
+                bridge: Some("yabridge".into()),
+            },
+            state: None,
+        };
+        runtime
+            .apply(envelope(
+                "assign-vst",
+                DomainCommand::Project(ProjectCommand::SetTrackInstrument {
+                    track_id: "track-midi".into(),
+                    instrument: Some(instrument.clone()),
+                }),
+            ))
+            .unwrap();
+        let assigned = &runtime.snapshot().project.project.tracks[0];
+        assert_eq!(assigned.instrument, Some(instrument.clone()));
+        assert_eq!(assigned.role, TrackRole::Instrument);
+
+        runtime
+            .apply(envelope(
+                "undo-assign-vst",
+                DomainCommand::Project(ProjectCommand::Undo),
+            ))
+            .unwrap();
+        let undone = &runtime.snapshot().project.project.tracks[0];
+        assert_eq!(undone.instrument, Some(InstrumentConfig::Sine));
+
+        runtime
+            .apply(envelope(
+                "redo-assign-vst",
+                DomainCommand::Project(ProjectCommand::Redo),
+            ))
+            .unwrap();
+        assert_eq!(
+            runtime.snapshot().project.project.tracks[0].instrument,
+            Some(instrument)
+        );
+
+        let standalone = InstrumentConfig::Standalone {
+            application_path: "/home/music/.wine/drive_c/Analog Lab V.exe".into(),
+            wine_prefix: Some("/home/music/.wine".into()),
+            midi_output: Some(estudio_daw_project_model::ExternalMidiPort {
+                device_key: "AnalogLab:events-in".into(),
+                port_name: "AnalogLab:events-in".into(),
+                channel: None,
+            }),
+            audio_input: Some(estudio_daw_project_model::ExternalAudioPort {
+                node_key: "pipewire:analog-lab-output".into(),
+                channels: vec![0, 1],
+            }),
+        };
+        runtime
+            .apply(envelope(
+                "assign-standalone",
+                DomainCommand::Project(ProjectCommand::SetTrackInstrument {
+                    track_id: "track-midi".into(),
+                    instrument: Some(standalone.clone()),
+                }),
+            ))
+            .unwrap();
+        runtime
+            .apply(envelope(
+                "undo-assign-standalone",
+                DomainCommand::Project(ProjectCommand::Undo),
+            ))
+            .unwrap();
+        assert!(matches!(
+            &runtime.snapshot().project.project.tracks[0].instrument,
+            Some(InstrumentConfig::Vst3 { .. })
+        ));
+        runtime
+            .apply(envelope(
+                "redo-assign-standalone",
+                DomainCommand::Project(ProjectCommand::Redo),
+            ))
+            .unwrap();
+        assert_eq!(
+            runtime.snapshot().project.project.tracks[0].instrument,
+            Some(standalone)
+        );
     }
 
     #[test]

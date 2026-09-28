@@ -26,6 +26,7 @@ estudio-daw-synth = { path = "../synth" }
 serde = { version = "1", features = ["derive"] }
 tauri = "2"
 tauri-plugin-dialog = "2"
+vst3-host = { version = "0.9", default-features = false, features = ["process-isolation"] }
 
 [dev-dependencies]
 serde_json = "1"

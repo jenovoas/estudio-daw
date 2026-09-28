@@ -16,7 +16,11 @@ members = [
     "crates/application",
     "crates/cli",
     "crates/ui-shell",
+    "crates/vst3-host",
 ]
+
+[patch.crates-io]
+vst3-host = { path = "crates/vst3-host" }
 
 [workspace.package]
 edition = "2021"

@@ -11,9 +11,9 @@ use estudio_daw_audio_engine::{
 use estudio_daw_audio_platform::{
     run_pipewire_input_until, run_pipewire_output_until, PipeWireStreamConfig, WavCaptureRecorder,
 };
-use estudio_daw_midi_engine::RecordedMidiMessage;
+use estudio_daw_midi_engine::{LiveMidiOutputWorker, RecordedMidiMessage};
 use estudio_daw_project_model::{
-    AudioClip, InstrumentConfig, Project, TrackKind, TrackRole, TransportLoopRange,
+    AudioClip, InstrumentConfig, Project, Track, TrackKind, TrackRole, TransportLoopRange,
 };
 use estudio_daw_runtime_diagnostics::{audio_devices, DeviceInfo};
 use estudio_daw_synth::{
@@ -24,12 +24,18 @@ use std::{
     collections::HashMap,
     io::Read,
     path::PathBuf,
+    process::{Child, Command, Stdio},
     sync::{
         atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering},
         mpsc, Arc, Mutex,
     },
     thread::{self, JoinHandle},
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
+};
+use vst3_host::{
+    audio::AudioBuffers,
+    midi::{MidiChannel, MidiEvent},
+    Vst3Host,
 };
 
 const MAX_AUDIO_CLIP_STREAMS: usize = 64;
@@ -301,6 +307,22 @@ struct RoutedTrackSignal {
     meter: Arc<TrackMeter>,
 }
 
+/// Resuelve una entrada de pista física o el retorno de una aplicación
+/// standalone al contrato común de captura PipeWire, conservando el canalado
+/// elegido por cada ruta.
+fn track_audio_input(track: &Track) -> Option<(&str, &[u16])> {
+    if let Some(route) = &track.input_route {
+        return Some((&route.device_key, &route.channels));
+    }
+    match track.instrument.as_ref() {
+        Some(InstrumentConfig::Standalone {
+            audio_input: Some(route),
+            ..
+        }) => Some((&route.node_key, &route.channels)),
+        _ => None,
+    }
+}
+
 struct ProjectRoutingNode {
     tracks: Vec<RoutedTrackSignal>,
     order: Vec<usize>,
@@ -340,10 +362,7 @@ impl ProjectRoutingNode {
                 sources,
                 scratch: vec![0.0; max_samples],
                 input_ring: input_rings.remove(&track.id),
-                input_channels: track
-                    .input_route
-                    .as_ref()
-                    .map(|route| route.channels.clone()),
+                input_channels: track_audio_input(track).map(|(_, channels)| channels.to_vec()),
                 output_index: output_indices[index],
                 gain_left,
                 gain_right,
@@ -730,18 +749,312 @@ impl AudioNode for LoopBoundaryGateNode {
 enum EventSender {
     Sine(SynthEventSender),
     SoundFont(SoundFontEventSender),
+    Vst3(std::sync::mpsc::SyncSender<SynthMidiEvent>),
+    Alsa {
+        worker: LiveMidiOutputWorker,
+        channel: Option<u8>,
+    },
 }
 
 impl EventSender {
-    fn send(&mut self, event: SynthMidiEvent) {
+    fn send(&mut self, event: SynthMidiEvent) -> Result<(), String> {
         match self {
             Self::Sine(sender) => {
                 let _ = sender.try_send(event);
+                Ok(())
             }
             Self::SoundFont(sender) => {
                 let _ = sender.try_send(event);
+                Ok(())
+            }
+            Self::Vst3(sender) => sender
+                .send(event)
+                .map_err(|_| "el worker aislado del VST3 terminó".to_owned()),
+            Self::Alsa { worker, channel } => {
+                let message = match event {
+                    SynthMidiEvent::NoteOn {
+                        channel: event_channel,
+                        note,
+                        velocity,
+                    } => RecordedMidiMessage::NoteOn {
+                        channel: channel.unwrap_or(event_channel),
+                        note,
+                        velocity,
+                    },
+                    SynthMidiEvent::NoteOff {
+                        channel: event_channel,
+                        note,
+                    } => RecordedMidiMessage::NoteOff {
+                        channel: channel.unwrap_or(event_channel),
+                        note,
+                        release_velocity: 0,
+                    },
+                    SynthMidiEvent::ControlChange {
+                        channel: event_channel,
+                        controller,
+                        value,
+                    } => RecordedMidiMessage::ControlChange {
+                        channel: channel.unwrap_or(event_channel),
+                        controller: u32::from(controller),
+                        value: i32::from(value),
+                    },
+                    SynthMidiEvent::PitchBend {
+                        channel: event_channel,
+                        value,
+                    } => RecordedMidiMessage::PitchBend {
+                        channel: channel.unwrap_or(event_channel),
+                        value: i32::from(value),
+                    },
+                    SynthMidiEvent::KeyPressure {
+                        channel: event_channel,
+                        note,
+                        pressure,
+                    } => RecordedMidiMessage::KeyPressure {
+                        channel: channel.unwrap_or(event_channel),
+                        note,
+                        pressure,
+                    },
+                    SynthMidiEvent::ChannelPressure {
+                        channel: event_channel,
+                        pressure,
+                    } => RecordedMidiMessage::ChannelPressure {
+                        channel: channel.unwrap_or(event_channel),
+                        pressure: i32::from(pressure),
+                    },
+                    SynthMidiEvent::ProgramChange {
+                        channel: event_channel,
+                        program,
+                    } => RecordedMidiMessage::ProgramChange {
+                        channel: channel.unwrap_or(event_channel),
+                        program: i32::from(program),
+                    },
+                };
+                // `EventSender` sólo se invoca desde el scheduler, fuera del
+                // callback. Si una ráfaga llena la cola, esperar evita perder
+                // Note Off y dejar una voz externa sostenida.
+                worker
+                    .send(message)
+                    .map_err(|_| "el worker del puerto MIDI externo se desconectó".to_owned())
             }
         }
+    }
+}
+
+/// El plugin y su IPC viven en un worker aislado. El callback sólo consume el
+/// ring PCM preasignado y completa con silencio si el worker se retrasa.
+struct Vst3PcmNode {
+    ring: Arc<SampleRingBuffer>,
+    failed: Arc<AtomicBool>,
+}
+
+impl AudioNode for Vst3PcmNode {
+    fn process(&mut self, interleaved: &mut [f32]) -> Result<(), AudioNodeError> {
+        if interleaved.len() % 2 != 0 {
+            return Err(AudioNodeError::InvalidBlockLength);
+        }
+        if self.failed.load(Ordering::Acquire) {
+            interleaved.fill(0.0);
+            return Err(AudioNodeError::WorkerFailed);
+        }
+        interleaved.fill(0.0);
+        self.ring.pop(interleaved);
+        Ok(())
+    }
+}
+
+struct Vst3InstrumentWorker {
+    stop: Arc<AtomicBool>,
+    commands: std::sync::mpsc::SyncSender<SynthMidiEvent>,
+    thread: Option<JoinHandle<()>>,
+}
+
+impl Vst3InstrumentWorker {
+    fn start(
+        plugin: estudio_daw_project_model::PluginReference,
+        state: Option<estudio_daw_project_model::PluginStateReference>,
+        sample_rate: u32,
+        block_frames: usize,
+        queue_target_frames: usize,
+        paused: Arc<AtomicBool>,
+    ) -> Result<(Self, Vst3PcmNode), String> {
+        if state.is_some() {
+            return Err("esta pista tiene un estado VST3 guardado, pero aún no se puede restaurar; se conservó sin modificar".into());
+        }
+        let ring = Arc::new(SampleRingBuffer::new(
+            queue_target_frames
+                .max(block_frames)
+                .saturating_mul(2)
+                .max(2),
+        ));
+        let worker_ring = Arc::clone(&ring);
+        let stop = Arc::new(AtomicBool::new(false));
+        let worker_stop = Arc::clone(&stop);
+        let failed = Arc::new(AtomicBool::new(false));
+        let worker_failed = Arc::clone(&failed);
+        let (commands, receiver) = mpsc::sync_channel(1024);
+        let (ready_sender, ready_receiver) = mpsc::sync_channel(1);
+        let thread = thread::Builder::new()
+            .name("estudio-daw-vst3-worker".into())
+            .spawn(move || {
+                let result = (|| -> Result<(), String> {
+                    let mut host = Vst3Host::builder()
+                        .sample_rate(f64::from(sample_rate))
+                        .block_size(block_frames)
+                        .with_process_isolation(true)
+                        .build()
+                        .map_err(|error| format!("no se pudo preparar el host VST3: {error}"))?;
+                    let mut plugin = host
+                        .load_plugin_class(&plugin.path, &plugin.unique_id)
+                        .map_err(|error| format!("no se pudo cargar {}: {error}", plugin.path))?;
+                    plugin.start_processing().map_err(|error| {
+                        format!("no se pudo iniciar el procesamiento del VST3: {error}")
+                    })?;
+                    let _ = ready_sender.send(Ok(()));
+                    let mut buffers = AudioBuffers::new(0, 2, block_frames, f64::from(sample_rate));
+                    let mut interleaved = vec![0.0_f32; block_frames.saturating_mul(2)];
+                    while !worker_stop.load(Ordering::Acquire) {
+                        if paused.load(Ordering::Acquire) {
+                            thread::sleep(Duration::from_millis(1));
+                            continue;
+                        }
+                        while let Ok(event) = receiver.try_recv() {
+                            let channel = MidiChannel::from_index(midi_channel(event))
+                                .ok_or_else(|| "canal MIDI VST3 fuera de rango".to_owned())?;
+                            let event = match event {
+                                SynthMidiEvent::NoteOn { note, velocity, .. } => {
+                                    MidiEvent::NoteOn {
+                                        channel,
+                                        note,
+                                        velocity,
+                                    }
+                                }
+                                SynthMidiEvent::NoteOff { note, .. } => MidiEvent::NoteOff {
+                                    channel,
+                                    note,
+                                    velocity: 0,
+                                },
+                                SynthMidiEvent::ControlChange {
+                                    controller, value, ..
+                                } => MidiEvent::ControlChange {
+                                    channel,
+                                    controller,
+                                    value,
+                                },
+                                SynthMidiEvent::PitchBend { value, .. } => MidiEvent::PitchBend {
+                                    channel,
+                                    value: (i32::from(value) + 8192).clamp(0, 16383) as u16,
+                                },
+                                SynthMidiEvent::KeyPressure { note, pressure, .. } => {
+                                    MidiEvent::PolyAftertouch {
+                                        channel,
+                                        note,
+                                        pressure,
+                                    }
+                                }
+                                SynthMidiEvent::ChannelPressure { pressure, .. } => {
+                                    MidiEvent::ChannelAftertouch { channel, pressure }
+                                }
+                                SynthMidiEvent::ProgramChange { program, .. } => {
+                                    MidiEvent::ProgramChange { channel, program }
+                                }
+                            };
+                            plugin.send_midi_event(event).map_err(|error| {
+                                format!("no se pudo enviar MIDI al VST3: {error}")
+                            })?;
+                        }
+                        if let Err(error) = plugin.process_audio(&mut buffers) {
+                            if !worker_stop.load(Ordering::Acquire) {
+                                return Err(format!("falló el procesamiento VST3: {error}"));
+                            }
+                            break;
+                        }
+                        if buffers.outputs.is_empty() {
+                            return Err("el VST3 no expone buses de salida de audio".to_owned());
+                        }
+                        for frame in 0..block_frames {
+                            interleaved[frame * 2] = buffers.outputs[0][frame];
+                            interleaved[frame * 2 + 1] = buffers
+                                .outputs
+                                .get(1)
+                                .map_or(buffers.outputs[0][frame], |channel| channel[frame]);
+                        }
+                        let mut offset = 0;
+                        while offset < interleaved.len() && !worker_stop.load(Ordering::Acquire) {
+                            offset += worker_ring.push(&interleaved[offset..]);
+                            if offset < interleaved.len() {
+                                thread::sleep(Duration::from_millis(1));
+                            }
+                        }
+                    }
+                    let _ = plugin.stop_processing();
+                    Ok(())
+                })();
+                if let Err(error) = result {
+                    worker_failed.store(true, Ordering::Release);
+                    let _ = ready_sender.send(Err(error));
+                }
+            })
+            .map_err(|error| error.to_string())?;
+        match ready_receiver.recv_timeout(Duration::from_secs(30)) {
+            Ok(Ok(())) => {}
+            Ok(Err(error)) => {
+                let _ = thread.join();
+                return Err(error);
+            }
+            Err(error) => {
+                stop.store(true, Ordering::Release);
+                let _ = thread.join();
+                return Err(format!("el host VST3 no respondió al iniciar: {error}"));
+            }
+        }
+        let target_samples = block_frames.saturating_mul(4).min(ring.capacity()).max(2);
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while ring.available() < target_samples && Instant::now() < deadline {
+            if failed.load(Ordering::Acquire) {
+                stop.store(true, Ordering::Release);
+                let _ = thread.join();
+                return Err("el worker VST3 falló durante el prebúfer inicial".to_owned());
+            }
+            thread::sleep(Duration::from_millis(1));
+        }
+        if ring.available() < target_samples {
+            stop.store(true, Ordering::Release);
+            let _ = thread.join();
+            return Err("el VST3 no pudo llenar su prebúfer inicial a tiempo".to_owned());
+        }
+        Ok((
+            Self {
+                stop,
+                commands,
+                thread: Some(thread),
+            },
+            Vst3PcmNode { ring, failed },
+        ))
+    }
+
+    fn command_sender(&self) -> std::sync::mpsc::SyncSender<SynthMidiEvent> {
+        self.commands.clone()
+    }
+}
+
+impl Drop for Vst3InstrumentWorker {
+    fn drop(&mut self) {
+        self.stop.store(true, Ordering::Release);
+        if let Some(thread) = self.thread.take() {
+            let _ = thread.join();
+        }
+    }
+}
+
+fn midi_channel(event: SynthMidiEvent) -> u8 {
+    match event {
+        SynthMidiEvent::NoteOn { channel, .. }
+        | SynthMidiEvent::NoteOff { channel, .. }
+        | SynthMidiEvent::ControlChange { channel, .. }
+        | SynthMidiEvent::PitchBend { channel, .. }
+        | SynthMidiEvent::KeyPressure { channel, .. }
+        | SynthMidiEvent::ChannelPressure { channel, .. }
+        | SynthMidiEvent::ProgramChange { channel, .. } => channel,
     }
 }
 
@@ -830,6 +1143,12 @@ struct PlaybackSchedule {
     senders: Vec<EventSender>,
 }
 
+struct ManagedStandaloneProcess {
+    application_path: String,
+    wine_prefix: Option<String>,
+    child: Child,
+}
+
 enum SchedulerCommand {
     Replace(PlaybackSchedule),
     Panic,
@@ -841,6 +1160,7 @@ pub struct AudioRuntimeHost {
     position_ticks: Arc<AtomicU64>,
     metronome_enabled: Arc<AtomicBool>,
     track_meters: Arc<Mutex<HashMap<String, Arc<TrackMeter>>>>,
+    standalone_processes: HashMap<String, ManagedStandaloneProcess>,
 }
 
 impl Default for AudioRuntimeHost {
@@ -851,6 +1171,7 @@ impl Default for AudioRuntimeHost {
             position_ticks: Arc::new(AtomicU64::new(0)),
             metronome_enabled: Arc::new(AtomicBool::new(false)),
             track_meters: Arc::new(Mutex::new(HashMap::new())),
+            standalone_processes: HashMap::new(),
         }
     }
 }
@@ -949,6 +1270,7 @@ impl AudioRuntimeHost {
         backend_device_key: &str,
         recording_directory: Option<PathBuf>,
     ) -> Result<(), String> {
+        self.ensure_standalone_applications(project)?;
         if let Some(playback) = self
             .playback
             .as_ref()
@@ -990,7 +1312,7 @@ impl AudioRuntimeHost {
         let input_rings: HashMap<_, _> = project
             .tracks
             .iter()
-            .filter(|track| track.input_route.is_some())
+            .filter(|track| track_audio_input(track).is_some())
             .map(|track| {
                 (
                     track.id.clone(),
@@ -1098,13 +1420,17 @@ impl AudioRuntimeHost {
         for track in project
             .tracks
             .iter()
-            .filter(|track| track.input_route.is_some())
+            .filter(|track| track_audio_input(track).is_some())
         {
-            let route = track.input_route.as_ref().expect("filtro de ruta");
-            let target = route
-                .device_key
+            let (device_key, _) = track_audio_input(track).expect("filtro de ruta");
+            let target = device_key
                 .strip_prefix("pipewire:")
-                .ok_or_else(|| format!("la entrada de '{}' no pertenece a PipeWire", track.name))?
+                .ok_or_else(|| {
+                    format!(
+                        "la entrada de audio de '{}' no pertenece a PipeWire",
+                        track.name
+                    )
+                })?
                 .to_owned();
             let available = audio_devices()
                 .map_err(|error| {
@@ -1113,7 +1439,8 @@ impl AudioRuntimeHost {
                 .into_iter()
                 .any(|device| {
                     device.name == target
-                        && device.media_class.to_ascii_lowercase().contains("source")
+                        && device.media_class.to_ascii_lowercase().contains("audio")
+                        && !device.name.to_ascii_lowercase().contains(".monitor")
                         && !device.media_class.to_ascii_lowercase().contains("monitor")
                 });
             if !available {
@@ -1122,7 +1449,7 @@ impl AudioRuntimeHost {
                     let _ = input_thread.join();
                 }
                 return Err(format!(
-                    "la entrada seleccionada para '{}' ya no está disponible: {target}",
+                    "la entrada de audio seleccionada para '{}' ya no está disponible: {target}",
                     track.name
                 ));
             }
@@ -1229,7 +1556,8 @@ impl AudioRuntimeHost {
                 }
                 let scheduler_result = scheduler
                     .join()
-                    .map_err(|_| "el scheduler MIDI terminó inesperadamente".to_owned());
+                    .map_err(|_| "el scheduler MIDI terminó inesperadamente".to_owned())
+                    .and_then(|result| result);
                 result.and(scheduler_result)
             })
             .map_err(|error| error.to_string());
@@ -1339,6 +1667,85 @@ impl AudioRuntimeHost {
                 Err(format!("PipeWire no confirmó el stream: {error}"))
             }
         }
+    }
+
+    fn ensure_standalone_applications(&mut self, project: &Project) -> Result<(), String> {
+        for track in &project.tracks {
+            let Some(InstrumentConfig::Standalone {
+                application_path,
+                wine_prefix,
+                ..
+            }) = track.instrument.as_ref()
+            else {
+                continue;
+            };
+            self.open_standalone_application(&track.id, application_path, wine_prefix.as_deref())
+                .map_err(|error| {
+                    format!(
+                        "no se pudo abrir el instrumento standalone de '{}': {error}",
+                        track.name
+                    )
+                })?;
+        }
+        Ok(())
+    }
+
+    pub fn open_standalone_application(
+        &mut self,
+        track_id: &str,
+        application_path: &str,
+        wine_prefix: Option<&str>,
+    ) -> Result<(), String> {
+        if let Some(process) = self.standalone_processes.get_mut(track_id) {
+            match process.child.try_wait() {
+                Ok(None)
+                    if process.application_path == application_path
+                        && process.wine_prefix.as_deref() == wine_prefix =>
+                {
+                    return Ok(())
+                }
+                Ok(None) => {
+                    return Err(
+                        "la pista ya tiene abierto otro instrumento; ciérralo antes de cambiar su ejecutable o prefijo Wine".into(),
+                    )
+                }
+                Ok(Some(_)) => {}
+                Err(error) => {
+                    return Err(format!(
+                        "no se pudo comprobar el proceso abierto del instrumento: {error}"
+                    ))
+                }
+            }
+        }
+        self.standalone_processes.remove(track_id);
+        if process_has_executable(application_path, wine_prefix) {
+            return Ok(());
+        }
+        let mut command = if application_path.to_ascii_lowercase().ends_with(".exe") {
+            let mut command = Command::new("wine");
+            command.arg(application_path);
+            command
+        } else {
+            Command::new(application_path)
+        };
+        if let Some(prefix) = wine_prefix {
+            command.env("WINEPREFIX", prefix);
+        }
+        let child = command
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .map_err(|error| error.to_string())?;
+        self.standalone_processes.insert(
+            track_id.to_owned(),
+            ManagedStandaloneProcess {
+                application_path: application_path.to_owned(),
+                wine_prefix: wine_prefix.map(str::to_owned),
+                child,
+            },
+        );
+        Ok(())
     }
 
     pub fn pause(&mut self, paused: bool) {
@@ -1533,6 +1940,104 @@ fn preferred_playback_node() -> Option<String> {
         .map(|device| device.name)
 }
 
+fn process_has_executable(path: &str, wine_prefix: Option<&str>) -> bool {
+    let application_path = PathBuf::from(path);
+    let Some(file_name) = application_path.file_name() else {
+        return false;
+    };
+    let file_name = file_name.to_string_lossy().to_ascii_lowercase();
+    let expected_prefix = wine_prefix
+        .map(PathBuf::from)
+        .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".wine")));
+    std::fs::read_dir("/proc")
+        .ok()
+        .into_iter()
+        .flatten()
+        .filter_map(Result::ok)
+        .filter(|entry| {
+            entry
+                .file_name()
+                .to_string_lossy()
+                .bytes()
+                .all(|byte| byte.is_ascii_digit())
+        })
+        .any(|entry| {
+            let process_path = entry.path();
+            let Some(cmdline) = std::fs::read(process_path.join("cmdline")).ok() else {
+                return false;
+            };
+            let cmdline = String::from_utf8_lossy(&cmdline).to_ascii_lowercase();
+            if !cmdline.contains(&file_name) {
+                return false;
+            }
+            let Some(expected_prefix) = expected_prefix.as_ref() else {
+                return wine_prefix.is_none();
+            };
+            let environment = std::fs::read(process_path.join("environ")).ok();
+            let process_prefix = environment.as_deref().and_then(|environment| {
+                environment
+                    .split(|byte| *byte == 0)
+                    .find_map(|variable| variable.strip_prefix(b"WINEPREFIX="))
+            });
+            match process_prefix {
+                Some(prefix) => {
+                    String::from_utf8_lossy(prefix).as_ref()
+                        == expected_prefix.to_string_lossy().as_ref()
+                }
+                None => wine_prefix.is_none(),
+            }
+        })
+}
+
+fn pipewire_ports(direction: &str) -> Result<Vec<String>, String> {
+    let output = Command::new("pw-link")
+        .arg(direction)
+        .output()
+        .map_err(|error| format!("no se pudo consultar PipeWire con pw-link: {error}"))?;
+    if !output.status.success() {
+        return Err(String::from_utf8_lossy(&output.stderr).trim().to_owned());
+    }
+    Ok(String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .map(str::trim)
+        .filter(|port| !port.is_empty())
+        .map(str::to_owned)
+        .collect())
+}
+
+fn connect_pipewire_midi_output(source_client_name: &str, destination: &str) -> Result<(), String> {
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        let outputs = pipewire_ports("-o")?;
+        let inputs = pipewire_ports("-i")?;
+        let source = outputs
+            .iter()
+            .find(|port| port.contains(source_client_name) && port.contains("track-output"));
+        if let (Some(source), true) = (source, inputs.iter().any(|port| port == destination)) {
+            let output = Command::new("pw-link")
+                .arg(source)
+                .arg(destination)
+                .output()
+                .map_err(|error| format!("no se pudo crear el enlace MIDI de PipeWire: {error}"))?;
+            if output.status.success() {
+                return Ok(());
+            }
+            let error = String::from_utf8_lossy(&output.stderr).trim().to_owned();
+            return Err(if error.is_empty() {
+                format!("pw-link rechazó el enlace {source} → {destination}")
+            } else {
+                error
+            });
+        }
+        if Instant::now() >= deadline {
+            return Err(format!(
+                "no apareció el puerto MIDI de Estudio DAW o el destino seleccionado '{destination}'"
+            ));
+        }
+        thread::sleep(Duration::from_millis(100));
+    }
+}
+
 fn is_audiobox_sink(device: &DeviceInfo) -> bool {
     let descriptor = format!("{} {}", device.name, device.description).to_ascii_lowercase();
     device.media_class.to_ascii_lowercase().contains("sink")
@@ -1637,6 +2142,7 @@ fn build_project_playback_with_end(
         start_position_ticks,
     )));
     let mut workers = Vec::new();
+    let mut vst3_workers = Vec::new();
     let mut senders = Vec::new();
     let mut schedule = Vec::new();
     let mut sequence = 0_u64;
@@ -1925,6 +2431,68 @@ fn build_project_playback_with_end(
                     .push(Box::new(node));
                 workers.push(worker);
             }
+            InstrumentConfig::Vst3 { plugin, state } => {
+                let (worker, node) = Vst3InstrumentWorker::start(
+                    plugin,
+                    state,
+                    sample_rate,
+                    (max_samples / 2).max(1),
+                    queue_target_frames,
+                    Arc::clone(&paused),
+                )
+                .map_err(|error| {
+                    format!(
+                        "no se pudo preparar el instrumento VST3 '{}': {error}; no se sustituirá por otro instrumento",
+                        track.name
+                    )
+                })?;
+                senders.push(EventSender::Vst3(worker.command_sender()));
+                sources_by_track
+                    .entry(track.id.clone())
+                    .or_default()
+                    .push(Box::new(node));
+                vst3_workers.push(worker);
+            }
+            InstrumentConfig::Standalone { midi_output, .. } => {
+                let route = midi_output.ok_or_else(|| {
+                    format!(
+                        "la pista '{}' tiene un instrumento standalone asignado, pero falta elegir su entrada MIDI",
+                        track.name
+                    )
+                })?;
+                let safe_track_id: String = track
+                    .id
+                    .chars()
+                    .map(|character| {
+                        if character.is_ascii_alphanumeric() || character == '-' {
+                            character
+                        } else {
+                            '_'
+                        }
+                    })
+                    .collect();
+                let safe_track_id = safe_track_id.chars().take(16).collect::<String>();
+                let client_name = format!(
+                    "Estudio DAW External MIDI {safe_track_id} {}",
+                    SystemTime::now()
+                        .duration_since(UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_nanos()
+                );
+                let worker = LiveMidiOutputWorker::start(&client_name).map_err(|error| {
+                    format!("no se pudo conectar el MIDI de '{}': {error}", track.name)
+                })?;
+                connect_pipewire_midi_output(&client_name, &route.port_name).map_err(|error| {
+                    format!(
+                        "no se pudo enlazar el MIDI de '{}' con Analog Lab: {error}",
+                        track.name
+                    )
+                })?;
+                senders.push(EventSender::Alsa {
+                    worker,
+                    channel: route.channel,
+                });
+            }
         }
     }
 
@@ -2083,6 +2651,9 @@ fn build_project_playback_with_end(
     });
     let mut plan = builder.build();
     for worker in workers {
+        plan.retain_resource(worker);
+    }
+    for worker in vst3_workers {
         plan.retain_resource(worker);
     }
     for pump in decoder_pumps {
@@ -2325,7 +2896,7 @@ fn schedule_events(
     updates: mpsc::Receiver<SchedulerCommand>,
     stop: Arc<AtomicBool>,
     position_ticks: Arc<AtomicU64>,
-) {
+) -> Result<(), String> {
     let sort_schedule = |schedule: &mut PlaybackSchedule| {
         schedule
             .events
@@ -2335,7 +2906,7 @@ fn schedule_events(
     let mut index = 0;
     loop {
         if stop.load(Ordering::Acquire) {
-            return;
+            return Ok(());
         }
         if let Ok(command) = updates.try_recv() {
             match command {
@@ -2360,7 +2931,10 @@ fn schedule_events(
             continue;
         }
         if let Some(sender) = schedule.senders.get_mut(event.sender) {
-            sender.send(event.midi);
+            if let Err(error) = sender.send(event.midi) {
+                stop.store(true, Ordering::Release);
+                return Err(format!("falló la salida MIDI de la pista: {error}"));
+            }
         }
         index += 1;
     }
@@ -2385,12 +2959,12 @@ fn apply_scheduler_command(
 fn send_all_notes_off(senders: &mut [EventSender]) {
     for sender in senders {
         for channel in 0..16 {
-            sender.send(SynthMidiEvent::ControlChange {
+            let _ = sender.send(SynthMidiEvent::ControlChange {
                 channel,
                 controller: 64,
                 value: 0,
             });
-            sender.send(SynthMidiEvent::ControlChange {
+            let _ = sender.send(SynthMidiEvent::ControlChange {
                 channel,
                 controller: 123,
                 value: 0,
@@ -2407,6 +2981,53 @@ mod tests {
         ImportProvenance, MidiClip, TimeSignature, Track, TrackChannelConfig, TrackMixerState,
         TrackRole, Transport,
     };
+
+    #[test]
+    #[ignore = "requiere ruta e ID de clase de un instrumento VST3 instalado localmente"]
+    fn vst3_worker_returns_real_plugin_audio_outside_the_render_callback() {
+        let path = std::env::var("ESTUDIO_DAW_TEST_VST3_PATH")
+            .expect("define la ruta al bundle VST3 local");
+        let unique_id =
+            std::env::var("ESTUDIO_DAW_TEST_VST3_UID").expect("define el ID de clase VST3 local");
+        let (worker, mut node) = Vst3InstrumentWorker::start(
+            estudio_daw_project_model::PluginReference {
+                format: "vst3".into(),
+                path,
+                unique_id,
+                bridge: Some("yabridge".into()),
+            },
+            None,
+            48_000,
+            512,
+            1_024,
+            Arc::new(AtomicBool::new(false)),
+        )
+        .expect("Analog Lab V debe cargar en el helper aislado");
+        worker
+            .command_sender()
+            .send(SynthMidiEvent::NoteOn {
+                channel: 0,
+                note: 60,
+                velocity: 100,
+            })
+            .unwrap();
+
+        let mut peak = 0.0_f32;
+        for _ in 0..12 {
+            thread::sleep(Duration::from_millis(5));
+            let mut block = vec![0.0_f32; 1_024];
+            node.process(&mut block).unwrap();
+            peak = peak.max(block.iter().map(|sample| sample.abs()).fold(0.0, f32::max));
+        }
+        assert!(peak > 0.0001, "el VST3 produjo sólo silencio: peak={peak}");
+        worker
+            .command_sender()
+            .send(SynthMidiEvent::NoteOff {
+                channel: 0,
+                note: 60,
+            })
+            .unwrap();
+    }
 
     fn midi_track(id: &str) -> Track {
         Track {
@@ -2428,6 +3049,24 @@ mod tests {
             media_source: None,
             instrument: Some(InstrumentConfig::Sine),
         }
+    }
+
+    #[test]
+    fn standalone_instrument_audio_return_uses_track_input_routing() {
+        let mut track = midi_track("analog-lab");
+        let channels = vec![0, 1];
+        track.instrument = Some(InstrumentConfig::Standalone {
+            application_path: "/wine/Analog Lab V.exe".into(),
+            wine_prefix: Some("/wine-prefix".into()),
+            midi_output: None,
+            audio_input: Some(estudio_daw_project_model::ExternalAudioPort {
+                node_key: "pipewire:AnalogLab-KeyLab-Test".into(),
+                channels: channels.clone(),
+            }),
+        });
+        let (node, selected_channels) = track_audio_input(&track).unwrap();
+        assert_eq!(node, "pipewire:AnalogLab-KeyLab-Test");
+        assert_eq!(selected_channels, channels);
     }
 
     fn project_with_two_clips() -> Project {
@@ -2526,6 +3165,35 @@ mod tests {
         assert_eq!(schedule[2].at, Duration::from_millis(500));
         assert_eq!(schedule[3].at, Duration::from_secs(1));
         assert_ne!(schedule[1].sender, schedule[2].sender);
+    }
+
+    #[test]
+    fn does_not_silently_replace_external_plugin_with_builtin_synth() {
+        let mut project = project_with_two_clips();
+        project.tracks[0].instrument = Some(InstrumentConfig::Vst3 {
+            plugin: estudio_daw_project_model::PluginReference {
+                format: "vst3".into(),
+                path: "/plugins/Analog Lab V.vst3".into(),
+                unique_id: "Arturia.AnalogLabV".into(),
+                bridge: Some("yabridge".into()),
+            },
+            state: None,
+        });
+
+        let result = build_project_playback(
+            &project,
+            48_000,
+            512,
+            1024,
+            Arc::new(AtomicBool::new(true)),
+            Arc::new(AtomicU64::new(0)),
+            0,
+        );
+        let error = match result {
+            Err(error) => error,
+            Ok(_) => panic!("un VST externo no debe sustituirse por un instrumento integrado"),
+        };
+        assert!(error.contains("no se sustituirá por otro instrumento"));
     }
 
     #[test]

@@ -14,7 +14,7 @@ use std::{
     io::BufRead,
     sync::{
         atomic::{AtomicBool, Ordering},
-        mpsc::{self, Receiver},
+        mpsc::{self, Receiver, SyncSender},
     },
     thread,
     time::{Duration, Instant},
@@ -22,6 +22,103 @@ use std::{
 use thiserror::Error;
 
 pub const DEFAULT_PPQ: u32 = 480;
+
+/// Emite eventos hacia un puerto ALSA desde un worker dedicado. El scheduler
+/// usa una cola acotada que puede aplicar contrapresión fuera del callback de
+/// audio; la búsqueda y las llamadas ALSA quedan en este worker.
+pub struct LiveMidiOutputWorker {
+    sender: Option<SyncSender<RecordedMidiMessage>>,
+    worker: Option<thread::JoinHandle<()>>,
+}
+
+impl LiveMidiOutputWorker {
+    pub fn start(client_name: &str) -> Result<Self, PlaybackError> {
+        let client_name = CString::new(client_name)
+            .map_err(|_| PlaybackError::Worker("el nombre del puerto contiene NUL".into()))?;
+        let (sender, receiver) = mpsc::sync_channel(512);
+        let (ready_tx, ready_rx) = mpsc::sync_channel(1);
+        let worker = thread::Builder::new()
+            .name("estudio-daw-external-midi".into())
+            .spawn(move || {
+                let seq = match Seq::open(None, None, false) {
+                    Ok(seq) => seq,
+                    Err(error) => {
+                        let _ = ready_tx.send(Err(error.to_string()));
+                        return;
+                    }
+                };
+                if let Err(error) = seq.set_client_name(&client_name) {
+                    let _ = ready_tx.send(Err(error.to_string()));
+                    return;
+                }
+                let port_name = CString::new("track-output").expect("nombre literal sin NUL");
+                let port = match seq.create_simple_port(
+                    &port_name,
+                    PortCap::READ | PortCap::SUBS_READ,
+                    PortType::MIDI_GENERIC | PortType::APPLICATION,
+                ) {
+                    Ok(port) => port,
+                    Err(error) => {
+                        let _ = ready_tx.send(Err(error.to_string()));
+                        return;
+                    }
+                };
+                let _ = ready_tx.send(Ok(()));
+                while let Ok(message) = receiver.recv() {
+                    if let Some(mut event) = to_alsa_output_event(&message) {
+                        event.set_source(port);
+                        // PipeWire subscribes to this ALSA sequencer source;
+                        // the platform adapter links it to the selected MIDI
+                        // input port without making this worker device-aware.
+                        event.set_subs();
+                        event.set_direct();
+                        if seq.event_output_direct(&mut event).is_err() {
+                            break;
+                        }
+                    }
+                }
+                let _ = seq.drain_output();
+            })
+            .map_err(|error| PlaybackError::Worker(error.to_string()))?;
+        match ready_rx.recv_timeout(Duration::from_secs(3)) {
+            Ok(Ok(())) => Ok(Self {
+                sender: Some(sender),
+                worker: Some(worker),
+            }),
+            Ok(Err(error)) => {
+                let _ = worker.join();
+                Err(PlaybackError::Worker(error))
+            }
+            Err(error) => {
+                drop(sender);
+                let _ = worker.join();
+                Err(PlaybackError::Worker(format!(
+                    "el puerto MIDI de salida no inició a tiempo: {error}"
+                )))
+            }
+        }
+    }
+
+    /// Entrega sin descartar eventos cuando la cola está llena. El llamador es
+    /// el scheduler MIDI, nunca el callback de audio; si el consumidor cae, la
+    /// desconexión se informa al llamador.
+    pub fn send(&self, message: RecordedMidiMessage) -> Result<(), ()> {
+        self.sender
+            .as_ref()
+            .ok_or(())?
+            .send(message)
+            .map_err(|_| ())
+    }
+}
+
+impl Drop for LiveMidiOutputWorker {
+    fn drop(&mut self) {
+        self.sender.take();
+        if let Some(worker) = self.worker.take() {
+            let _ = worker.join();
+        }
+    }
+}
 
 /// Entrada MIDI que puede convertirse en un control de la sesión.
 ///
@@ -286,6 +383,8 @@ pub enum PlaybackError {
     Discovery(#[from] estudio_daw_runtime_diagnostics::DiagnosticsError),
     #[error("error ALSA durante la reproducción: {0}")]
     Alsa(#[from] alsa::Error),
+    #[error("no se pudo iniciar el worker de salida MIDI: {0}")]
+    Worker(String),
 }
 
 /// Estado mínimo del transporte. Se mantiene independiente de ALSA para que

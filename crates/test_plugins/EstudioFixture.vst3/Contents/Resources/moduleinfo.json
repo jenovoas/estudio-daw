@@ -1,0 +1,45 @@
+{
+  "Name": "Estudio Fixture",
+  "Version": "1.0.0",
+  "Factory Info": {
+    "Vendor": "Estudio DAW Tests",
+    "URL": "https://example.invalid/estudio-daw-tests",
+    "E-Mail": "",
+    "Flags": { "Unicode": true }
+  },
+  "Classes": [
+    {
+      "CID": "00112233445566778899AABBCCDDEEFF",
+      "Category": "Audio Module Class",
+      "Name": "Estudio Fixture",
+      "Vendor": "Estudio DAW Tests",
+      "Version": "1.0.0",
+      "SDKVersion": "VST 3.7.5",
+      "Sub Categories": ["Instrument", "Synth"],
+      "Class Flags": 0,
+      "Cardinality": 2147483647
+    },
+    {
+      "CID": "10112233445566778899AABBCCDDEEFF",
+      "Category": "Audio Module Class",
+      "Name": "Fixture Controller",
+      "Vendor": "Estudio DAW Tests",
+      "Version": "1.0.0",
+      "SDKVersion": "VST 3.7.5",
+      "Sub Categories": ["Controller"],
+      "Class Flags": 0,
+      "Cardinality": 2147483647
+    },
+    {
+      "CID": "20112233445566778899AABBCCDDEEFF",
+      "Category": "Audio Module Class",
+      "Name": "Fixture Legacy",
+      "Vendor": "Estudio DAW Tests",
+      "Version": "1.0.0",
+      "SDKVersion": "VST 3.7.5",
+      "Sub Categories": ["Instrument", "Synth"],
+      "Class Flags": 0,
+      "Cardinality": 2147483647
+    }
+  ]
+}

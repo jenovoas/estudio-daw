@@ -900,6 +900,8 @@ pub enum TrackValidationError {
     RoleKindMismatch,
     #[error("instrument role and instrument assignment must agree")]
     InstrumentRoleMismatch,
+    #[error("instrument reference or external routing configuration is invalid")]
+    InvalidInstrumentConfig,
     #[error("MIDI tracks cannot own audio media, channel counts, or audio input channels")]
     AudioStateOnMidi,
     #[error("audio tracks cannot contain MIDI notes or an instrument")]
@@ -991,6 +993,13 @@ impl Track {
         }
         if (self.role == TrackRole::Instrument) != self.instrument.is_some() {
             return Err(TrackValidationError::InstrumentRoleMismatch);
+        }
+        if self
+            .instrument
+            .as_ref()
+            .is_some_and(|instrument| !instrument.is_valid())
+        {
+            return Err(TrackValidationError::InvalidInstrumentConfig);
         }
         if self.channel_config.output_channels == 0 || self.channel_config.input_channels == Some(0)
         {
@@ -1093,6 +1102,96 @@ pub enum InstrumentConfig {
         bank: u16,
         program: u8,
     },
+    /// Plugin VST3 que debe abrir un adaptador de plataforma. El dominio sólo
+    /// guarda identidad/procedencia; nunca carga el módulo ni ejecuta Wine.
+    Vst3 {
+        plugin: PluginReference,
+        state: Option<PluginStateReference>,
+    },
+    /// Aplicación de instrumento externa, como Analog Lab standalone.
+    Standalone {
+        application_path: String,
+        wine_prefix: Option<String>,
+        midi_output: Option<ExternalMidiPort>,
+        audio_input: Option<ExternalAudioPort>,
+    },
+}
+
+impl InstrumentConfig {
+    fn is_valid(&self) -> bool {
+        match self {
+            Self::Sine => true,
+            Self::FluidSynth { soundfont, .. } => !soundfont.path.trim().is_empty(),
+            Self::Vst3 { plugin, state } => {
+                plugin.format.eq_ignore_ascii_case("vst3")
+                    && !plugin.path.trim().is_empty()
+                    && !plugin.unique_id.trim().is_empty()
+                    && plugin
+                        .bridge
+                        .as_ref()
+                        .is_none_or(|bridge| !bridge.trim().is_empty())
+                    && state.as_ref().is_none_or(|state| {
+                        !state.path.trim().is_empty()
+                            && !std::path::Path::new(&state.path).is_absolute()
+                            && !state.path.split(['/', '\\']).any(|part| part == "..")
+                    })
+            }
+            Self::Standalone {
+                application_path,
+                wine_prefix,
+                midi_output,
+                audio_input,
+            } => {
+                !application_path.trim().is_empty()
+                    && wine_prefix
+                        .as_ref()
+                        .is_none_or(|prefix| !prefix.trim().is_empty())
+                    && midi_output.as_ref().is_none_or(|port| {
+                        !port.device_key.trim().is_empty()
+                            && !port.port_name.trim().is_empty()
+                            && port.channel.is_none_or(|channel| channel < 16)
+                    })
+                    && audio_input.as_ref().is_none_or(|port| {
+                        !port.node_key.trim().is_empty()
+                            && (1..=2).contains(&port.channels.len())
+                            && port.channels.iter().all(|channel| *channel < 2)
+                            && port.channels[0] != *port.channels.get(1).unwrap_or(&u16::MAX)
+                    })
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct PluginReference {
+    pub format: String,
+    pub path: String,
+    pub unique_id: String,
+    pub bridge: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct PluginStateReference {
+    /// Ruta relativa a la carpeta del proyecto para mantenerlo portable.
+    pub path: String,
+    pub sha256: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ExternalMidiPort {
+    pub device_key: String,
+    pub port_name: String,
+    pub channel: Option<u8>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ExternalAudioPort {
+    pub node_key: String,
+    pub channels: Vec<u16>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -2399,6 +2498,91 @@ mod tests {
 
         assert_eq!(decoded, config);
         assert!(!String::from_utf8(encoded).unwrap().contains("sample_data"));
+    }
+
+    #[test]
+    fn serializes_real_plugin_and_external_instrument_routes() {
+        let configs = [
+            InstrumentConfig::Vst3 {
+                plugin: PluginReference {
+                    format: "VST3".into(),
+                    path: "/home/music/.vst3/yabridge/Analog Lab V.vst3".into(),
+                    unique_id: "Arturia.AnalogLabV".into(),
+                    bridge: Some("yabridge".into()),
+                },
+                state: Some(PluginStateReference {
+                    path: "plugins/analog-lab/state.bin".into(),
+                    sha256: Some("sha256:0123".into()),
+                }),
+            },
+            InstrumentConfig::Standalone {
+                application_path:
+                    "/home/music/.wine/drive_c/Program Files/Arturia/Analog Lab V/Analog Lab V.exe"
+                        .into(),
+                wine_prefix: Some("/home/music/.wine".into()),
+                midi_output: Some(ExternalMidiPort {
+                    device_key: "pipewire:arturia-keylab".into(),
+                    port_name: "Analog Lab KeyLab Test:events-in".into(),
+                    channel: Some(0),
+                }),
+                audio_input: Some(ExternalAudioPort {
+                    node_key: "pipewire:analog-lab-capture".into(),
+                    channels: vec![0, 1],
+                }),
+            },
+        ];
+        for config in configs {
+            let encoded = serde_json::to_vec(&config).unwrap();
+            let decoded: InstrumentConfig = serde_json::from_slice(&encoded).unwrap();
+            assert_eq!(decoded, config);
+            assert!(config.is_valid());
+        }
+
+        let invalid = InstrumentConfig::Vst3 {
+            plugin: PluginReference {
+                format: "VST2".into(),
+                path: "Analog Lab.vst3".into(),
+                unique_id: "AnalogLab".into(),
+                bridge: None,
+            },
+            state: None,
+        };
+        assert!(!invalid.is_valid());
+    }
+
+    #[test]
+    fn project_save_reopen_preserves_standalone_executable_and_routes() {
+        let project_json = br#"{
+            "schema_version":"estudio-daw.project.v2",
+            "project_id":"analog-lab-session",
+            "transport":{"tempo_bpm":120.0,"time_signature":{"numerator":4,"denominator":4}},
+            "tracks":[{
+                "id":"keys","name":"Keys","kind":"midi","notes":[],
+                "instrument":{"backend":"sine"}
+            }],
+            "import_provenance":{"format":"estudio-daw","format_version":"2","source_file":"","warnings":[]}
+        }"#;
+        let mut project = load_project_json(project_json).unwrap();
+        project.tracks[0].role = TrackRole::Instrument;
+        project.tracks[0].instrument = Some(InstrumentConfig::Standalone {
+            application_path: "/home/music/.wine/drive_c/Analog Lab V.exe".into(),
+            wine_prefix: Some("/home/music/.wine".into()),
+            midi_output: Some(ExternalMidiPort {
+                device_key: "AnalogLab:events-in".into(),
+                port_name: "AnalogLab:events-in".into(),
+                channel: Some(0),
+            }),
+            audio_input: Some(ExternalAudioPort {
+                node_key: "pipewire:analog-lab-output".into(),
+                channels: vec![0, 1],
+            }),
+        });
+
+        let saved = serde_json::to_vec(&project).unwrap();
+        let reopened = load_project_json(&saved).unwrap();
+
+        assert_eq!(reopened.tracks[0].instrument, project.tracks[0].instrument);
+        reopened.validate_persisted_contracts().unwrap();
     }
 
     #[test]

@@ -28,12 +28,12 @@ standalone que ya funciona o si deja el alojamiento VST para un futuro indefinid
 
 En este equipo se encontraron Wine, `Analog Lab V.exe`, el bundle Windows
 `Analog Lab V.vst3` en `~/.wine/drive_c/Program Files/Common Files/VST3` y PipeWire
-con puente MIDI ALSA. No se encontró `yabridgectl` en PATH, lo cual sólo describe
-el estado instalado: queda investigar e integrar un adaptador de host/bridge
-compatible con los plugins VST de ese prefijo. [yabridge](https://github.com/robbert-vdh/yabridge)
-es una alternativa documentada para exponer VST Windows a hosts Linux; no se
-asume que ya esté instalada ni se fija como decisión hasta verificar la carga
-real, estado, MIDI, audio y editor de Analog Lab dentro de Estudio DAW. Su
+con puente MIDI ALSA. Se configuró yabridge 5.1.1 para cuatro plugins VST3 de
+Arturia, y Carla 2.5.10 cargó Analog Lab V real mediante JACK/PipeWire. Esto
+valida el stack local de compatibilidad, no su integración en pista dentro de
+Estudio DAW. [yabridge](https://github.com/robbert-vdh/yabridge)
+es el bridge comprobado en este equipo para exponer VST Windows a hosts Linux;
+siguen pendientes instancia/estado/MIDI/audio/GUI dentro del host del DAW. Su
 [documentación de arquitectura](https://github.com/robbert-vdh/yabridge/blob/master/docs/architecture.md)
 describe la comunicación entre el host Linux y el proceso Wine, incluidos los
 buffers de audio compartidos; el adaptador debe respetar esos límites de tiempo
@@ -49,6 +49,33 @@ requiere; se medirán latencia y estabilidad antes de integrarla al plan de audi
 La latencia perceptible ausente del flujo standalone actual se registra como
 requisito de experiencia de la persona usuaria, no como medida de la ruta VST aún
 no integrada.
+
+El modelo portable identifica una instancia VST3 con formato, ruta descubierta,
+ID estable del plugin, bridge y una referencia relativa/hash del estado. Para
+Standalone guarda ejecutable/prefijo Wine, puerto de salida MIDI y nodo/canales
+de retorno PipeWire. `SetTrackInstrument` cambia esa asignación mediante el bus
+reversible. La primera ruta ejecutable envía eventos del scheduler desde un puerto ALSA
+por worker y enlaza ese origen a la entrada MIDI PipeWire elegida mediante
+`pw-link`, sin invocar ALSA ni crear enlaces desde el callback. La cola MIDI tiene
+capacidad acotada; si se llena, sólo se detiene brevemente el scheduler para
+conservar eventos Note Off, nunca el callback de audio. Captura el nodo de retorno
+por la entrada PipeWire existente hacia la pista, el ruteo interno y Master. La
+disponibilidad del puerto/nodo se comprueba al iniciar. La aplicación reutiliza
+el proceso gestionado si coinciden ejecutable y prefijo Wine; si esa pista ya
+tiene otro ejecutable activo, solicita cerrarlo antes de cambiar la asignación.
+El flujo de pista ya permite elegir/abrir el ejecutable standalone y seleccionar
+puertos MIDI PipeWire y retorno; Play abre/reutiliza el proceso configurado. El
+alojamiento VST3 ya se conectó al motor en un worker de proceso aislado, con MIDI
+desde el scheduler y un ring PCM previo a la mezcla por pista. El helper debe
+construirse y acompañar al ejecutable. Aún faltan QA de reproducción VST3 dentro
+de Tauri, una GUI nativa compatible con el helper en Linux, guardar/restaurar el
+estado binario del plugin y comprobar recuperación/cierre. La ruta standalone
+tampoco se ha verificado aún con Analog Lab real en esta versión. Cada backend
+incompleto informa el error y no sustituye el instrumento silenciosamente.
+
+### Verificación aislada VST3 — 2026-09-28
+
+El host `vst3-host` 0.9.0 sin modificar no pudo inspeccionar el bundle yabridge porque Analog Lab expone una clase `Plugin Compatibility Class` cuya creación de `IPluginCompatibility` devuelve `0x3`. En una copia temporal del crate con esa interfaz opcional tratada como lista de compatibilidad vacía, el probe enumeró Analog Lab V 5.12.5.6878 (Arturia, MIDI-in, una salida estéreo, GUI disponible). Después, el host aislado cargó el VST3 real, envió MIDI Note On 60 y renderizó audio a 48 kHz/512 frames; el pico observado fue 0,2568381. La corrección acotada de `IPluginCompatibility` y el helper upstream MIT se integraron en `crates/vst3-host`; `audio_runtime` inicia el host fuera del callback, mantiene un prebúfer de dos bloques y entrega el PCM por ring a la pista. El producto aún no se ha abierto en Tauri para verificar la reproducción integrada. La prueba aislada tampoco prueba ventana nativa, persistencia del estado binario, recuperación de crash ni latencia de ida y vuelta.
 
 ## Auditoría de referencia: Ableton Live 12.4.6
 

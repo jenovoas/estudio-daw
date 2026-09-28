@@ -9,8 +9,13 @@ comando exacto; no inferir funcionamiento de una etiqueta o de una imagen estát
 Desde la raíz del repositorio:
 
 ```sh
+cargo build -p vst3-host --bins
 cargo run -p estudio-daw-ui-shell
 ```
+
+Los ejecutables `vst3-host-helper` y `vst3-host-probe` deben distribuirse junto
+al ejecutable de la aplicación. Si falta alguno, la pista VST3 informa el error
+de carga/inspección y no sustituye el instrumento.
 
 La salida de esa terminal contiene errores Rust, fallos de inicialización de
 PipeWire y mensajes del proceso Tauri. Los errores de interfaz web/IPC se muestran
