@@ -30,6 +30,11 @@ de Wine/yabridge dibujan su editor por XWayland (`DISPLAY`, hoy `:0` con
 sigue siendo `X11EmbedWindowID`. Si `DISPLAY` está vacío, el aviso pide activar
 XWayland en Hyprland.
 
+Al guardar o detener con un VST3 sonando, el estado del plugin se escribe en
+`plugin-state/` junto al JSON del proyecto. Al volver a dar Play, ese archivo se
+restaura. Si falta o la firma no coincide, la carga falla y se conserva la
+asignación; no se sustituye por otro instrumento.
+
 La salida de esa terminal contiene errores Rust, fallos de inicialización de
 PipeWire y mensajes del proceso Tauri. Los errores de interfaz web/IPC se muestran
 en la consola de desarrollo del visor web y en el aviso inferior de la ventana.

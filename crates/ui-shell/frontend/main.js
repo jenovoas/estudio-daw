@@ -1184,6 +1184,8 @@ function renderSessionSurface(snapshot) {
     if (meter) header.append(meter);
     const controls = createTrackMixerControls(track, true);
     if (controls) header.append(controls);
+    const instrumentControl = createTrackInstrumentControl(track);
+    if (instrumentControl) header.append(instrumentControl);
     const removeButton = createTrackRemovalButton(track);
     const orderControls = createTrackOrderControls(track, snapshot.tracks);
     if (orderControls) header.append(orderControls);

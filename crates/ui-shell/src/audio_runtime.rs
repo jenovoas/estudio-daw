@@ -13,7 +13,8 @@ use estudio_daw_audio_platform::{
 };
 use estudio_daw_midi_engine::{LiveMidiOutputWorker, RecordedMidiMessage};
 use estudio_daw_project_model::{
-    AudioClip, InstrumentConfig, Project, Track, TrackKind, TrackRole, TransportLoopRange,
+    AudioClip, InstrumentConfig, PluginStateReference, Project, Track, TrackKind, TrackRole,
+    TransportLoopRange,
 };
 use estudio_daw_runtime_diagnostics::{audio_devices, DeviceInfo};
 use estudio_daw_synth::{
@@ -23,7 +24,7 @@ use estudio_daw_synth::{
 use std::{
     collections::HashMap,
     io::Read,
-    path::PathBuf,
+    path::{Path, PathBuf},
     process::{Child, Command, Stdio},
     sync::{
         atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering},
@@ -860,12 +861,24 @@ impl EventSender {
         })?;
         Ok(result)
     }
+
+    fn request_vst3_state(&mut self) -> Result<mpsc::Receiver<Result<Vec<u8>, String>>, String> {
+        let Self::Vst3 { sender, .. } = self else {
+            return Err("la pista seleccionada no usa un instrumento VST3".to_owned());
+        };
+        let (reply, result) = mpsc::sync_channel(1);
+        sender
+            .send(Vst3InstrumentCommand::SaveState(reply))
+            .map_err(|_| "el worker VST3 no puede guardar ahora el estado".to_owned())?;
+        Ok(result)
+    }
 }
 
 enum Vst3InstrumentCommand {
     Midi(SynthMidiEvent),
     OpenEditor(mpsc::SyncSender<Result<(), String>>),
     CloseEditor(mpsc::SyncSender<Result<(), String>>),
+    SaveState(mpsc::SyncSender<Result<Vec<u8>, String>>),
 }
 
 /// El plugin y su IPC viven en un worker aislado. El callback sólo consume el
@@ -900,14 +913,12 @@ impl Vst3InstrumentWorker {
     fn start(
         plugin: estudio_daw_project_model::PluginReference,
         state: Option<estudio_daw_project_model::PluginStateReference>,
+        plugin_state_root: Option<PathBuf>,
         sample_rate: u32,
         block_frames: usize,
         queue_target_frames: usize,
         paused: Arc<AtomicBool>,
     ) -> Result<(Self, Vst3PcmNode), String> {
-        if state.is_some() {
-            return Err("esta pista tiene un estado VST3 guardado, pero aún no se puede restaurar; se conservó sin modificar".into());
-        }
         let ring = Arc::new(SampleRingBuffer::new(
             queue_target_frames
                 .max(block_frames)
@@ -931,9 +942,21 @@ impl Vst3InstrumentWorker {
                         .with_process_isolation(true)
                         .build()
                         .map_err(|error| format!("no se pudo preparar el host VST3: {error}"))?;
+                    let plugin_path = plugin.path.clone();
                     let mut plugin = host
                         .load_plugin_class(&plugin.path, &plugin.unique_id)
-                        .map_err(|error| format!("no se pudo cargar {}: {error}", plugin.path))?;
+                        .map_err(|error| format!("no se pudo cargar {plugin_path}: {error}"))?;
+                    if let Some(state) = state {
+                        let root = plugin_state_root.ok_or_else(|| {
+                            "guarda el proyecto para restaurar el estado del VST3; se conservó la asignación".to_owned()
+                        })?;
+                        let bytes = load_plugin_state_bytes(&root, &state)?;
+                        plugin.load_state(&bytes).map_err(|error| {
+                            format!(
+                                "no se pudo restaurar el estado de {plugin_path}: {error}; se conservó la asignación"
+                            )
+                        })?;
+                    }
                     plugin.start_processing().map_err(|error| {
                         format!("no se pudo iniciar el procesamiento del VST3: {error}")
                     })?;
@@ -957,6 +980,12 @@ impl Vst3InstrumentWorker {
                                 Vst3InstrumentCommand::CloseEditor(reply) => {
                                     let result =
                                         plugin.close_editor().map_err(|error| error.to_string());
+                                    let _ = reply.send(result);
+                                }
+                                Vst3InstrumentCommand::SaveState(reply) => {
+                                    let result = plugin
+                                        .save_state()
+                                        .map_err(|error| error.to_string());
                                     let _ = reply.send(result);
                                 }
                             }
@@ -1094,6 +1123,74 @@ impl Drop for Vst3InstrumentWorker {
     }
 }
 
+fn plugin_state_relative_path(track_id: &str) -> String {
+    let safe: String = track_id
+        .chars()
+        .map(|character| {
+            if character.is_ascii_alphanumeric() || character == '-' {
+                character
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    format!("plugin-state/{safe}.bin")
+}
+
+fn load_plugin_state_bytes(root: &Path, state: &PluginStateReference) -> Result<Vec<u8>, String> {
+    let relative = Path::new(&state.path);
+    if relative.is_absolute() || relative.components().any(|part| part.as_os_str() == "..") {
+        return Err(format!(
+            "la ruta de estado VST3 '{}' no es portable; se conservó la asignación",
+            state.path
+        ));
+    }
+    let path = root.join(relative);
+    if !path.is_file() {
+        return Err(format!(
+            "no está el estado VST3 '{}'; se conservó el instrumento asignado",
+            state.path
+        ));
+    }
+    if let Some(expected) = state.sha256.as_ref() {
+        let actual = estudio_daw_media_adapter::content_hash(&path).map_err(|error| {
+            format!(
+                "no se pudo comprobar el estado VST3 '{}': {error}",
+                state.path
+            )
+        })?;
+        if &actual != expected {
+            return Err(format!(
+                "el estado VST3 '{}' no coincide con la firma guardada; se conservó la asignación",
+                state.path
+            ));
+        }
+    }
+    std::fs::read(&path)
+        .map_err(|error| format!("no se pudo leer el estado VST3 '{}': {error}", state.path))
+}
+
+fn write_plugin_state_file(
+    root: &Path,
+    track_id: &str,
+    bytes: &[u8],
+) -> Result<PluginStateReference, String> {
+    let relative = plugin_state_relative_path(track_id);
+    let path = root.join(&relative);
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|error| format!("no se pudo preparar plugin-state: {error}"))?;
+    }
+    std::fs::write(&path, bytes)
+        .map_err(|error| format!("no se pudo guardar el estado VST3 '{relative}': {error}"))?;
+    let sha256 = estudio_daw_media_adapter::content_hash(&path)
+        .map_err(|error| format!("no se pudo firmar el estado VST3 '{relative}': {error}"))?;
+    Ok(PluginStateReference {
+        path: relative,
+        sha256: Some(sha256),
+    })
+}
+
 fn midi_channel(event: SynthMidiEvent) -> u8 {
     match event {
         SynthMidiEvent::NoteOn { channel, .. }
@@ -1205,6 +1302,10 @@ enum SchedulerCommand {
         open: bool,
         reply: mpsc::Sender<Result<(), String>>,
     },
+    Vst3SaveState {
+        track_id: String,
+        reply: mpsc::Sender<Result<Vec<u8>, String>>,
+    },
 }
 
 pub struct AudioRuntimeHost {
@@ -1214,6 +1315,7 @@ pub struct AudioRuntimeHost {
     metronome_enabled: Arc<AtomicBool>,
     track_meters: Arc<Mutex<HashMap<String, Arc<TrackMeter>>>>,
     standalone_processes: HashMap<String, ManagedStandaloneProcess>,
+    plugin_state_root: Option<PathBuf>,
 }
 
 impl Default for AudioRuntimeHost {
@@ -1225,6 +1327,7 @@ impl Default for AudioRuntimeHost {
             metronome_enabled: Arc::new(AtomicBool::new(false)),
             track_meters: Arc::new(Mutex::new(HashMap::new())),
             standalone_processes: HashMap::new(),
+            plugin_state_root: None,
         }
     }
 }
@@ -1341,6 +1444,69 @@ impl AudioRuntimeHost {
             })?
     }
 
+    /// Captura y escribe el estado binario de cada VST3 activo junto al proyecto.
+    pub fn persist_vst3_states(
+        &self,
+        root: &Path,
+    ) -> Result<Vec<(String, PluginStateReference)>, String> {
+        let captured = self.capture_vst3_states()?;
+        captured
+            .into_iter()
+            .map(|(track_id, bytes)| {
+                write_plugin_state_file(root, &track_id, &bytes).map(|state| (track_id, state))
+            })
+            .collect()
+    }
+
+    /// Captura el estado binario de cada VST3 activo. El helper debe seguir vivo.
+    pub fn capture_vst3_states(&self) -> Result<Vec<(String, Vec<u8>)>, String> {
+        let Some(playback) = self
+            .playback
+            .as_ref()
+            .filter(|playback| playback.connected.load(Ordering::Acquire))
+        else {
+            return Ok(Vec::new());
+        };
+        let project = playback.project_model.snapshot()?.0;
+        let mut captured = Vec::new();
+        for track in &project.tracks {
+            let Some(InstrumentConfig::Vst3 { .. }) = track.instrument else {
+                continue;
+            };
+            let (reply, result) = mpsc::channel();
+            if playback
+                .schedule
+                .send(SchedulerCommand::Vst3SaveState {
+                    track_id: track.id.clone(),
+                    reply,
+                })
+                .is_err()
+            {
+                continue;
+            }
+            let bytes = match result.recv_timeout(Duration::from_secs(35)) {
+                Ok(Ok(bytes)) => bytes,
+                Ok(Err(error)) if error.contains("no tiene un instrumento VST3 activo") => {
+                    continue;
+                }
+                Ok(Err(error)) => {
+                    return Err(format!(
+                        "no se pudo guardar el estado de '{}': {error}",
+                        track.name
+                    ));
+                }
+                Err(error) => {
+                    return Err(format!(
+                        "el instrumento de '{}' no entregó su estado: {error}",
+                        track.name
+                    ));
+                }
+            };
+            captured.push((track.id.clone(), bytes));
+        }
+        Ok(captured)
+    }
+
     pub fn play(
         &mut self,
         project: &Project,
@@ -1348,6 +1514,7 @@ impl AudioRuntimeHost {
         start_position_ticks: u64,
         backend_device_key: &str,
         recording_directory: Option<PathBuf>,
+        plugin_state_root: Option<PathBuf>,
     ) -> Result<(), String> {
         self.ensure_standalone_applications(project)?;
         if let Some(playback) = self
@@ -1370,6 +1537,7 @@ impl AudioRuntimeHost {
         }
         let playback_node = playback_node_for_key(backend_device_key)?;
         self.stop()?;
+        self.plugin_state_root = plugin_state_root;
         self.reset_track_meters()?;
         let loop_range = project.transport.loop_range;
         let start_position_ticks = loop_range.map_or(start_position_ticks, |range| {
@@ -1474,6 +1642,7 @@ impl AudioRuntimeHost {
             start_position_ticks,
             loop_range.map(|range| range.end_tick),
             input_rings.clone(),
+            self.plugin_state_root.clone(),
         )?;
         let (control, processor) = render_plan_exchange(plan);
         let control = Arc::new(std::sync::Mutex::new(control));
@@ -1492,6 +1661,7 @@ impl AudioRuntimeHost {
                 range.start_tick,
                 Some(range.end_tick),
                 input_rings.clone(),
+                self.plugin_state_root.clone(),
             )?)
         } else {
             None
@@ -1690,6 +1860,7 @@ impl AudioRuntimeHost {
                     let loop_project = Arc::clone(&project_model);
                     let loop_active_revision = Arc::clone(&active_project_revision);
                     let loop_profile = profile;
+                    let loop_plugin_state_root = self.plugin_state_root.clone();
                     let loop_error = Arc::clone(&self.playback.as_ref().unwrap().loop_error);
                     let handle = thread::Builder::new()
                         .name("estudio-daw-loop-coordinator".into())
@@ -1710,6 +1881,7 @@ impl AudioRuntimeHost {
                                 loop_track_meters,
                                 loop_input_rings,
                                 loop_active_revision,
+                                loop_plugin_state_root,
                             ) {
                                 if let Ok(mut state) = loop_error.lock() {
                                     *state = Some(error);
@@ -1907,6 +2079,7 @@ impl AudioRuntimeHost {
             position_ticks,
             range.map(|range| range.end_tick),
             playback.input_rings.clone(),
+            self.plugin_state_root.clone(),
         )?;
         if control.publish(plan).is_err() {
             return Err("el motor aún está aplicando un cambio anterior de plan".to_owned());
@@ -1935,6 +2108,7 @@ impl AudioRuntimeHost {
     pub fn stop(&mut self) -> Result<Vec<FinishedInputRecording>, String> {
         let Some(playback) = self.playback.take() else {
             self.position_ticks.store(0, Ordering::Release);
+            self.plugin_state_root = None;
             return Ok(Vec::new());
         };
         playback.stop.store(true, Ordering::Release);
@@ -1969,6 +2143,7 @@ impl AudioRuntimeHost {
         }
         self.position_ticks.store(0, Ordering::Release);
         self.plan_control = None;
+        self.plugin_state_root = None;
         thread_result?;
         Ok(finished_recordings)
     }
@@ -2158,6 +2333,7 @@ fn build_project_playback(
         start_position_ticks,
         None,
         HashMap::new(),
+        None,
     )
 }
 
@@ -2175,6 +2351,7 @@ fn track_meter_for(
     ))
 }
 
+#[allow(clippy::too_many_arguments)]
 fn build_project_playback_with_end(
     project: &Project,
     sample_rate: u32,
@@ -2187,6 +2364,7 @@ fn build_project_playback_with_end(
     start_position_ticks: u64,
     end_position_ticks: Option<u64>,
     mut input_rings: HashMap<String, Arc<SampleRingBuffer>>,
+    plugin_state_root: Option<PathBuf>,
 ) -> Result<
     (
         estudio_daw_audio_engine::RenderPlan,
@@ -2514,6 +2692,7 @@ fn build_project_playback_with_end(
                 let (worker, node) = Vst3InstrumentWorker::start(
                     plugin,
                     state,
+                    plugin_state_root.clone(),
                     sample_rate,
                     (max_samples / 2).max(1),
                     queue_target_frames,
@@ -2765,6 +2944,7 @@ fn coordinate_loop(
     track_meters: Arc<Mutex<HashMap<String, Arc<TrackMeter>>>>,
     input_rings: HashMap<String, Arc<SampleRingBuffer>>,
     active_project_revision: Arc<AtomicU64>,
+    plugin_state_root: Option<PathBuf>,
 ) -> Result<(), String> {
     let mut prepared_revision = project_model.revision.load(Ordering::Acquire);
     while !stop.load(Ordering::Acquire) {
@@ -2785,6 +2965,7 @@ fn coordinate_loop(
                 Arc::clone(&metronome_enabled),
                 Arc::clone(&track_meters),
                 input_rings.clone(),
+                plugin_state_root.clone(),
             )?;
         }
         let (plan, senders, events) = prepared;
@@ -2806,6 +2987,7 @@ fn coordinate_loop(
                 Arc::clone(&metronome_enabled),
                 Arc::clone(&track_meters),
                 input_rings.clone(),
+                plugin_state_root.clone(),
             )?;
             continue;
         }
@@ -2844,6 +3026,7 @@ fn coordinate_loop(
             Arc::clone(&metronome_enabled),
             Arc::clone(&track_meters),
             input_rings.clone(),
+            plugin_state_root.clone(),
         )?;
     }
     Ok(())
@@ -2860,6 +3043,7 @@ fn prepare_latest_loop_plan(
     metronome_enabled: Arc<AtomicBool>,
     track_meters: Arc<Mutex<HashMap<String, Arc<TrackMeter>>>>,
     input_rings: HashMap<String, Arc<SampleRingBuffer>>,
+    plugin_state_root: Option<PathBuf>,
 ) -> Result<
     (
         (
@@ -2885,6 +3069,7 @@ fn prepare_latest_loop_plan(
             range.start_tick,
             Some(range.end_tick),
             input_rings.clone(),
+            plugin_state_root.clone(),
         )
         .map_err(|error| format!("no se pudo preparar la siguiente vuelta A/B: {error}"))?;
         if project_model.revision.load(Ordering::Acquire) == revision {
@@ -3060,6 +3245,32 @@ fn apply_scheduler_command(
                 }
             }
         }
+        SchedulerCommand::Vst3SaveState { track_id, reply } => {
+            let sender = schedule.senders.iter_mut().find(|sender| {
+                matches!(sender, EventSender::Vst3 { track_id: id, .. } if id == &track_id)
+            });
+            let result = sender
+                .ok_or_else(|| {
+                    "la pista seleccionada no tiene un instrumento VST3 activo".to_owned()
+                })
+                .and_then(EventSender::request_vst3_state);
+            match result {
+                Ok(result) => {
+                    thread::spawn(move || {
+                        let result =
+                            result
+                                .recv_timeout(Duration::from_secs(32))
+                                .unwrap_or_else(|error| {
+                                    Err(format!("el helper VST3 no entregó el estado: {error}"))
+                                });
+                        let _ = reply.send(result);
+                    });
+                }
+                Err(error) => {
+                    let _ = reply.send(Err(error));
+                }
+            }
+        }
     }
 }
 
@@ -3104,6 +3315,7 @@ mod tests {
                 bridge: Some("yabridge".into()),
             },
             None,
+            None,
             48_000,
             512,
             1_024,
@@ -3112,11 +3324,11 @@ mod tests {
         .expect("Analog Lab V debe cargar en el helper aislado");
         worker
             .command_sender()
-            .send(SynthMidiEvent::NoteOn {
+            .send(Vst3InstrumentCommand::Midi(SynthMidiEvent::NoteOn {
                 channel: 0,
                 note: 60,
                 velocity: 100,
-            })
+            }))
             .unwrap();
 
         let mut peak = 0.0_f32;
@@ -3129,10 +3341,10 @@ mod tests {
         assert!(peak > 0.0001, "el VST3 produjo sólo silencio: peak={peak}");
         worker
             .command_sender()
-            .send(SynthMidiEvent::NoteOff {
+            .send(Vst3InstrumentCommand::Midi(SynthMidiEvent::NoteOff {
                 channel: 0,
                 note: 60,
-            })
+            }))
             .unwrap();
     }
 
@@ -3301,6 +3513,38 @@ mod tests {
             Ok(_) => panic!("un VST externo no debe sustituirse por un instrumento integrado"),
         };
         assert!(error.contains("no se sustituirá por otro instrumento"));
+    }
+
+    #[test]
+    fn writes_and_restores_plugin_state_relative_to_the_project() {
+        let root = std::env::temp_dir().join(format!(
+            "estudio-daw-plugin-state-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+        let saved = write_plugin_state_file(&root, "track/midi 1", b"preset-bytes").unwrap();
+        assert_eq!(saved.path, "plugin-state/track_midi_1.bin");
+        assert!(saved
+            .sha256
+            .as_deref()
+            .is_some_and(|digest| digest.starts_with("sha256:")));
+        assert_eq!(
+            load_plugin_state_bytes(&root, &saved).unwrap(),
+            b"preset-bytes"
+        );
+        let missing = load_plugin_state_bytes(
+            &root,
+            &PluginStateReference {
+                path: "plugin-state/ausente.bin".into(),
+                sha256: None,
+            },
+        )
+        .unwrap_err();
+        assert!(missing.contains("se conservó el instrumento asignado"));
+        let _ = std::fs::remove_dir_all(root);
     }
 
     #[test]

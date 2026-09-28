@@ -1,5 +1,11 @@
 # Handoff de continuación — 2026-09-27
 
+## Punto de reanudación actual — estado VST3 y Session (2026-09-28)
+
+- Sobre `c0c38d6`, Stop/Guardar capturan el blob del plugin activo, lo escriben en `plugin-state/<pista>.bin` junto al proyecto y persisten la referencia con `SetTrackInstrument`. Play restaura ese estado antes de procesar; un archivo ausente o con SHA distinto aborta la carga y conserva la asignación. CONTROLES aparece también en Session. Las vueltas A/B recargan el último estado en disco.
+- Verificación: `cargo check -p estudio-daw-ui-shell`, prueba `writes_and_restores_plugin_state_relative_to_the_project`, `cargo fmt --all -- --check`, `node --check` de `main.js` y `git diff --check`. Sin suite workspace ni QA Analog Lab.
+- OpenSpec 10/44. 4.6.4 y 4.6.6 avanzan y siguen abiertas. Siguiente: QA Tauri Play → CONTROLES → cambiar preset → Stop/abrir. Bitácora: `/home/jnovoas/proyectos/personalvault/docs/estudio-daw/BITACORA_AGENTES.md`.
+
 ## Punto de reanudación actual — editor VST3 Linux (2026-09-28)
 
 - HEAD publicado al iniciar este corte: `e2c015d`. Hay implementación local del editor nativo VST3 en Linux: el helper, en una sesión Hyprland/Wayland, crea la ventana padre por XWayland (`DISPLAY`), adjunta `IPlugView` con `X11EmbedWindowID` y atiende `CreateGui`/`CloseGui` en el hilo gráfico. Tauri expone `set_vst3_editor`; Arreglo y Mezclador muestran un slot de dispositivo con CONTROLES/OCULTAR. Play o pausa cargan el helper; Stop lo termina y oculta el estado local de la ventana. Analog Lab/yabridge usan ese puente XWayland; no hay host `IWaylandHost` nativo todavía.

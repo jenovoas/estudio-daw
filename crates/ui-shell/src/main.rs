@@ -1555,20 +1555,20 @@ fn unix_timestamp_nanos() -> u128 {
 
 #[tauri::command]
 fn save_project(state: State<'_, DesktopState>) -> Result<UiSnapshot, String> {
-    let application = state
+    let mut application = state
         .application
         .lock()
         .map_err(|_| "el estado de la aplicación quedó bloqueado".to_owned())?;
     let application = application
-        .as_ref()
+        .as_mut()
         .ok_or_else(|| "primero abre un proyecto".to_owned())?;
-    application.save().map_err(|e| e.to_string())?;
-    let connected = state
+    let audio = state
         .audio
         .lock()
-        .map_err(|_| "el estado del motor de audio quedó bloqueado".to_owned())?
-        .is_connected();
-    Ok(summarize(application, connected))
+        .map_err(|_| "el estado del motor de audio quedó bloqueado".to_owned())?;
+    persist_vst3_plugin_states(application, &audio)?;
+    application.save().map_err(|e| e.to_string())?;
+    Ok(summarize(application, audio.is_connected()))
 }
 
 #[tauri::command]
@@ -1580,15 +1580,16 @@ fn save_project_as(path: String, state: State<'_, DesktopState>) -> Result<UiSna
     let application = application
         .as_mut()
         .ok_or_else(|| "primero abre un proyecto".to_owned())?;
+    let audio = state
+        .audio
+        .lock()
+        .map_err(|_| "el estado del motor de audio quedó bloqueado".to_owned())?;
     application
         .save_as(PathBuf::from(path))
         .map_err(|e| e.to_string())?;
-    let connected = state
-        .audio
-        .lock()
-        .map_err(|_| "el estado del motor de audio quedó bloqueado".to_owned())?
-        .is_connected();
-    Ok(summarize(application, connected))
+    persist_vst3_plugin_states(application, &audio)?;
+    application.save().map_err(|e| e.to_string())?;
+    Ok(summarize(application, audio.is_connected()))
 }
 
 #[tauri::command]
@@ -1700,6 +1701,10 @@ fn set_transport(
                 position_ticks.unwrap_or_default(),
                 &settings.backend_device_key,
                 recording_directory,
+                application
+                    .project_path()
+                    .and_then(|path| path.parent())
+                    .map(PathBuf::from),
             ) {
                 // Keep the domain transport stopped if device/backend startup
                 // fails after the command was accepted.
@@ -1717,6 +1722,7 @@ fn set_transport(
         }
         SessionCommand::Pause => audio.pause(true),
         SessionCommand::Stop => {
+            persist_vst3_plugin_states(application, &audio)?;
             for recording in audio.stop()? {
                 import_finished_recording(application, recording)?;
             }
@@ -1724,6 +1730,45 @@ fn set_transport(
         _ => unreachable!("el adaptador sólo acepta play/pause/stop"),
     }
     Ok(summarize(application, audio.is_connected()))
+}
+
+fn persist_vst3_plugin_states(
+    application: &mut ProjectApplication,
+    audio: &AudioRuntimeHost,
+) -> Result<(), String> {
+    if !audio.is_connected() {
+        return Ok(());
+    }
+    let Some(root) = application
+        .project_path()
+        .and_then(|path| path.parent())
+        .map(PathBuf::from)
+    else {
+        return Ok(());
+    };
+    let snapshots = audio.persist_vst3_states(&root)?;
+    if snapshots.is_empty() {
+        return Ok(());
+    }
+    let project = application.snapshot().project.project;
+    for (track_id, state) in snapshots {
+        let Some(track) = project.tracks.iter().find(|track| track.id == track_id) else {
+            continue;
+        };
+        let Some(InstrumentConfig::Vst3 { plugin, .. }) = track.instrument.clone() else {
+            continue;
+        };
+        application
+            .execute_project(ProjectCommand::SetTrackInstrument {
+                track_id,
+                instrument: Some(InstrumentConfig::Vst3 {
+                    plugin,
+                    state: Some(state),
+                }),
+            })
+            .map_err(|error| error.to_string())?;
+    }
+    Ok(())
 }
 
 fn import_finished_recording(

@@ -67,15 +67,18 @@ El flujo de pista ya permite elegir/abrir el ejecutable standalone y seleccionar
 puertos MIDI PipeWire y retorno; Play abre/reutiliza el proceso configurado. El
 alojamiento VST3 ya se conectó al motor en un worker de proceso aislado, con MIDI
 desde el scheduler y un ring PCM previo a la mezcla por pista. El helper debe
-construirse y acompañar al ejecutable. Aún faltan QA de reproducción VST3 dentro
-de Tauri, una GUI nativa compatible con el helper en Linux, guardar/restaurar el
-estado binario del plugin y comprobar recuperación/cierre. La ruta standalone
-tampoco se ha verificado aún con Analog Lab real en esta versión. Cada backend
-incompleto informa el error y no sustituye el instrumento silenciosamente.
+construirse y acompañar al ejecutable. La GUI nativa se abre por XWayland en la
+sesión Hyprland. Guardar o detener con el motor conectado escribe el estado
+binario en `plugin-state/` junto al proyecto y `SetTrackInstrument` guarda la
+referencia relativa; Play restaura ese blob o informa el archivo ausente sin
+sustituir el instrumento. Aún faltan QA de reproducción y preset en Tauri con
+Analog Lab, y comprobar recuperación/cierre. La ruta standalone tampoco se ha
+verificado aún con Analog Lab real en esta versión. Cada backend incompleto
+informa el error y no sustituye el instrumento silenciosamente.
 
 ### Verificación aislada VST3 — 2026-09-28
 
-El host `vst3-host` 0.9.0 sin modificar no pudo inspeccionar el bundle yabridge porque Analog Lab expone una clase `Plugin Compatibility Class` cuya creación de `IPluginCompatibility` devuelve `0x3`. En una copia temporal del crate con esa interfaz opcional tratada como lista de compatibilidad vacía, el probe enumeró Analog Lab V 5.12.5.6878 (Arturia, MIDI-in, una salida estéreo, GUI disponible). Después, el host aislado cargó el VST3 real, envió MIDI Note On 60 y renderizó audio a 48 kHz/512 frames; el pico observado fue 0,2568381. La corrección acotada de `IPluginCompatibility` y el helper upstream MIT se integraron en `crates/vst3-host`; `audio_runtime` inicia el host fuera del callback, mantiene un prebúfer de dos bloques y entrega el PCM por ring a la pista. El producto aún no se ha abierto en Tauri para verificar la reproducción integrada. La prueba aislada tampoco prueba ventana nativa, persistencia del estado binario, recuperación de crash ni latencia de ida y vuelta.
+El host `vst3-host` 0.9.0 sin modificar no pudo inspeccionar el bundle yabridge porque Analog Lab expone una clase `Plugin Compatibility Class` cuya creación de `IPluginCompatibility` devuelve `0x3`. En una copia temporal del crate con esa interfaz opcional tratada como lista de compatibilidad vacía, el probe enumeró Analog Lab V 5.12.5.6878 (Arturia, MIDI-in, una salida estéreo, GUI disponible). Después, el host aislado cargó el VST3 real, envió MIDI Note On 60 y renderizó audio a 48 kHz/512 frames; el pico observado fue 0,2568381. La corrección acotada de `IPluginCompatibility` y el helper upstream MIT se integraron en `crates/vst3-host`; `audio_runtime` inicia el host fuera del callback, mantiene un prebúfer de dos bloques y entrega el PCM por ring a la pista. El producto aún no se ha abierto en Tauri para verificar la reproducción integrada. La prueba aislada no cubre QA Tauri, recuperación de crash ni latencia de ida y vuelta. El helper Linux ya abre GUI por XWayland y persiste el estado binario al guardar o detener.
 
 ## Auditoría de referencia: Ableton Live 12.4.6
 
