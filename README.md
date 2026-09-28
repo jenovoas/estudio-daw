@@ -734,10 +734,11 @@ el desplazamiento dentro del archivo avanza junto con la región; la fuente no
 se modifica.
 Es un prototipo de capacidades parciales: su composición
 visual actual no satisface todavía el flujo creativo de Ableton Live 12; no
-incluye lanzamiento de clips en Session, edición de notas MIDI, división o
-duplicación de clips ni posicionamiento visible compartido con Session. El
-inspector permite cambiar la posición, ganancia y desvanecimientos de regiones
-de audio. Al iniciar desde detenido, Play
+incluye lanzamiento de clips en Session ni posicionamiento visible compartido
+con Session. Arreglo permite mover, dividir y duplicar clips MIDI; el piano roll
+inicial muestra e inserta corcheas, pero todavía no permite editar o borrar
+notas existentes. El inspector permite cambiar la posición, ganancia y
+desvanecimientos de regiones de audio. Al iniciar desde detenido, Play
 parte del cursor de inserción del Arreglo. Al iniciar dentro de un clip MIDI,
 restaura las notas activas y el estado de sustain CC64 a partir de los eventos
 anteriores al cursor. Play decodifica las

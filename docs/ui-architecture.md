@@ -161,8 +161,11 @@ aparece sólo cuando el cursor cae dentro del clip. El corte crea dos clips
 contiguos, cierra notas activas y las rearticula al comienzo de la segunda parte;
 restaura allí el último CC, pitch bend, presión y programa. Esto puede producir
 un nuevo ataque en notas sostenidas, y SysEx previo no se copia. Los cambios
-usan el historial y el plan activo se actualiza si el motor está conectado. Aún
-no hay piano roll ni edición directa de notas.
+usan el historial y el plan activo se actualiza si el motor está conectado. El
+inspector abre un piano roll acotado de 36 teclas y permite insertar corcheas
+con clic; cada inserción conserva los eventos previos, se puede deshacer y
+refresca el plan activo. Aún faltan selección, movimiento, cambio de duración,
+velocidad y borrado de notas existentes; el registro nuevo usa canal 1.
 
 El navegador también enumera las regiones de audio importadas del proyecto y
 permite filtrarlas por nombre, fuente, pista y disposición de canales. Cada

@@ -1378,6 +1378,55 @@ function renderClipInspector(snapshot) {
       makeInspectorNumber("Entrada (ms)", fadeInMs, 0, Math.max(0, durationMs - fadeOutMs), 1, (value) => saveFades("in", value)),
       makeInspectorNumber("Salida (ms)", fadeOutMs, 0, Math.max(0, durationMs - fadeInMs), 1, (value) => saveFades("out", value)),
     );
+  } else if (midiClip) {
+    const pianoRoll = document.createElement("div");
+    pianoRoll.className = "piano-roll";
+    const heading = document.createElement("strong");
+    heading.className = "piano-roll-heading";
+    heading.textContent = "Piano roll · clic en la rejilla para insertar una corchea";
+    pianoRoll.append(heading);
+    const grid = document.createElement("div");
+    grid.className = "piano-roll-grid";
+    const stepsPerBar = Math.max(1, Math.round((snapshot.beatsPerBar || 4) * 2));
+    const steps = Math.min(256, Math.max(16, Math.ceil(midiClip.durationTicks / Math.max(1, midiClip.ppq / 2) / 16) * 16));
+    grid.style.setProperty("--steps", String(steps));
+    for (let key = 83; key >= 48; key--) {
+      const lane = document.createElement("div");
+      lane.className = `piano-roll-row${key % 12 === 0 ? " octave" : ""}`;
+      const label = document.createElement("span");
+      label.className = "piano-roll-key";
+      label.textContent = key % 12 === 0 ? `C${Math.floor(key / 12) - 1}` : "";
+      lane.append(label);
+      const cells = document.createElement("div");
+      cells.className = "piano-roll-cells";
+      for (let stepIndex = 0; stepIndex < steps; stepIndex++) {
+        const cell = document.createElement("button");
+        cell.type = "button";
+        cell.className = `piano-roll-cell${stepIndex % stepsPerBar === 0 ? " bar-start" : ""}${stepIndex % 2 === 0 ? " beat-start" : ""}`;
+        cell.title = `Añadir nota ${key} en el pulso ${(stepIndex / 2 + 1).toFixed(1)}`;
+        cell.addEventListener("click", () => {
+          const startTick = Math.round(stepIndex * midiClip.ppq / 2);
+          void runCommand("Nota MIDI añadida", () => platform.addMidiNote({
+            clipId: midiClip.id, startTick, durationTicks: Math.max(1, Math.round(midiClip.ppq / 2)), key, velocity: 96,
+          }));
+        });
+        cells.append(cell);
+      }
+      lane.append(cells);
+      grid.append(lane);
+    }
+    for (const note of midiClip.notes) {
+      const row = grid.querySelectorAll(".piano-roll-row")[83 - note.key];
+      if (!row) continue;
+      const block = document.createElement("span");
+      block.className = "piano-roll-note";
+      block.style.left = `calc(34px + ${Math.max(0, note.startBeats * 2 / steps) * 100}%)`;
+      block.style.width = `max(8px, ${Math.max(0.008, note.durationBeats * 2 / steps) * 100}%)`;
+      block.title = `Nota ${note.key}, velocidad ${note.velocity}`;
+      row.append(block);
+    }
+    pianoRoll.append(grid);
+    elements.clipInspector.append(pianoRoll);
   }
 }
 

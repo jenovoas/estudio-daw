@@ -4,7 +4,7 @@
 //! conocer PipeWire, ALSA, ffmpeg, GPU ni widgets. Cada comando está versionado,
 //! atribuido y puede declarar precondiciones antes de mutar el estado.
 
-use estudio_daw_midi_types::MidiTake;
+use estudio_daw_midi_types::{MidiSource, MidiTake, RecordedMidiEvent, RecordedMidiMessage};
 use estudio_daw_project_model::{
     add_audio_clip, add_audio_clip_for_source, append_media_source, attach_media_source,
     attach_midi_take, quantize_midi_clip, set_audio_clip_fades, set_audio_clip_gain,
@@ -149,6 +149,13 @@ pub enum ProjectCommand {
     SplitMidiClip {
         clip_id: String,
         split_tick: u64,
+    },
+    AddMidiNote {
+        clip_id: String,
+        start_tick: u64,
+        duration_ticks: u64,
+        key: u8,
+        velocity: u8,
     },
     RemoveAudioClip {
         clip_id: String,
@@ -1012,6 +1019,64 @@ impl CommandRuntime {
                     project
                         .validate_persisted_contracts()
                         .map_err(|error| error.to_string())
+                })
+                .map_err(|error| CommandError::Project(error.to_string()))?,
+            ProjectCommand::AddMidiNote {
+                clip_id,
+                start_tick,
+                duration_ticks,
+                key,
+                velocity,
+            } => self
+                .project_history
+                .transact("add MIDI note", |project| -> Result<(), String> {
+                    let clip = project
+                        .midi_clips
+                        .iter_mut()
+                        .find(|clip| clip.id == clip_id)
+                        .ok_or_else(|| format!("unknown MIDI clip: {clip_id}"))?;
+                    if key > 127 || velocity == 0 || velocity > 127 || duration_ticks == 0 {
+                        return Err("invalid MIDI note parameters".into());
+                    }
+                    let source = clip
+                        .take
+                        .events
+                        .first()
+                        .map(|event| event.source.clone())
+                        .unwrap_or(MidiSource { client: 0, port: 0 });
+                    let end_tick = start_tick.saturating_add(duration_ticks);
+                    let micros_at = |tick: u64| {
+                        (u128::from(tick) * 60_000_000)
+                            .checked_div(
+                                u128::from(clip.take.ppq.max(1))
+                                    * u128::from(clip.take.tempo_bpm.max(1)),
+                            )
+                            .unwrap_or(0)
+                            .min(u128::from(u64::MAX)) as u64
+                    };
+                    clip.take.events.push(RecordedMidiEvent {
+                        tick: start_tick,
+                        micros_since_start: micros_at(start_tick),
+                        source: source.clone(),
+                        message: RecordedMidiMessage::NoteOn {
+                            channel: 0,
+                            note: key,
+                            velocity,
+                        },
+                    });
+                    clip.take.events.push(RecordedMidiEvent {
+                        tick: end_tick,
+                        micros_since_start: micros_at(end_tick),
+                        source,
+                        message: RecordedMidiMessage::NoteOff {
+                            channel: 0,
+                            note: key,
+                            release_velocity: 0,
+                        },
+                    });
+                    clip.take.events.sort_by_key(|event| event.tick);
+                    clip.duration_ticks = clip.duration_ticks.max(end_tick);
+                    Ok(())
                 })
                 .map_err(|error| CommandError::Project(error.to_string()))?,
             ProjectCommand::RemoveAudioClip { clip_id } => self
@@ -2085,6 +2150,60 @@ mod tests {
         let redone = runtime.snapshot().project.project.midi_clips[0].clone();
         assert_eq!(redone.start_tick, 1_920);
         assert_eq!(redone.take.events, events);
+    }
+
+    #[test]
+    fn add_midi_note_is_reversible_and_preserves_existing_expression_events() {
+        let mut runtime = CommandRuntime::new(project());
+        let before = runtime.snapshot().project.project.midi_clips[0]
+            .take
+            .events
+            .clone();
+        runtime
+            .apply(envelope(
+                "add-note-1",
+                DomainCommand::Project(ProjectCommand::AddMidiNote {
+                    clip_id: "midi-clip-1".into(),
+                    start_tick: 960,
+                    duration_ticks: 480,
+                    key: 64,
+                    velocity: 91,
+                }),
+            ))
+            .unwrap();
+        let clip = &runtime.snapshot().project.project.midi_clips[0];
+        assert_eq!(clip.duration_ticks, 1_440);
+        assert!(clip.take.events.iter().any(|event| matches!(event.message, RecordedMidiMessage::NoteOn { note: 64, velocity: 91, .. } if event.tick == 960)));
+        assert!(clip.take.events.iter().any(|event| matches!(event.message, RecordedMidiMessage::NoteOff { note: 64, .. } if event.tick == 1_440)));
+        for event in before {
+            assert!(clip.take.events.contains(&event));
+        }
+        runtime
+            .apply(envelope(
+                "undo-add-note-1",
+                DomainCommand::Project(ProjectCommand::Undo),
+            ))
+            .unwrap();
+        assert_eq!(
+            runtime.snapshot().project.project.midi_clips[0]
+                .take
+                .events
+                .len(),
+            2
+        );
+        runtime
+            .apply(envelope(
+                "redo-add-note-1",
+                DomainCommand::Project(ProjectCommand::Redo),
+            ))
+            .unwrap();
+        assert_eq!(
+            runtime.snapshot().project.project.midi_clips[0]
+                .take
+                .events
+                .len(),
+            4
+        );
     }
 
     #[test]
