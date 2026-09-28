@@ -12,9 +12,9 @@ use estudio_daw_application::{
 };
 use estudio_daw_midi_engine::{MidiSource, MidiTake, RecordedMidiEvent, RecordedMidiMessage};
 use estudio_daw_project_model::{
-    ClipReference, ClipSlot, ImportProvenance, InstrumentConfig, MidiClip, Project, Scene,
-    TimeSignature, Track, TrackChannelConfig, TrackInputRoute, TrackKind, TrackMixerState,
-    TrackRole, Transport, TransportLoopRange,
+    ClipLaunchMode, ClipLaunchQuantization, ClipReference, ClipSlot, ImportProvenance,
+    InstrumentConfig, MidiClip, Project, Scene, TimeSignature, Track, TrackChannelConfig,
+    TrackInputRoute, TrackKind, TrackMixerState, TrackRole, Transport, TransportLoopRange,
 };
 use estudio_daw_runtime_diagnostics::audio_devices;
 use serde::Serialize;
@@ -132,6 +132,8 @@ struct ClipSlotSummary {
     track_id: String,
     clip_kind: Option<&'static str>,
     clip_id: Option<String>,
+    launch_quantization: ClipLaunchQuantization,
+    launch_mode: ClipLaunchMode,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -381,6 +383,8 @@ fn summarize(application: &ProjectApplication, audio_engine_connected: bool) -> 
                 track_id: slot.track_id.clone(),
                 clip_kind,
                 clip_id,
+                launch_quantization: slot.launch_quantization,
+                launch_mode: slot.launch_mode,
             }
         })
         .collect();
@@ -1533,6 +1537,10 @@ fn set_clip_slot(
             scene_id,
             track_id,
             clip,
+            launch_quantization: existing
+                .map(|slot| slot.launch_quantization)
+                .unwrap_or_default(),
+            launch_mode: existing.map(|slot| slot.launch_mode).unwrap_or_default(),
         };
         application
             .execute_project(ProjectCommand::SetClipSlot { slot })
@@ -1547,10 +1555,85 @@ fn set_clip_slot(
 }
 
 #[tauri::command]
+fn set_session_launch_quantization(
+    scene_id: String,
+    track_id: String,
+    launch_quantization: ClipLaunchQuantization,
+    state: State<'_, DesktopState>,
+) -> Result<UiSnapshot, String> {
+    let mut application = state
+        .application
+        .lock()
+        .map_err(|_| "el estado de la aplicación quedó bloqueado".to_owned())?;
+    let application = application
+        .as_mut()
+        .ok_or_else(|| "primero abre un proyecto".to_owned())?;
+    let mut slot = application
+        .snapshot()
+        .project
+        .project
+        .clip_slots
+        .into_iter()
+        .find(|slot| slot.scene_id == scene_id && slot.track_id == track_id)
+        .ok_or_else(|| "asigna un clip a la casilla antes de cambiar su cuantización".to_owned())?;
+    if slot.clip.is_none() {
+        return Err("asigna un clip a la casilla antes de cambiar su cuantización".to_owned());
+    }
+    slot.launch_quantization = launch_quantization;
+    application
+        .execute_project(ProjectCommand::SetClipSlot { slot })
+        .map_err(|error| error.to_string())?;
+    let connected = state
+        .audio
+        .lock()
+        .map_err(|_| "el estado del motor de audio quedó bloqueado".to_owned())?
+        .is_connected();
+    Ok(summarize(application, connected))
+}
+
+#[tauri::command]
+fn set_session_launch_mode(
+    scene_id: String,
+    track_id: String,
+    launch_mode: ClipLaunchMode,
+    state: State<'_, DesktopState>,
+) -> Result<UiSnapshot, String> {
+    let mut application = state
+        .application
+        .lock()
+        .map_err(|_| "el estado de la aplicación quedó bloqueado".to_owned())?;
+    let application = application
+        .as_mut()
+        .ok_or_else(|| "primero abre un proyecto".to_owned())?;
+    let mut slot = application
+        .snapshot()
+        .project
+        .project
+        .clip_slots
+        .into_iter()
+        .find(|slot| slot.scene_id == scene_id && slot.track_id == track_id)
+        .ok_or_else(|| "asigna un clip a la casilla antes de cambiar su modo".to_owned())?;
+    if slot.clip.is_none() {
+        return Err("asigna un clip a la casilla antes de cambiar su modo".to_owned());
+    }
+    slot.launch_mode = launch_mode;
+    application
+        .execute_project(ProjectCommand::SetClipSlot { slot })
+        .map_err(|error| error.to_string())?;
+    let connected = state
+        .audio
+        .lock()
+        .map_err(|_| "el estado del motor de audio quedó bloqueado".to_owned())?
+        .is_connected();
+    Ok(summarize(application, connected))
+}
+
+#[tauri::command]
 fn launch_session_slot(
     scene_id: String,
     track_id: String,
     grid_ticks: u64,
+    respect_clip_quantization: bool,
     state: State<'_, DesktopState>,
 ) -> Result<SessionLaunchView, String> {
     let application = state
@@ -1565,7 +1648,35 @@ fn launch_session_slot(
         .audio
         .lock()
         .map_err(|_| "el estado del motor de audio quedó bloqueado".to_owned())?
-        .launch_session_slot(&project, &scene_id, &track_id, grid_ticks)
+        .launch_session_slot(
+            &project,
+            &scene_id,
+            &track_id,
+            grid_ticks,
+            respect_clip_quantization,
+            None,
+        )
+}
+
+#[tauri::command]
+fn launch_session_scene(
+    scene_id: String,
+    grid_ticks: u64,
+    state: State<'_, DesktopState>,
+) -> Result<Vec<SessionLaunchView>, String> {
+    let application = state
+        .application
+        .lock()
+        .map_err(|_| "el estado de la aplicación quedó bloqueado".to_owned())?;
+    let application = application
+        .as_ref()
+        .ok_or_else(|| "primero abre un proyecto".to_owned())?;
+    let project = application.snapshot().project.project;
+    state
+        .audio
+        .lock()
+        .map_err(|_| "el estado del motor de audio quedó bloqueado".to_owned())?
+        .launch_session_scene(&project, &scene_id, grid_ticks)
 }
 
 #[tauri::command]
@@ -2337,7 +2448,10 @@ fn main() {
             remove_scene,
             move_scene,
             set_clip_slot,
+            set_session_launch_quantization,
+            set_session_launch_mode,
             launch_session_slot,
+            launch_session_scene,
             stop_session_track,
             session_launches,
             save_project,

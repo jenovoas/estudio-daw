@@ -46,7 +46,9 @@ mutación.
   de mezcla; asignar una entrada física opaca a una pista de audio y una salida
   interna a una pista de audio, bus o Master; armar/desarmar grabación;
 - escenas/casillas: crear, renombrar, reordenar y quitar escenas; asignar o
-  quitar casillas que referencian clips existentes sin copiarlos;
+  quitar casillas que referencian clips existentes sin copiarlos y guardar una
+  cuantización de lanzamiento propia o heredada de la rejilla global, además del
+  modo Repetir o Una pasada;
 - audio: agregar, recortar, mover, ajustar ganancia y desvanecimientos de clips;
   asignar/quitar entrada y armar pistas con `SetTrackInputRoute` y
   `SetTrackRecordArm`;

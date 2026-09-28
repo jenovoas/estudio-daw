@@ -1970,6 +1970,8 @@ mod tests {
             scene_id: "scene-1".into(),
             track_id: "track-midi".into(),
             clip: Some(ClipReference::Midi("midi-clip-1".into())),
+            launch_quantization: Default::default(),
+            launch_mode: Default::default(),
         });
         let mut runtime = CommandRuntime::new(initial.clone());
         let outcome = runtime.apply(envelope(
@@ -2043,6 +2045,8 @@ mod tests {
                         scene_id: "scene-1".into(),
                         track_id: "track-midi".into(),
                         clip: Some(ClipReference::Midi("midi-clip-1".into())),
+                        launch_quantization: Default::default(),
+                        launch_mode: Default::default(),
                     },
                 }),
             ))
@@ -2093,7 +2097,9 @@ mod tests {
                         id: "slot-wrong".into(),
                         scene_id: "scene-1".into(),
                         track_id: "track-audio".into(),
-                        clip: Some(ClipReference::Midi("midi-clip-1".into()))
+                        clip: Some(ClipReference::Midi("midi-clip-1".into())),
+                        launch_quantization: Default::default(),
+                        launch_mode: Default::default(),
                     },
                 })
             ))
@@ -2233,6 +2239,8 @@ mod tests {
             scene_id: "scene-a".into(),
             track_id: "track-midi".into(),
             clip: Some(ClipReference::Midi("midi-clip-1".into())),
+            launch_quantization: Default::default(),
+            launch_mode: Default::default(),
         });
         let mut runtime = CommandRuntime::new(initial);
         runtime

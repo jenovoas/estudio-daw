@@ -1145,16 +1145,34 @@ function sessionQuantizeTicks() {
   return Math.max(0, Math.round(Number(snap) * 960));
 }
 
-function sessionQuantizeLabel() {
+function sessionQuantizeLabel(override = "global") {
+  if (override !== "global") {
+    const labels = {
+      immediate: "ahora",
+      sixteenth: "en la siguiente semicorchea",
+      eighth: "en la siguiente corchea",
+      quarter: "en la siguiente negra",
+      bar: "en el siguiente compás",
+    };
+    return labels[override] ?? "la rejilla de la casilla";
+  }
   if (elements.gridSnap.value === "0") return "ahora";
-  return `en la rejilla (${elements.gridSnap.selectedOptions[0]?.textContent ?? "compás"})`;
+  return `en la rejilla global (${elements.gridSnap.selectedOptions[0]?.textContent ?? "compás"})`;
 }
 
-async function launchSessionSlot(sceneId, trackId) {
+async function launchSessionSlot(sceneId, trackId, respectClipQuantization = true) {
   try {
-    const launch = await platform.launchSessionSlot(sceneId, trackId, sessionQuantizeTicks());
+    const launch = await platform.launchSessionSlot(sceneId, trackId, sessionQuantizeTicks(), respectClipQuantization);
+    const launchQuantization = (lastSnapshot?.clipSlots ?? []).find(
+      (slot) => slot.sceneId === sceneId && slot.trackId === trackId,
+    )?.launchQuantization ?? "global";
+    const launchMode = (lastSnapshot?.clipSlots ?? []).find(
+      (slot) => slot.sceneId === sceneId && slot.trackId === trackId,
+    )?.launchMode ?? "loop";
     sessionLaunches = sessionLaunches.filter((item) => item.trackId !== trackId).concat(launch);
-    setNotice("Clip en cola", launch.state === "queued" ? `Sonará ${sessionQuantizeLabel()}.` : "El clip ya está sonando y se repetirá hasta detenerlo.");
+    setNotice("Clip en cola", launch.state === "queued"
+      ? `Sonará ${sessionQuantizeLabel(launchQuantization)}.`
+      : launchMode === "one_shot" ? "El clip está reproduciendo una pasada." : "El clip está repitiéndose hasta detenerlo.");
     if (lastSnapshot) renderSnapshot(lastSnapshot);
   } catch (error) {
     setNotice("No se pudo lanzar el clip", String(error));
@@ -1168,12 +1186,10 @@ async function launchSessionScene(sceneId, snapshot) {
     return;
   }
   try {
-    const gridTicks = sessionQuantizeTicks();
-    for (const slot of slots) {
-      const launch = await platform.launchSessionSlot(sceneId, slot.trackId, gridTicks);
-      sessionLaunches = sessionLaunches.filter((item) => item.trackId !== slot.trackId).concat(launch);
-    }
-    setNotice("Escena en cola", `Los clips de la escena salen ${sessionQuantizeLabel()} y se repiten.`);
+    const launches = await platform.launchSessionScene(sceneId, sessionQuantizeTicks());
+    const trackIds = new Set(launches.map((launch) => launch.trackId));
+    sessionLaunches = sessionLaunches.filter((item) => !trackIds.has(item.trackId)).concat(launches);
+    setNotice("Escena en cola", `Los clips se lanzan juntos según la rejilla global (${sessionQuantizeLabel()}) y respetan su modo; las casillas vacías conservan su clip actual.`);
     renderSnapshot(snapshot);
   } catch (error) {
     setNotice("No se pudo lanzar la escena", String(error));
@@ -1322,6 +1338,33 @@ function renderSessionSurface(snapshot) {
         const [kind, id] = select.value ? select.value.split(":", 2) : [null, null];
         runCommand("Casilla de Session actualizada", () => platform.setClipSlot(scene.id, track.id, kind, id));
       });
+      const launchQuantization = document.createElement("select");
+      launchQuantization.setAttribute("aria-label", `Cuantización de lanzamiento de ${track.name} en ${scene.name}`);
+      launchQuantization.title = "Cuantización de lanzamiento propia de esta casilla";
+      for (const [value, label] of [
+        ["global", "Rejilla global"],
+        ["immediate", "Ahora"],
+        ["sixteenth", "1/16"],
+        ["eighth", "1/8"],
+        ["quarter", "Negra"],
+        ["bar", "Compás"],
+      ]) launchQuantization.append(new Option(label, value));
+      launchQuantization.value = slot?.launchQuantization ?? "global";
+      launchQuantization.disabled = !slot?.clipId;
+      launchQuantization.addEventListener("change", () => runCommand(
+        "Cuantización de Session actualizada",
+        () => platform.setSessionLaunchQuantization(scene.id, track.id, launchQuantization.value),
+      ));
+      const launchMode = document.createElement("select");
+      launchMode.setAttribute("aria-label", `Modo de lanzamiento de ${track.name} en ${scene.name}`);
+      launchMode.title = "Se aplica al próximo lanzamiento de esta casilla";
+      launchMode.append(new Option("Repetir", "loop"), new Option("Una pasada", "one_shot"));
+      launchMode.value = slot?.launchMode ?? "loop";
+      launchMode.disabled = !slot?.clipId;
+      launchMode.addEventListener("change", () => runCommand(
+        "Modo de lanzamiento de Session actualizado",
+        () => platform.setSessionLaunchMode(scene.id, track.id, launchMode.value),
+      ));
       const launch = document.createElement("button");
       launch.type = "button";
       const playing = sessionLaunches.find((item) => item.trackId === track.id && item.clipId === slot?.clipId);
@@ -1341,11 +1384,11 @@ function renderSessionSurface(snapshot) {
         launch.textContent = playing?.state === "queued" ? "○" : "▶";
         launch.disabled = !engineReady;
         launch.title = engineReady
-          ? `Lanzar clip ${sessionQuantizeLabel()} en ${track.name}`
+          ? `Lanzar clip ${sessionQuantizeLabel(slot?.launchQuantization)} · ${track.name}`
           : "Dale a Play para lanzar el clip";
         launch.addEventListener("click", () => launchSessionSlot(scene.id, track.id));
       }
-      cell.append(launch, select);
+      cell.append(launch, select, launchQuantization, launchMode);
       grid.append(cell);
     }
   }

@@ -90,6 +90,31 @@ pub struct Scene {
     pub name: String,
 }
 
+/// Cuantización de lanzamiento propia de una casilla de Session.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum ClipLaunchQuantization {
+    /// Hereda la rejilla global seleccionada para el lanzamiento.
+    #[default]
+    Global,
+    Immediate,
+    Sixteenth,
+    Eighth,
+    Quarter,
+    Bar,
+}
+
+/// Comportamiento de repetición de un clip lanzado desde Session.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum ClipLaunchMode {
+    /// Repite el contenido hasta detener o sustituir el clip.
+    #[default]
+    Loop,
+    /// Reproduce una pasada y termina al alcanzar la duración del clip.
+    OneShot,
+}
+
 /// Un slot referencia un clip persistido; no contiene una copia del MIDI/audio.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ClipSlot {
@@ -98,6 +123,12 @@ pub struct ClipSlot {
     pub track_id: String,
     #[serde(default)]
     pub clip: Option<ClipReference>,
+    /// Los proyectos anteriores heredan la cuantización global al cargar.
+    #[serde(default)]
+    pub launch_quantization: ClipLaunchQuantization,
+    /// Los proyectos anteriores conservan el comportamiento repetitivo ya vigente.
+    #[serde(default)]
+    pub launch_mode: ClipLaunchMode,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -2351,6 +2382,8 @@ mod tests {
             scene_id: "scene-a".into(),
             track_id: midi_track_id,
             clip: Some(ClipReference::Midi("midi-shared".into())),
+            launch_quantization: ClipLaunchQuantization::Global,
+            launch_mode: ClipLaunchMode::Loop,
         });
         assert_eq!(project.validate_track_contracts(), Ok(()));
         let restored: Project =
@@ -2399,6 +2432,8 @@ mod tests {
             scene_id: "scene-a".into(),
             track_id: second,
             clip: Some(ClipReference::Midi("midi-owned-by-first".into())),
+            launch_quantization: ClipLaunchQuantization::Global,
+            launch_mode: ClipLaunchMode::Loop,
         });
         assert_eq!(
             project.validate_persisted_contracts(),

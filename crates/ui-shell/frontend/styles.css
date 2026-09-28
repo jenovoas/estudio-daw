@@ -258,7 +258,7 @@ button:disabled { opacity: .4; cursor: not-allowed !important; }
 .session-scene-header input { min-width: 0; width: 100%; border: 1px solid #4a5053; border-radius: 3px; padding: 5px; background: #25292b; color: #e0e2e2; font-size: 9px; }
 .session-remove-scene { width: 23px; height: 23px; min-width: 23px; }
 .session-order-button { width: 20px; height: 23px; min-width: 20px; padding: 0; font-size: 9px; }
-.session-cell { min-height: 58px; padding: 6px; box-shadow: inset 2px 0 color-mix(in srgb, var(--track-color, #58a6b8) 62%, transparent); }
+.session-cell { min-height: 58px; padding: 6px; flex-wrap: wrap; box-shadow: inset 2px 0 color-mix(in srgb, var(--track-color, #58a6b8) 62%, transparent); }
 .session-cell select { min-width: 0; width: 100%; border: 1px solid #4b5154; border-radius: 3px; padding: 6px; background: #24282a; color: #e2e4e4; font-size: 8px; }
 .session-launch { width: 25px; height: 25px; flex: 0 0 25px; border: 1px solid #4b5154; border-radius: 50%; background: #272a2c; color: #aeb4b6; cursor: pointer; }
 .session-launch.has-clip { border-color: #675039; color: #ffc187; }

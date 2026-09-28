@@ -1,5 +1,12 @@
 # Handoff de continuación — 2026-09-27
 
+## Corte local actual — ajustes de lanzamiento por casilla de Session (2026-09-28)
+
+- `ClipSlot` persiste `ClipLaunchQuantization`: global (valor por defecto para proyectos existentes), ahora, 1/16, 1/8, negra o compás según la métrica del proyecto; también `ClipLaunchMode`: Repetir o Una pasada (los proyectos existentes conservan Repetir). Session deja editar ambos por casilla; cambiar el clip conserva esos ajustes. Una pasada programa una reproducción MIDI o una instancia decodificada del audio; Repetir amplía ventanas fuera del callback. El modo se aplica al próximo lanzamiento.
+- Los ajustes se guardan mediante el comando reversible `SetClipSlot` y aparecen en la instantánea Tauri. El lanzamiento de escena usa un único comando/tick global y cada clip respeta su modo; las casillas vacías conservan su clip activo. No se cambió la propuesta ni se marcaron tareas completas.
+- Verificación: `cargo check -p estudio-daw-ui-shell`, `cargo fmt --all -- --check`, `node --check` de `main.js` y `platform-tauri.js`, `git diff --check` y `openspec validate workstation-arrangement-surface-v2 --strict` pasaron. No se ejecutaron pruebas.
+- OpenSpec sigue en 10/44; 3.2 y 4.4 siguen parciales. Pendientes: reglas de lanzamiento adicionales, semántica final de escena/selección y QA visual/funcional; falta revisar e integrar los hallazgos del análisis paralelo de Meta Muse.
+
 ## Punto de reanudación actual — loop Session hasta detener (2026-09-28)
 
 - El host rellena ventanas MIDI (`ExtendTrack`) y audio (`Append` al mixer) fuera del callback cuando la posición se acerca al final de la ventana. El clip marcado `looping` sigue sonando hasta ■. El mixer aplica `start_frame` relativo al `frame_cursor` al recibir el comando, para poder lanzar audio a mitad de un plan. `cargo check -p estudio-daw-ui-shell` pasa.

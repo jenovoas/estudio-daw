@@ -13,8 +13,9 @@ use estudio_daw_audio_platform::{
 };
 use estudio_daw_midi_engine::{LiveMidiOutputWorker, RecordedMidiMessage};
 use estudio_daw_project_model::{
-    AudioClip, AudioSource, ClipReference, InstrumentConfig, MidiClip, PluginStateReference,
-    Project, Track, TrackKind, TrackRole, TransportLoopRange,
+    AudioClip, AudioSource, ClipLaunchMode, ClipLaunchQuantization, ClipReference,
+    InstrumentConfig, MidiClip, PluginStateReference, Project, Track, TrackKind, TrackRole,
+    TransportLoopRange,
 };
 use estudio_daw_runtime_diagnostics::{audio_devices, DeviceInfo};
 use estudio_daw_synth::{
@@ -1619,6 +1620,8 @@ impl AudioRuntimeHost {
         scene_id: &str,
         track_id: &str,
         grid_ticks: u64,
+        respect_clip_quantization: bool,
+        launch_tick_override: Option<u64>,
     ) -> Result<SessionLaunchView, String> {
         let playback = self
             .playback
@@ -1631,15 +1634,35 @@ impl AudioRuntimeHost {
             .find(|slot| slot.scene_id == scene_id && slot.track_id == track_id)
             .ok_or_else(|| "esa casilla de Session no existe".to_owned())?;
         let position = self.position_ticks();
-        let launch_tick = next_quantized_tick(position, grid_ticks);
         let bpm = if project.transport.tempo_bpm.is_finite() {
             project.transport.tempo_bpm.clamp(20.0, 999.0)
         } else {
             120.0
         };
         let bar_ticks = ticks_per_bar(&project.transport.time_signature);
+        let effective_grid = if respect_clip_quantization {
+            match slot.launch_quantization {
+                ClipLaunchQuantization::Global => grid_ticks,
+                ClipLaunchQuantization::Immediate => 0,
+                ClipLaunchQuantization::Sixteenth => {
+                    u64::from(estudio_daw_application::TICKS_PER_QUARTER) / 4
+                }
+                ClipLaunchQuantization::Eighth => {
+                    u64::from(estudio_daw_application::TICKS_PER_QUARTER) / 2
+                }
+                ClipLaunchQuantization::Quarter => {
+                    u64::from(estudio_daw_application::TICKS_PER_QUARTER)
+                }
+                ClipLaunchQuantization::Bar => bar_ticks,
+            }
+        } else {
+            grid_ticks
+        };
+        let launch_tick =
+            launch_tick_override.unwrap_or_else(|| next_quantized_tick(position, effective_grid));
         let window = session_loop_window_ticks(bar_ticks);
         let horizon = launch_tick.saturating_add(window);
+        let looping = slot.launch_mode == ClipLaunchMode::Loop;
         let mut midi_clip = None;
         let mut audio_clip = None;
         let mut audio_source = None;
@@ -1652,7 +1675,11 @@ impl AudioRuntimeHost {
                     .ok_or_else(|| {
                         "el clip MIDI de la casilla ya no está en el proyecto".to_owned()
                     })?;
-                let events = session_midi_events_looped(clip, launch_tick, bpm, horizon);
+                let events = if looping {
+                    session_midi_events_looped(clip, launch_tick, bpm, horizon)
+                } else {
+                    session_midi_events(clip, launch_tick, bpm)
+                };
                 playback
                     .schedule
                     .send(SchedulerCommand::LaunchTrack {
@@ -1664,7 +1691,12 @@ impl AudioRuntimeHost {
                         "el scheduler MIDI terminó antes de recibir el lanzamiento".to_owned()
                     })?;
                 midi_clip = Some(clip.clone());
-                (SessionClipKind::Midi, clip.id.clone(), horizon)
+                let end_tick = if looping {
+                    horizon
+                } else {
+                    launch_tick.saturating_add(clip_duration_session_ticks(clip).max(1))
+                };
+                (SessionClipKind::Midi, clip.id.clone(), end_tick)
             }
             Some(ClipReference::Audio(clip_id)) => {
                 let clip = project
@@ -1679,15 +1711,23 @@ impl AudioRuntimeHost {
                     .iter()
                     .find(|source| clip.source_id.as_ref() == Some(&source.id))
                     .cloned();
-                self.replace_session_audio(project, track_id, clip, launch_tick, bpm, false)?;
+                let repeats = if looping { SESSION_AUDIO_REPEATS } else { 1 };
+                self.replace_session_audio(
+                    project,
+                    track_id,
+                    clip,
+                    launch_tick,
+                    bpm,
+                    false,
+                    repeats,
+                )?;
                 let duration = audio_clip_duration_session_ticks(clip, bpm).max(1);
                 audio_clip = Some(clip.clone());
                 audio_source = source;
                 (
                     SessionClipKind::Audio,
                     clip.id.clone(),
-                    launch_tick
-                        .saturating_add(duration.saturating_mul(u64::from(SESSION_AUDIO_REPEATS))),
+                    launch_tick.saturating_add(duration.saturating_mul(u64::from(repeats))),
                 )
             }
             None => return Err("la casilla está vacía".to_owned()),
@@ -1715,7 +1755,7 @@ impl AudioRuntimeHost {
                     kind,
                     launch_tick,
                     end_tick,
-                    looping: true,
+                    looping,
                     bpm,
                     bar_ticks,
                     midi_clip,
@@ -1724,6 +1764,37 @@ impl AudioRuntimeHost {
                 },
             );
         Ok(view)
+    }
+
+    pub fn launch_session_scene(
+        &mut self,
+        project: &Project,
+        scene_id: &str,
+        grid_ticks: u64,
+    ) -> Result<Vec<SessionLaunchView>, String> {
+        let tracks = project
+            .clip_slots
+            .iter()
+            .filter(|slot| slot.scene_id == scene_id && slot.clip.is_some())
+            .map(|slot| slot.track_id.clone())
+            .collect::<Vec<_>>();
+        if tracks.is_empty() {
+            return Err("la escena no tiene clips para lanzar".to_owned());
+        }
+        let launch_tick = next_quantized_tick(self.position_ticks(), grid_ticks);
+        tracks
+            .iter()
+            .map(|track_id| {
+                self.launch_session_slot(
+                    project,
+                    scene_id,
+                    track_id,
+                    grid_ticks,
+                    false,
+                    Some(launch_tick),
+                )
+            })
+            .collect()
     }
 
     fn maintain_session_loops(&mut self) -> Result<(), String> {
@@ -1796,7 +1867,15 @@ impl AudioRuntimeHost {
         drop(launches);
         for (track_id, clip, source, launch_tick, bpm) in audio_refills {
             if let Some(source) = source.as_ref() {
-                self.push_session_audio(&track_id, &clip, source, launch_tick, bpm, true)?;
+                self.push_session_audio(
+                    &track_id,
+                    &clip,
+                    source,
+                    launch_tick,
+                    bpm,
+                    true,
+                    SESSION_AUDIO_REPEATS,
+                )?;
             }
         }
         Ok(())
@@ -1810,6 +1889,7 @@ impl AudioRuntimeHost {
         launch_tick: u64,
         bpm: f64,
         append: bool,
+        repeats: u32,
     ) -> Result<(), String> {
         let source_id = clip
             .source_id
@@ -1820,7 +1900,7 @@ impl AudioRuntimeHost {
             .iter()
             .find(|source| source.id == *source_id)
             .ok_or_else(|| format!("no está la fuente de '{}'", clip.name))?;
-        self.push_session_audio(track_id, clip, source, launch_tick, bpm, append)
+        self.push_session_audio(track_id, clip, source, launch_tick, bpm, append, repeats)
     }
 
     fn push_session_audio(
@@ -1831,6 +1911,7 @@ impl AudioRuntimeHost {
         launch_tick: u64,
         bpm: f64,
         append: bool,
+        repeats: u32,
     ) -> Result<(), String> {
         let sample_rate = PipeWireStreamConfig::default().sample_rate;
         let streams = session_audio_streams(
@@ -1840,6 +1921,7 @@ impl AudioRuntimeHost {
             self.position_ticks(),
             bpm,
             sample_rate,
+            repeats,
         )?;
         let mut pumps = Vec::with_capacity(streams.len());
         let mut live_streams = Vec::with_capacity(streams.len());
@@ -3737,6 +3819,7 @@ fn session_audio_streams(
     position_ticks: u64,
     bpm: f64,
     sample_rate: u32,
+    repeats: u32,
 ) -> Result<Vec<PreparedSessionAudio>, String> {
     let source_rate = source.sample_rate_hz.unwrap_or(clip.sample_rate);
     let to_output_frames = |source_samples: u64| -> u64 {
@@ -3751,7 +3834,7 @@ fn session_audio_streams(
     let duration_frames = to_output_frames(clip.duration_samples).max(1);
     let gain = 10.0_f32.powf(clip.gain_db / 20.0);
     let mut prepared = Vec::new();
-    for repeat in 0..SESSION_AUDIO_REPEATS {
+    for repeat in 0..repeats {
         let decoder = estudio_daw_media_adapter::AudioPcmDecoder::spawn(
             &source.media.original_path,
             source_rate,
