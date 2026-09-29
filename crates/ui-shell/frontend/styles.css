@@ -332,6 +332,7 @@ button:disabled { opacity: .4; cursor: not-allowed !important; }
 .workstation.browser-collapsed { grid-template-columns: 0 minmax(0, 1fr); }
 .workstation.browser-collapsed .browser { display: none; }
 .editor.has-midi-editor .clip-inspector { min-height: 0; flex: 1; overflow: hidden; display: flex; flex-direction: column; align-content: initial; padding: 0; gap: 0; }
+.editor.has-midi-editor .clip-inspector[hidden] { display: none; }
 .lower-panel-title { height: 28px; }
 .panel-grip { width: 22px; height: 20px; display: grid; place-items: center; padding: 0; border: 0; border-radius: 3px; background: transparent; color: #8d9497; font-size: 11px; cursor: ns-resize; }
 .panel-grip:hover { background: #3b4043; color: #e0e3e4; }

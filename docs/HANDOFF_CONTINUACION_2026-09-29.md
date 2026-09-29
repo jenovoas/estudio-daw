@@ -437,3 +437,18 @@ abiertas por falta de QA y aceptación visual.
   restaurar en 760×520, 1280×720 y 1920×1080. Conserva las verificaciones MIDI,
   filtros, categorías y Session. La captura runtime del reporte no equivale a
   repetición Tauri de la Demo; esa comprobación sigue pendiente.
+
+## Corrección del selector Clip/Dispositivo — 2026-09-29
+
+- La regla `.editor.has-midi-editor .clip-inspector` imponía `display:flex`
+  incluso cuando el selector Dispositivo había marcado el inspector de Clip como
+  `hidden`. El resultado era ver simultáneamente el piano roll y el dispositivo,
+  aunque sólo una pestaña figuraba seleccionada. Se añadió una regla explícita
+  para respetar el estado oculto.
+- Verificación Firefox headless a 1280×720 y 1920×1080 con el `main.js` y CSS
+  reales y un adaptador/snapshot de prueba: el smoke confirma que Dispositivo
+  oculta el inspector MIDI, Clip lo restaura y sobreviven los flujos de scroll,
+  zoom, colapso del panel, Navegador, filtros y Session. Esto no sustituye la
+  matriz Tauri runtime; 3.1.5 y 3.1 siguen abiertas.
+- Registrar SHA y publicación en la siguiente entrada de bitácora; no cerrar
+  tareas de aceptación visual por esta regresión corregida.
