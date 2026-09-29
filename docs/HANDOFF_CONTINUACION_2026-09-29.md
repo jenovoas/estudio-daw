@@ -2,13 +2,17 @@
 
 ## Prioridad para la próxima sesión
 
-La prioridad absoluta es la UI y el frontend. La persona usuaria busca para Linux
-una experiencia muy cercana al flujo creativo y la distribución de Ableton Live;
-considera que la versión actual todavía no se acerca y que el último cambio sólo
-mejoró un poco la organización. No presentar el corte como aceptado ni pedirle
-que valide esta versión como condición para volver a funciones: seguir trabajando
-en una transformación visual sustancial hasta que la persona usuaria diga que se
-acerca a lo que busca. No retomar tareas de funciones durante ese trabajo.
+La prioridad inmediata es continuar la secuencia visual 3.1 en frontend, buscando
+para Linux una experiencia de creación y una jerarquía reconocibles para músicos,
+inspiradas en el flujo de Ableton Live sin copiar sus recursos. La persona usuaria
+ya indicó que el ordenamiento actual sigue lejos del objetivo y pidió explícitamente
+comisionar los cortes y continuar sin interrumpir su flujo. Avanzar sin pedir
+capturas ni confirmaciones rutinarias; automatizar las verificaciones posibles y
+no manipular la ventana de escritorio de la persona usuaria. Mantener 3.1 abierta
+hasta que se realice la inspección Tauri y la aceptación visual; esa aceptación es
+un criterio de cierre, no un bloqueo para seguir implementando el plan aprobado.
+Tras el trabajo visual prioritario, los flujos reales de plugins y dispositivos
+MIDI son esenciales y deben continuar en las tareas ya aprobadas.
 
 ## Estado visual al cierre
 
@@ -32,9 +36,9 @@ acerca a lo que busca. No retomar tareas de funciones durante ese trabajo.
 
 ## Estado técnico guardado
 
-- Rama `main`, HEAD `4c532ce`. Los cambios permanecen locales y sin commit; el
-  intento de crear un commit de resguardo fue interrumpido. Verificar
-  `git status --short --branch` y `git log -3 --oneline` antes de continuar.
+- El estado inicial de este handoff se reemplazó por continuaciones posteriores.
+  Al 2026-09-29, HEAD local es `e2321e4`; siete commits delante de `origin/main`,
+  sin publicar. Consultar `git status` y `git log` para el estado vigente.
 - La intervención incluye la reorganización del navegador/barra de control y el
   retorno desde lanzamientos Session a Arreglo desde la posición actual durante
   Play. El retorno recompila el plan sin cerrar PipeWire y limpia las colas de
@@ -48,26 +52,21 @@ acerca a lo que busca. No retomar tareas de funciones durante ese trabajo.
 
 ## Continuación exacta
 
-1. Leer este handoff, `AGENTS.md`, `README.md`,
-   `openspec/changes/workstation-arrangement-surface-v2/{proposal.md,design.md,
-   tasks.md}` y `docs/ui-architecture.md`; verificar rama, árbol e historial.
-2. Abrir el Demo MIDI guardado por la persona usuaria en Tauri y revisar primero
-   la composición de la ventana a tamaño estándar. Revisar también tamaño
-   estrecho y las vistas Arreglo/Session y detalle/Mezclador.
-3. Hacer un análisis y rediseño de interfaz de mayor alcance guiado por la
-   jerarquía real de Live: Browser categorizado y usable, transporte/control
-   global, Arrangement como canvas multipista amplio, Session como superficie
-   alternativa equivalente, panel inferior contextual y mezclador integrado.
-   Distinguir los contenidos que existen de los que faltan; no rellenar el
-   navegador con categorías vacías. Evitar más retoques incrementales de CSS que
-   no cambien el flujo perceptible.
-4. Mantener la implementación dentro de OpenSpec y preservar el límite de no
-   copiar código, marca ni recursos de Ableton. No dar 3.1 por completa por
-   inspección de código/build: se necesita feedback explícito de la persona
-   usuaria después de un cambio sustancial.
-5. Sólo después de que la persona usuaria acepte la dirección visual, continuar
-   otras tareas OpenSpec. 2.2, 2.3, 3.4, 3.5, 3.6, 4.x y 5.x siguen con QA o
-   trabajo pendiente; no inferir que se completaron por compartir los cambios.
+1. Leer este handoff, `AGENTS.md`, `README.md`, los artefactos de
+   `workstation-arrangement-surface-v2` y `docs/ui-architecture.md`; revisar
+   siempre estado e historial antes de editar.
+2. Continuar la secuencia L1–L6 con las tareas OpenSpec y el wireframe de
+   `design.md`. Usar Firefox/headless y pruebas del frontend; no presentar un
+   adaptador Tauri simulado como QA del runtime. No tocar ni enfocar la ventana
+   abierta de escritorio.
+3. Completar el rediseño sustancial de Browser, control/transporte, Arrangement,
+   Session, detalle contextual y mezcla con las capacidades existentes. Mantener
+   categorías basadas en contenido real y el alcance en UI mientras sea la
+   prioridad inmediata.
+4. No marcar 3.1 completa sin inspección Tauri y aceptación explícita, pero
+   continuar el trabajo aprobado sin pedir feedback para cada corte. Después,
+   priorizar integración de VST/Analog Lab y entrada/dispositivos MIDI, esenciales
+   para la persona usuaria.
 
 ## Prompts para la próxima sesión
 
