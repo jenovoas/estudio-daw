@@ -163,6 +163,14 @@ button:disabled { opacity: .4; cursor: not-allowed !important; }
 .track-column-heading, .timeline-ruler { position: sticky; top: 24px; z-index: 5; height: 34px; display: flex; align-items: center; background: #202326; border-bottom: 1px solid #141617; }
 .track-column-heading { grid-column: 2; grid-row: 2; right: 0; z-index: 8; justify-content: space-between; padding: 0 8px; border-left: 1px solid #151819; color: #a5abae; font-size: 11px; font-weight: 750; letter-spacing: 1px; }
 .track-column-heading span:last-child { color: #82898d; font-size: 11px; }
+.arrangement-create-menu { position: relative; flex: none; }
+.arrangement-create-menu > summary { min-height: 22px; display: flex; align-items: center; padding: 0 6px; border: 1px solid #4a5053; border-radius: 3px; background: #292d30; color: #d6b08d; font-size: 11px; font-weight: 600; cursor: pointer; list-style: none; }
+.arrangement-create-menu > summary::-webkit-details-marker { display: none; }
+.arrangement-create-menu[open] > summary, .arrangement-create-menu > summary:hover { border-color: #a87549; background: #3a3027; color: #ffd2a8; }
+.arrangement-create-menu-items { position: absolute; z-index: 30; top: calc(100% + 3px); right: 0; min-width: 150px; display: grid; gap: 2px; padding: 4px; border: 1px solid #555d60; border-radius: 3px; background: #292d30; box-shadow: 0 5px 14px #0009; }
+.arrangement-create-menu-items button { min-height: 26px; padding: 3px 7px; border: 0; border-radius: 2px; background: transparent; color: #dfe2e3; font-size: 11px; text-align: left; cursor: pointer; }
+.arrangement-create-menu-items button:hover:not(:disabled), .arrangement-create-menu-items button:focus-visible { background: #41484b; color: #fff; }
+.arrangement-create-menu-items button:disabled { opacity: .42; cursor: not-allowed; }
 .track-create-actions { display: flex; gap: 3px; }
 .track-create-actions button { border: 1px solid #454a4d; border-radius: 3px; background: #292d30; color: #c8cdcf; font: 700 11px sans-serif; padding: 3px 5px; cursor: pointer; }
 .track-create-actions button:hover { background: #3a4043; color: #fff; }

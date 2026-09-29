@@ -48,6 +48,7 @@ const elements = {
   loopPointB: document.querySelector("#loop-point-b"),
   loopRangeClear: document.querySelector("#loop-range-clear"),
   tracks: document.querySelector("#track-list"),
+  arrangementCreateTrackButtons: [...document.querySelectorAll(".arrangement-create-track")],
   lanes: document.querySelector("#arrangement-lanes"),
   ruler: document.querySelector("#timeline-ruler"),
   overview: document.querySelector("#arrangement-overview"),
@@ -564,7 +565,7 @@ async function whileBusy(buttons, operation) {
 
 function setProjectEnabled(enabled) {
   hasProject = enabled;
-  for (const button of [elements.save, elements.saveAs, elements.play, elements.record, elements.pause, elements.stop, elements.addMidiTrack, elements.addAudioTrack, elements.addBusTrack]) {
+  for (const button of [elements.save, elements.saveAs, elements.play, elements.record, elements.pause, elements.stop, elements.addMidiTrack, elements.addAudioTrack, elements.addBusTrack, ...elements.arrangementCreateTrackButtons]) {
     button.disabled = !enabled;
     if (!enabled) button.title = `${button.getAttribute("aria-label") ?? "Acción"}: abre o crea un proyecto primero`;
   }
@@ -3297,6 +3298,14 @@ async function addTrack(kind, button) {
 elements.addMidiTrack.addEventListener("click", () => addTrack("midi", elements.addMidiTrack));
 elements.addAudioTrack.addEventListener("click", () => addTrack("audio", elements.addAudioTrack));
 elements.addBusTrack.addEventListener("click", () => addTrack("bus", elements.addBusTrack));
+for (const button of elements.arrangementCreateTrackButtons) {
+  button.addEventListener("click", async () => {
+    const menu = button.closest(".arrangement-create-menu");
+    if (menu) menu.open = false;
+    const kind = button.dataset.trackKind;
+    if (["midi", "audio", "bus"].includes(kind)) await addTrack(kind, button);
+  });
+}
 elements.ruler.addEventListener("click", async (event) => {
   setEditCursorFromX(event.clientX, elements.ruler.getBoundingClientRect());
   if (projectTransportState !== "playing") return;
@@ -3562,6 +3571,8 @@ document.addEventListener("keydown", handleCreativeWorkspaceShortcut);
 document.addEventListener("contextmenu", showContextMenu);
 document.addEventListener("pointerdown", (event) => {
   if (!event.target.closest("#action-context-menu")) closeContextMenu();
+  const arrangementCreateMenu = document.querySelector(".arrangement-create-menu");
+  if (arrangementCreateMenu?.open && !event.target.closest(".arrangement-create-menu")) arrangementCreateMenu.open = false;
   if (!event.target.closest(".application-menu-group")) {
     elements.applicationMenu.querySelectorAll(".application-menu-group.is-open").forEach((group) => {
       group.classList.remove("is-open");
@@ -3572,6 +3583,11 @@ document.addEventListener("pointerdown", (event) => {
 document.addEventListener("keydown", (event) => {
   if (event.key !== "Escape") return;
   closeContextMenu();
+  const arrangementCreateMenu = document.querySelector(".arrangement-create-menu");
+  if (arrangementCreateMenu?.open) {
+    arrangementCreateMenu.open = false;
+    arrangementCreateMenu.querySelector("summary")?.focus();
+  }
   elements.applicationMenu.querySelectorAll(".application-menu-group.is-open").forEach((group) => {
     group.classList.remove("is-open");
     group.querySelector(".application-menu-toggle")?.setAttribute("aria-expanded", "false");
