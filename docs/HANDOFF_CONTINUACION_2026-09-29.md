@@ -480,3 +480,9 @@ abiertas por falta de QA y aceptación visual.
 
 - Los accesos desde la cabecera de pista y desde Navegador comparten una transición: seleccionan la pista, abren el detalle Dispositivo, restauran el panel si estaba colapsado y cierran Mezcla. El acceso desde Navegador también vuelve a Arreglo y enfoca la pista.
 - Firefox headless con frontend real y snapshot/adaptador sintético pasó la transición desde detalle colapsado + Mezcla activa a Dispositivo visible; continuaron pasando piano MIDI, carriles, categorías, filtros, búsqueda y Session. Es smoke frontend, no QA Tauri.
+
+
+## Edición MIDI con ratón — 2026-09-29
+
+- El smoke Firefox ejercitó el clic de la rejilla en C4, tercer paso: el manejador frontend envió `addMidiNote` para el clip seleccionado, nota MIDI 60, inicio 960 ticks y duración configurada desde PPQ. El resto del recorrido visual también terminó en `BEHAVIOR PASS` a 1280×720.
+- El adaptador de prueba captura el comando; no valida la mutación del modelo Tauri ni la reproducción acústica. El usuario ya puede componer desde la rejilla con el ratón según el handler actual; no se añade un contrato nuevo.
