@@ -386,3 +386,13 @@ abiertas por falta de QA y aceptación visual.
   1280.png` muestra matriz y detalle MIDI simultáneos. El motor simulado figura
   desconectado y por eso no se reclama QA de lanzamiento. El smoke de Browser y
   Session pasó; runtime Tauri sigue pendiente.
+- Corrección L2 en curso: el selector tardío `.editor.has-midi-editor:not(...)`
+  prevalecía sobre `clip-detail-hidden`, por lo que el piano podía dejar una
+  reserva vacía al ocultar Detalle. Los estados del piano/mezclador se agruparon
+  con el grid base y ahora hay reglas explícitas para detalle oculto, con y sin
+  mezclador, también en ventana baja. Firefox headless comprobó el botón de
+  detalle: panel 0–1 px al ocultarse y clip MIDI conservado al restaurarlo, tanto
+  a 1280×720 como a 1920×1080. La captura `/tmp/estudio-daw-ui-detail-1280.png`
+  termina en Session con el clip/editor aún disponibles; `/tmp/estudio-daw-ui-
+  detail-1920.png` muestra el rango MIDI desplazable. Esto ejercita frontend real
+  con snapshot/plataforma simulados, no Tauri.
