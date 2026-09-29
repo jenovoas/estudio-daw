@@ -486,3 +486,9 @@ abiertas por falta de QA y aceptación visual.
 
 - El smoke Firefox ejercitó el clic de la rejilla en C4, tercer paso: el manejador frontend envió `addMidiNote` para el clip seleccionado, nota MIDI 60, inicio 960 ticks y duración configurada desde PPQ. El resto del recorrido visual también terminó en `BEHAVIOR PASS` a 1280×720.
 - El adaptador de prueba captura el comando; no valida la mutación del modelo Tauri ni la reproducción acústica. El usuario ya puede componer desde la rejilla con el ratón según el handler actual; no se añade un contrato nuevo.
+
+
+## Casillas Session y disponibilidad de lanzamiento — 2026-09-29
+
+- Smoke headless con frontend real y backend sintético: borrar la casilla MIDI en Verso emitió `setClipSlot` con los IDs `scene-1`/`midi-1` y tipo/clip nulos; el control de lanzamiento siguió deshabilitado porque el motor está desconectado. El smoke completo terminó en `BEHAVIOR PASS` a 1280×720.
+- Se verifica el comando frontend y el estado honesto del control, no la mutación real ni la ejecución de Session en Tauri.
