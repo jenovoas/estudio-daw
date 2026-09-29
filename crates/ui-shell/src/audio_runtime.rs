@@ -24,7 +24,7 @@ use estudio_daw_synth::{
     SynthEventSender, SynthMidiEvent,
 };
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     io::Read,
     path::{Path, PathBuf},
     process::{Child, Command, Stdio},
@@ -249,6 +249,12 @@ impl SessionAudioSlot {
         self.commands
             .push(Box::new(command))
             .map_err(|_| "la cola acotada de audio de Session está llena".to_owned())
+    }
+
+    fn publish_clear(&self) -> Result<(), String> {
+        self.reclaim_retired();
+        while self.commands.pop().is_some() {}
+        self.publish(SessionAudioCommand::Clear)
     }
 }
 
@@ -1542,6 +1548,7 @@ pub struct AudioRuntimeHost {
     standalone_processes: HashMap<String, ManagedStandaloneProcess>,
     plugin_state_root: Option<PathBuf>,
     session_launches: Arc<Mutex<HashMap<String, SessionLaunch>>>,
+    session_override_tracks: HashSet<String>,
     session_audio_slots: Arc<Mutex<HashMap<String, Arc<SessionAudioSlot>>>>,
     session_audio_pumps: HashMap<String, Vec<AudioDecodePump>>,
 }
@@ -1557,6 +1564,7 @@ impl Default for AudioRuntimeHost {
             standalone_processes: HashMap::new(),
             plugin_state_root: None,
             session_launches: Arc::new(Mutex::new(HashMap::new())),
+            session_override_tracks: HashSet::new(),
             session_audio_slots: Arc::new(Mutex::new(HashMap::new())),
             session_audio_pumps: HashMap::new(),
         }
@@ -1859,6 +1867,7 @@ impl AudioRuntimeHost {
                     audio_source,
                 },
             );
+        self.session_override_tracks.insert(track_id.to_owned());
         Ok(view)
     }
 
@@ -2089,6 +2098,66 @@ impl AudioRuntimeHost {
             .lock()
             .map_err(|_| "el estado de lanzamiento de Session quedó bloqueado".to_owned())?
             .remove(track_id);
+        Ok(())
+    }
+
+    /// Retoma el arreglo desde la posición actual sin detener ni reiniciar PipeWire.
+    pub fn return_to_arrangement(&mut self, profile: AudioProfileSettings) -> Result<(), String> {
+        let playback = self
+            .playback
+            .as_ref()
+            .filter(|playback| playback.connected.load(Ordering::Acquire))
+            .ok_or_else(|| "el retorno a Arreglo requiere Play activo".to_owned())?;
+        if playback.paused.load(Ordering::Acquire) {
+            return Err("reanuda el transporte antes de volver a Arreglo".to_owned());
+        }
+        let schedule = playback.schedule.clone();
+        let project_model = Arc::clone(&playback.project_model);
+        let (project, _) = project_model.snapshot()?;
+        let active_tracks = self
+            .session_launches
+            .lock()
+            .map_err(|_| "el estado de lanzamiento de Session quedó bloqueado".to_owned())?
+            .keys()
+            .cloned()
+            .collect::<Vec<_>>();
+        let overridden_tracks = self
+            .session_override_tracks
+            .iter()
+            .cloned()
+            .collect::<Vec<_>>();
+        if overridden_tracks.is_empty() {
+            return Err("no hay lanzamientos de Session que devolver a Arreglo".to_owned());
+        }
+        for track_id in &active_tracks {
+            schedule
+                .send(SchedulerCommand::StopTrack {
+                    track_id: track_id.clone(),
+                })
+                .map_err(|_| "el scheduler terminó antes de detener Session".to_owned())?;
+        }
+
+        let position = self.position_ticks();
+        self.seek(&project, profile, position)?;
+
+        let slots = self
+            .session_audio_slots
+            .lock()
+            .map_err(|_| "el audio de Session quedó bloqueado".to_owned())?;
+        for track_id in &overridden_tracks {
+            if let Some(slot) = slots.get(track_id) {
+                slot.publish_clear()?;
+            }
+        }
+        drop(slots);
+        for track_id in &overridden_tracks {
+            self.session_audio_pumps.remove(track_id);
+        }
+        self.session_launches
+            .lock()
+            .map_err(|_| "el estado de lanzamiento de Session quedó bloqueado".to_owned())?
+            .clear();
+        self.session_override_tracks.clear();
         Ok(())
     }
 
@@ -2815,6 +2884,7 @@ impl AudioRuntimeHost {
         if let Ok(mut launches) = self.session_launches.lock() {
             launches.clear();
         }
+        self.session_override_tracks.clear();
         self.session_audio_pumps.clear();
         if let Ok(mut slots) = self.session_audio_slots.lock() {
             slots.clear();
@@ -4343,6 +4413,23 @@ mod tests {
 
         slot.reclaim_retired();
         assert_eq!(slot.retired.len(), 0);
+    }
+
+    #[test]
+    fn returning_to_arrangement_discards_queued_session_audio_before_unmuting_it() {
+        let slot = Arc::new(SessionAudioSlot::new());
+        let mut node = AudioClipMixerNode::new(Vec::new(), Some(Arc::clone(&slot)), 2);
+        slot.publish(SessionAudioCommand::Replace(Vec::new()))
+            .unwrap();
+        slot.publish(SessionAudioCommand::Append(Vec::new()))
+            .unwrap();
+
+        slot.publish_clear().unwrap();
+        assert_eq!(slot.commands.len(), 1);
+        node.take_session_command();
+
+        assert!(!node.mute_arrangement);
+        assert!(node.session_groups.is_empty());
     }
 
     #[test]

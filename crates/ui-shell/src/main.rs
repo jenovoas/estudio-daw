@@ -1696,6 +1696,16 @@ fn stop_session_track(track_id: String, state: State<'_, DesktopState>) -> Resul
 }
 
 #[tauri::command]
+fn return_to_arrangement(state: State<'_, DesktopState>) -> Result<(), String> {
+    let settings = load_audio_runtime_settings().map_err(|error| error.to_string())?;
+    state
+        .audio
+        .lock()
+        .map_err(|_| "el estado del motor de audio quedó bloqueado".to_owned())?
+        .return_to_arrangement(settings.active())
+}
+
+#[tauri::command]
 fn session_launches(state: State<'_, DesktopState>) -> Result<Vec<SessionLaunchView>, String> {
     let mut audio = state
         .audio
@@ -2604,6 +2614,7 @@ fn main() {
             launch_session_slot,
             launch_session_scene,
             stop_session_track,
+            return_to_arrangement,
             session_launches,
             save_project,
             save_project_as,

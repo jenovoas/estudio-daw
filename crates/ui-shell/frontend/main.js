@@ -2,7 +2,6 @@ const platform = window.estudioPlatform;
 
 const elements = {
   open: document.querySelector("#open-project"),
-  browserOpen: document.querySelector("#browser-open"),
   importAudio: document.querySelector("#browser-import-audio"),
   importPreview: document.querySelector("#audio-import-preview"),
   importCommit: document.querySelector("#audio-import-commit"),
@@ -12,7 +11,6 @@ const elements = {
   editCursorPosition: document.querySelector("#edit-cursor-position"),
   importMode: document.querySelector("#audio-import-mode"),
   importChannels: document.querySelector("#audio-import-channels"),
-  browserDemo: document.querySelector("#browser-demo"),
   newProject: document.querySelector("#new-project"),
   demoProject: document.querySelector("#demo-project"),
   addMidiTrack: document.querySelector("#add-midi-track"),
@@ -28,11 +26,10 @@ const elements = {
   contextMenu: document.querySelector("#action-context-menu"),
   path: document.querySelector("#project-path"),
   name: document.querySelector("#project-name"),
-  browserName: document.querySelector("#browser-project-name"),
   browserMediaSearch: document.querySelector("#browser-media-search"),
   browserMediaChannels: document.querySelector("#browser-media-channels"),
+  browserMediaTools: document.querySelector("#browser-media-tools"),
   browserMediaList: document.querySelector("#browser-media-list"),
-  tempo: document.querySelector("#tempo"),
   transportTempo: document.querySelector("#transport-tempo"),
   transport: document.querySelector("#transport-state"),
   transportPosition: document.querySelector("#transport-position"),
@@ -47,20 +44,20 @@ const elements = {
   arrangementView: document.querySelector(".arrangement-scroll"),
   sessionView: document.querySelector("#session-view"),
   mixerView: document.querySelector("#mixer-view"),
+  workstation: document.querySelector(".workstation"),
+  toggleBrowser: document.querySelector("#toggle-browser"),
+  toggleClipDetail: document.querySelector("#toggle-clip-detail"),
+  lowerPanelTitle: document.querySelector("#lower-panel-title"),
+  returnToArrangement: document.querySelector("#return-to-arrangement"),
   arrangementLegend: document.querySelector("#arrangement-legend"),
   showArrangement: document.querySelector("#show-arrangement"),
   showSession: document.querySelector("#show-session"),
   showMixer: document.querySelector("#show-mixer"),
   gridSnap: document.querySelector("#grid-snap"),
-  railArrangement: document.querySelector("#rail-arrangement"),
-  railSession: document.querySelector("#rail-session"),
   railSettings: document.querySelector("#rail-settings"),
   audioSettings: document.querySelector("#audio-settings"),
   clipInspector: document.querySelector("#clip-inspector"),
   editor: document.querySelector(".editor"),
-  trackCount: document.querySelector("#track-count"),
-  midiCount: document.querySelector("#midi-count"),
-  audioCount: document.querySelector("#audio-count"),
   revision: document.querySelector("#revision"),
   projectStatus: document.querySelector("#project-status"),
   engine: document.querySelector("#engine-status"),
@@ -99,6 +96,7 @@ let audioRecording = false;
 let projectTransportState = "stopped";
 let transportPositionTick = 0;
 let sessionLaunches = [];
+let sessionOverrideActive = false;
 let transportPositionPollPending = false;
 let transportLoopErrorReported = false;
 let metronomeEnabled = false;
@@ -113,6 +111,9 @@ let arrangementStartBar = 1;
 let arrangementTotalBars = 16;
 let editCursorProjectId = null;
 let selectedClipId = null;
+let browserVisible = true;
+let clipDetailVisible = true;
+let mixerPanelVisible = false;
 let selectedMidiNote = null;
 const waveformCache = new Map();
 const vst3EditorOpenByTrack = new Map();
@@ -475,6 +476,47 @@ function handleWorkstationShortcut(event) {
   executeUiAction(action);
 }
 
+function updateWorkspaceLayout() {
+  elements.workstation.classList.toggle("browser-collapsed", !browserVisible);
+  elements.editor.classList.toggle("clip-detail-hidden", !clipDetailVisible);
+  elements.editor.classList.toggle("mixer-panel-open", mixerPanelVisible);
+  elements.mixerView.hidden = !mixerPanelVisible;
+  elements.clipInspector.hidden = mixerPanelVisible;
+  elements.lowerPanelTitle.textContent = mixerPanelVisible ? "MEZCLADOR" : "DETALLE DE CLIP";
+  elements.showMixer.setAttribute("aria-pressed", String(mixerPanelVisible));
+  elements.toggleBrowser.setAttribute("aria-pressed", String(browserVisible));
+  elements.toggleBrowser.title = browserVisible
+    ? "Ocultar navegador (Ctrl+Alt+B)"
+    : "Mostrar navegador (Ctrl+Alt+B)";
+  const clipViewVisible = clipDetailVisible && !mixerPanelVisible;
+  elements.toggleClipDetail.setAttribute("aria-pressed", String(clipViewVisible));
+  elements.toggleClipDetail.title = clipViewVisible
+    ? "Ocultar detalle del clip (Mayús+Tab)"
+    : "Mostrar detalle del clip (Mayús+Tab)";
+}
+updateWorkspaceLayout();
+
+function handleCreativeWorkspaceShortcut(event) {
+  if (event.repeat || event.metaKey) return;
+  if (event.target instanceof Element && event.target.closest("input, textarea, select, [contenteditable='true']")) return;
+  if (event.ctrlKey && event.altKey && event.key.toLowerCase() === "b") {
+    event.preventDefault();
+    browserVisible = !browserVisible;
+    updateWorkspaceLayout();
+    return;
+  }
+  if (event.ctrlKey || event.altKey) return;
+  if (event.key === "Tab" && event.shiftKey) {
+    event.preventDefault();
+    if (mixerPanelVisible) mixerPanelVisible = false;
+    clipDetailVisible = !clipDetailVisible;
+    updateWorkspaceLayout();
+  } else if (event.key === "Tab") {
+    event.preventDefault();
+    selectSurface(elements.showSession.classList.contains("is-selected") ? "arrangement" : "session");
+  }
+}
+
 async function whileBusy(buttons, operation) {
   const previous = buttons.map((button) => button.disabled);
   for (const button of buttons) {
@@ -514,27 +556,23 @@ function selectSurface(surface) {
   const selected = {
     arrangement: elements.showArrangement,
     session: elements.showSession,
-    mixer: elements.showMixer,
-  };
-  const rail = {
-    arrangement: elements.railArrangement,
-    session: elements.railSession,
   };
   elements.arrangementView.hidden = surface !== "arrangement";
   elements.sessionView.hidden = surface !== "session";
-  elements.mixerView.hidden = surface !== "mixer";
   elements.arrangementLegend.hidden = surface !== "arrangement";
   for (const [name, button] of Object.entries(selected)) {
     const active = name === surface;
     button.classList.toggle("is-selected", active);
     button.setAttribute("aria-selected", String(active));
   }
-  for (const [name, button] of Object.entries(rail)) {
-    const active = name === surface;
-    button.classList.toggle("is-active", active);
-    if (active) button.setAttribute("aria-current", "page");
-    else button.removeAttribute("aria-current");
-  }
+}
+
+function updateReturnToArrangementButton() {
+  elements.returnToArrangement.hidden = !sessionOverrideActive;
+  elements.returnToArrangement.disabled = projectTransportState !== "playing";
+  elements.returnToArrangement.title = projectTransportState === "playing"
+    ? "Quitar las sustituciones de Session y continuar Arrangement desde la posición actual"
+    : "Reanuda Play para volver al Arreglo sin reiniciar el transporte";
 }
 
 function trackChannelDescription(track) {
@@ -1227,6 +1265,7 @@ async function launchSessionSlot(sceneId, trackId, respectClipQuantization = tru
     const launchMode = (lastSnapshot?.clipSlots ?? []).find(
       (slot) => slot.sceneId === sceneId && slot.trackId === trackId,
     )?.launchMode ?? "loop";
+    sessionOverrideActive = true;
     sessionLaunches = sessionLaunches.filter((item) => item.trackId !== trackId).concat(launch);
     setNotice("Clip en cola", launch.state === "queued"
       ? `Sonará ${sessionQuantizeLabel(launchQuantization)}.`
@@ -1245,6 +1284,7 @@ async function launchSessionScene(sceneId, snapshot) {
   }
   try {
     const launches = await platform.launchSessionScene(sceneId, sessionQuantizeTicks());
+    sessionOverrideActive = true;
     const trackIds = new Set(launches.map((launch) => launch.trackId));
     sessionLaunches = sessionLaunches.filter((item) => !trackIds.has(item.trackId)).concat(launches);
     setNotice("Escena en cola", `Los clips se lanzan juntos según la rejilla global (${sessionQuantizeLabel()}) y respetan su modo; las casillas vacías conservan su clip actual.`);
@@ -1262,6 +1302,19 @@ async function stopSessionTrack(trackId) {
     if (lastSnapshot) renderSnapshot(lastSnapshot);
   } catch (error) {
     setNotice("No se pudo detener la pista", String(error));
+  }
+}
+
+async function returnToArrangement() {
+  try {
+    await platform.returnToArrangement();
+    sessionLaunches = [];
+    sessionOverrideActive = false;
+    updateReturnToArrangementButton();
+    selectSurface("arrangement");
+    setNotice("Arreglo reanudado", "Session se detuvo en sus pistas; Play continúa desde la posición actual.");
+  } catch (error) {
+    setNotice("No se pudo volver a Arreglo", String(error));
   }
 }
 
@@ -1572,6 +1625,7 @@ function renderSnapshot(snapshot) {
     arrangementStartBar = 1;
     arrangementTotalBars = 16;
     editCursorProjectId = snapshot.projectId;
+    sessionOverrideActive = false;
   }
   const validTrackIds = new Set(snapshot.tracks.map((track) => track.id));
   selectedTrackIds = new Set([...selectedTrackIds].filter((trackId) => validTrackIds.has(trackId)));
@@ -1580,7 +1634,9 @@ function renderSnapshot(snapshot) {
   if (projectTransportState === "stopped") {
     vst3EditorOpenByTrack.clear();
     sessionLaunches = [];
+    sessionOverrideActive = false;
   }
+  updateReturnToArrangementButton();
   elements.panic.disabled = !snapshot.audioEngineConnected || !["playing", "paused"].includes(projectTransportState);
   loopRange = snapshot.loopRange ?? null;
   for (const button of [elements.loopPointA, elements.loopPointB, elements.loopRangeClear]) {
@@ -1598,14 +1654,9 @@ function renderSnapshot(snapshot) {
   elements.path.title = snapshot.projectPath ?? "";
   const projectLabel = snapshot.projectPath?.split(/[\\/]/).at(-1) ?? snapshot.projectId;
   elements.name.textContent = projectLabel;
-  elements.browserName.textContent = projectLabel;
-  elements.tempo.textContent = Number(snapshot.tempoBpm).toFixed(1);
   elements.transportTempo.textContent = Number(snapshot.tempoBpm).toFixed(1);
   elements.transport.textContent = snapshot.transportState.toUpperCase();
   document.querySelector(".transport-bar").dataset.state = snapshot.transportState.toLowerCase();
-  elements.trackCount.textContent = snapshot.trackCount;
-  elements.midiCount.textContent = snapshot.midiClipCount;
-  elements.audioCount.textContent = snapshot.audioClipCount;
   elements.revision.textContent = `REV ${snapshot.projectRevision}`;
   elements.projectStatus.textContent = snapshot.projectPath ? "PROYECTO ABIERTO" : "PROYECTO SIN GUARDAR";
   const armedTracks = snapshot.tracks.filter((track) => track.recordArmed && track.inputRoute);
@@ -1627,7 +1678,9 @@ function renderSnapshot(snapshot) {
   elements.undo.disabled = !snapshot.canUndo;
   elements.redo.disabled = !snapshot.canRedo;
   if (!document.querySelector(".track-group-toolbar")) {
-    document.querySelector(".editor-heading").append(createTrackGroupToolbar());
+    const toolbar = createTrackGroupToolbar();
+    const viewSeparator = document.querySelector(".transport-view-separator");
+    document.querySelector(".transport-bar").insertBefore(toolbar, viewSeparator);
   }
   const groupInput = document.querySelector(".track-group-toolbar input");
   if (groupInput && groupInput.value !== trackGroupDraft) groupInput.value = trackGroupDraft;
@@ -2166,6 +2219,7 @@ function makeInspectorNumber(caption, value, min, max, step, onChange) {
 function renderProjectMedia(snapshot) {
   elements.browserMediaList.replaceChildren();
   const clips = snapshot.audioClips ?? [];
+  elements.browserMediaTools.hidden = clips.length === 0;
   const query = elements.browserMediaSearch.value.trim().toLocaleLowerCase();
   const channelFilter = elements.browserMediaChannels.value;
   const matching = clips.filter((clip) => {
@@ -2180,7 +2234,7 @@ function renderProjectMedia(snapshot) {
   if (!matching.length) {
     const empty = document.createElement("span");
     empty.className = "browser-media-empty";
-    empty.textContent = clips.length ? "No hay audio que coincida con la búsqueda." : "Los medios importados aparecerán aquí.";
+    empty.textContent = clips.length ? "No hay audio que coincida con la búsqueda." : "Sin audio importado.";
     elements.browserMediaList.append(empty);
     return;
   }
@@ -2560,7 +2614,7 @@ elements.importCommit.addEventListener("click", async () => {
       elements.importSelected.textContent = "No hay archivo seleccionado";
       elements.importPreview.disabled = true;
       renderSnapshot(snapshot);
-      setNotice("Audio importado", "La fuente y región se registraron; el Arreglo muestra su waveform. La reproducción de sesión sigue pendiente.");
+      setNotice("Audio importado", "La fuente y región se registraron; el Arreglo muestra su forma de onda y Play reproduce el audio junto con el proyecto.");
     } catch (error) {
       setNotice("No se pudo importar audio", String(error));
     }
@@ -2759,7 +2813,7 @@ async function runCommand(title, operation) {
 }
 
 elements.open.addEventListener("click", async () => {
-  await whileBusy([elements.open, elements.browserOpen], async () => { try {
+  await whileBusy([elements.open], async () => { try {
     const snapshot = await platform.openProject();
     if (!snapshot) return;
     renderSnapshot(snapshot);
@@ -2838,15 +2892,45 @@ elements.browserMediaSearch.addEventListener("input", () => {
 elements.browserMediaChannels.addEventListener("change", () => {
   if (lastSnapshot) renderProjectMedia(lastSnapshot);
 });
+for (const tab of document.querySelectorAll(".browser-tab")) {
+  tab.addEventListener("click", () => {
+    const selectedPanel = tab.getAttribute("aria-controls");
+    for (const peer of document.querySelectorAll(".browser-tab")) {
+      const selected = peer === tab;
+      peer.classList.toggle("is-selected", selected);
+      peer.setAttribute("aria-selected", String(selected));
+    }
+    for (const panel of document.querySelectorAll(".browser-panel")) {
+      panel.hidden = panel.id !== selectedPanel;
+    }
+  });
+}
 elements.showArrangement.addEventListener("click", () => selectSurface("arrangement"));
 elements.showSession.addEventListener("click", () => selectSurface("session"));
-elements.showMixer.addEventListener("click", () => selectSurface("mixer"));
+elements.showMixer.addEventListener("click", () => {
+  mixerPanelVisible = !mixerPanelVisible;
+  clipDetailVisible = true;
+  updateWorkspaceLayout();
+});
+elements.toggleBrowser.addEventListener("click", () => {
+  browserVisible = !browserVisible;
+  updateWorkspaceLayout();
+});
+elements.toggleClipDetail.addEventListener("click", () => {
+  if (mixerPanelVisible) {
+    mixerPanelVisible = false;
+    clipDetailVisible = true;
+    updateWorkspaceLayout();
+    return;
+  }
+  clipDetailVisible = !clipDetailVisible;
+  updateWorkspaceLayout();
+});
+elements.returnToArrangement.addEventListener("click", returnToArrangement);
 elements.gridSnap.addEventListener("change", () => {
   const label = elements.gridSnap.selectedOptions[0]?.textContent ?? "rejilla";
   setNotice("Ajuste actualizado", `El movimiento y recorte de regiones de audio usarán ${label}.`);
 });
-elements.railArrangement.addEventListener("click", () => selectSurface("arrangement"));
-elements.railSession.addEventListener("click", () => selectSurface("session"));
 elements.railSettings.addEventListener("click", () => {
   elements.audioSettings.open = true;
   elements.audioSettings.scrollIntoView({ block: "nearest" });
@@ -2864,7 +2948,7 @@ elements.newProject.addEventListener("click", async () => {
 });
 
 elements.demoProject.addEventListener("click", async () => {
-  await whileBusy([elements.demoProject, elements.browserDemo], async () => { try {
+  await whileBusy([elements.demoProject], async () => { try {
     const snapshot = await platform.demoMidiProject();
     renderSnapshot(snapshot);
     setNotice("Demo MIDI lista", "Siete notas están preparadas en la pista. Pulsa Play para oírlas por la salida configurada.");
@@ -2872,9 +2956,6 @@ elements.demoProject.addEventListener("click", async () => {
     setNotice("No se pudo preparar la demo MIDI", String(error));
   } });
 });
-
-elements.browserDemo.addEventListener("click", () => elements.demoProject.click());
-elements.browserOpen.addEventListener("click", () => elements.open.click());
 
 elements.save.addEventListener("click", () => runCommand("Proyecto guardado", () => platform.saveProject()));
 elements.saveAs.addEventListener("click", () => runCommand("Copia del proyecto guardada", () => platform.saveProjectAs()));
@@ -2913,7 +2994,7 @@ elements.record.addEventListener("click", async () => {
 });
 elements.pause.addEventListener("click", () => runCommand("Transporte pausado", () => platform.setTransport("pause")));
 elements.stop.addEventListener("click", async () => {
-  const priorAudioCount = Number(elements.audioCount.textContent) || 0;
+  const priorAudioCount = Number(lastSnapshot?.audioClipCount) || 0;
   try {
     const snapshot = await platform.setTransport("stop");
     audioRecording = false;
@@ -2962,6 +3043,7 @@ setInterval(async () => {
     const launches = await platform.sessionLaunches();
     const changed = JSON.stringify(launches) !== JSON.stringify(sessionLaunches);
     sessionLaunches = launches;
+    if (changed) updateReturnToArrangementButton();
     if (changed && lastSnapshot) renderSnapshot(lastSnapshot);
   } catch (error) {
     if (!transportLoopErrorReported) {
@@ -3001,6 +3083,7 @@ elements.zoomOut.addEventListener("click", () => void setUiZoom(uiZoom - UI_ZOOM
 elements.zoomReset.addEventListener("click", () => void setUiZoom(1));
 document.addEventListener("keydown", handleUiZoomShortcut);
 document.addEventListener("keydown", handleWorkstationShortcut);
+document.addEventListener("keydown", handleCreativeWorkspaceShortcut);
 document.addEventListener("contextmenu", showContextMenu);
 document.addEventListener("pointerdown", (event) => {
   if (!event.target.closest("#action-context-menu")) closeContextMenu();

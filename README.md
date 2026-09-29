@@ -695,9 +695,12 @@ disponible y, en caso contrario, usa el destino predeterminado. El cambio no
 interrumpe un stream activo.
 El tamaño de la interfaz se ajusta de 80 % a 150 % con Ctrl++/Ctrl+- o los
 controles de zoom de la barra superior; Ctrl+0 lo restablece. La preferencia se
-guarda localmente y no cambia el proyecto. Ctrl+1/2/3 cambia Arreglo, Session y
-Mezclador; Ctrl+S guarda, Ctrl+Mayús+S abre Guardar como, Ctrl+Z deshace y
-Ctrl+Mayús+Z rehace. Estos atajos no interceptan la escritura en campos.
+guarda localmente y no cambia el proyecto. Tab alterna Arreglo/Session;
+Mayús+Tab muestra u oculta el detalle del clip; Ctrl+Alt+B muestra u oculta el
+navegador; Ctrl+3 abre o cierra el Mezclador en el panel inferior. Ctrl+1/2
+también selecciona Arreglo/Session; Ctrl+S guarda, Ctrl+Mayús+S abre Guardar
+como, Ctrl+Z deshace y Ctrl+Mayús+Z rehace. Estos atajos no interceptan la
+escritura en campos.
 Las pistas que no sean Master se pueden quitar desde Arreglo, Session o Mezclador;
 la acción también es reversible y elimina clips/regiones del proyecto sin borrar
 los archivos fuente del disco.
@@ -732,10 +735,20 @@ como punto de inserción para la siguiente importación. El movimiento y recorte
 se ajustan a 1/16, 1/8, negra, compás o movimiento libre. Al recortar el inicio,
 el desplazamiento dentro del archivo avanza junto con la región; la fuente no
 se modifica.
-Es un prototipo de capacidades parciales: su composición
-visual actual no satisface todavía el flujo creativo de Ableton Live 12; no
-incluye lanzamiento de clips en Session ni posicionamiento visible compartido
-con Session. Arreglo permite mover, dividir y duplicar clips MIDI; el piano roll
+Es un prototipo de capacidades parciales y la revisión visual de la tarea 3.1 de
+OpenSpec sigue abierta. Los cortes correctivos del 2026-09-28 y 2026-09-29
+reorganizan parcialmente la ventana: Arrangement y Session comparten el área
+principal; transporte, posición, historial, cambio de vista y herramientas de
+edición ocupan una sola barra; el navegador acoplado queda a la izquierda con
+pestañas funcionales Proyecto y Crear; y el detalle contextual/Mezclador se abre
+abajo. Crear reutiliza las acciones existentes para añadir pistas MIDI, audio y
+bus; Proyecto muestra los medios importados. La persona usuaria confirma que
+resulta algo más ordenada, pero afirma que ni se acerca a la experiencia y
+distribución de Ableton Live que busca. Este corte no satisface el objetivo ni
+debe usarse como base para retomar otras funciones: hace falta un rediseño visual
+sustancial y feedback explícito antes de cerrar 3.1. No se simulan categorías de
+biblioteca ni complementos que todavía no tengan contenido real.
+Arreglo permite mover, dividir y duplicar clips MIDI; el piano roll
 inicial muestra e inserta corcheas, y permite seleccionar una nota para cambiar
 tono, posición, duración o velocidad, borrarla, moverla por arrastre o ajustar
 su duración desde el borde. La expresión MIDI sigue pendiente. El inspector

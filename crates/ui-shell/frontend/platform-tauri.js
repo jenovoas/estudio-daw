@@ -54,6 +54,7 @@ window.estudioPlatform = {
   launchSessionSlot: (sceneId, trackId, gridTicks, respectClipQuantization = true) => invoke("launch_session_slot", { sceneId, trackId, gridTicks, respectClipQuantization }),
   launchSessionScene: (sceneId, gridTicks) => invoke("launch_session_scene", { sceneId, gridTicks }),
   stopSessionTrack: (trackId) => invoke("stop_session_track", { trackId }),
+  returnToArrangement: () => invoke("return_to_arrangement"),
   sessionLaunches: () => invoke("session_launches"),
   openStandaloneInstrument: ({ trackId, applicationPath }) => invoke("open_standalone_instrument", { trackId, applicationPath }),
   setTrackInstrument: (trackId, instrument) => invoke("set_track_instrument", { trackId, instrument }),

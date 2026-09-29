@@ -117,9 +117,11 @@ independientes por pista, medidor de entrada y QA con AudioBox.
 La escala de la interfaz es una preferencia local del WebView, no del proyecto.
 Tauri controla el zoom entre 80 % y 150 %; Ctrl++/Ctrl+- ajusta en pasos de 10 %
 y Ctrl+0 restaura el 100 %. Los campos de texto conservan sus teclas + y -.
-Ctrl+1/2/3 cambia Arreglo/Session/Mezclador; Ctrl+S guarda, Ctrl+Mayús+S abre
-Guardar como y Ctrl+Z/Ctrl+Mayús+Z deshace/rehace. Estos atajos se omiten en
-campos editables.
+Tab alterna Arreglo/Session; Mayús+Tab muestra u oculta el detalle del clip y
+Ctrl+Alt+B muestra u oculta el navegador. Ctrl+1/2 también selecciona
+Arreglo/Session y Ctrl+3 abre o cierra el Mezclador en el panel inferior.
+Ctrl+S guarda, Ctrl+Mayús+S abre Guardar como y Ctrl+Z/Ctrl+Mayús+Z
+deshace/rehace. Estos atajos se omiten en campos editables.
 
 Las pistas editables tienen una acción de quitar en Arreglo, Session y Mezclador.
 El comando elimina sus clips, regiones y referencias de medios del proyecto,
@@ -151,18 +153,29 @@ El mismo menú contextual permite duplicar el clip MIDI a continuación del
 original. El comando asigna un ID único y conserva el contenido de la toma;
 la nueva posición también puede ajustarse arrastrando con la rejilla activa.
 
-La barra de herramientas lateral y las pestañas del encabezado cambian entre
-Arreglo, Session y Mezclador. Session presenta pistas por columnas y escenas
-por filas; sus escenas y asignaciones de clip son comandos reversibles, aunque
-se pueden reordenar con controles arriba/abajo. El lanzamiento permanece
-deshabilitado hasta conectar el planificador. El botón
-de ajustes abre Preferencias de audio. Al seleccionar un clip MIDI o una región
-de audio en Arreglo, el panel inferior presenta un inspector con pista,
-ubicación y duración. Para audio también permite cambiar numéricamente posición,
-ganancia y desvanecimientos; las regiones se pueden mover y recortar por sus
-bordes con la rejilla seleccionada (1/16, 1/8, negra, compás o libre). El recorte
-del inicio avanza también el desplazamiento de fuente y las modificaciones usan
-el historial del proyecto. En Arreglo, los clips MIDI se pueden mover con la
+Arreglo y Session son las vistas principales y comparten el encabezado de
+transporte y el mismo proyecto; no hay una barra lateral que las duplique como
+páginas. La ventana organiza el menú y la identidad del proyecto arriba y
+concentra transporte, posición, historial, selección de Arrangement/Session,
+Mezclador y controles de edición en una sola barra. El navegador ocupa una
+columna acoplada a la izquierda con secciones Proyecto (medios importados) y
+Crear (pistas MIDI/audio y bus mediante acciones existentes); sus campos de
+búsqueda/filtro sólo aparecen cuando existen medios. El detalle contextual y el
+Mezclador se abren abajo sin abandonar la vista creativa. Esta composición toma
+como referencia la jerarquía de una estación de trabajo musical, no sus recursos
+gráficos.
+El Mezclador abre el panel inferior sin abandonar la vista creativa. El botón de
+ajustes abre Preferencias de audio. Session presenta pistas por columnas y
+escenas por filas; sus escenas y asignaciones de clip son comandos reversibles,
+aunque se pueden reordenar con controles arriba/abajo. El lanzamiento permanece
+deshabilitado hasta conectar el planificador. Al seleccionar un clip MIDI o una
+región de audio en Arreglo, el panel inferior presenta un inspector con pista,
+ubicación y duración; se puede ocultar para ampliar la superficie de trabajo.
+Para audio también permite cambiar numéricamente posición, ganancia y
+desvanecimientos; las regiones se pueden mover y recortar por sus bordes con la
+rejilla seleccionada (1/16, 1/8, negra, compás o libre). El recorte del inicio
+avanza también el desplazamiento de fuente y las modificaciones usan el
+historial del proyecto. En Arreglo, los clips MIDI se pueden mover con la
 rejilla seleccionada y duplicar desde su menú contextual. «Dividir en cursor»
 aparece sólo cuando el cursor cae dentro del clip. El corte crea dos clips
 contiguos, cierra notas activas y las rearticula al comienzo de la segunda parte;
@@ -179,9 +192,10 @@ seleccionada sigan vigentes. La expresión MIDI no está implementada; las notas
 nuevas usan canal 1.
 
 El navegador también enumera las regiones de audio importadas del proyecto y
-permite filtrarlas por nombre, fuente, pista y disposición de canales. Cada
-elemento se puede preescuchar de forma aislada o seleccionar para enfocar su
-región en Arrangement; todavía no representa una biblioteca general de medios.
+permite filtrarlas por nombre, fuente, pista y disposición de canales. Los
+filtros sólo se muestran cuando hay audio. Cada elemento se puede preescuchar de
+forma aislada o seleccionar para enfocar su región en Arrangement; todavía no
+representa una biblioteca general de medios ni tiene categorías creativas.
 
 En modo navegador el dominio portable podrá compartir modelos y comandos, pero el
 backend de audio/compute será otro adaptador (por ejemplo Web Audio/AudioWorklet y
