@@ -492,3 +492,10 @@ abiertas por falta de QA y aceptación visual.
 
 - Smoke headless con frontend real y backend sintético: borrar la casilla MIDI en Verso emitió `setClipSlot` con los IDs `scene-1`/`midi-1` y tipo/clip nulos; el control de lanzamiento siguió deshabilitado porque el motor está desconectado. El smoke completo terminó en `BEHAVIOR PASS` a 1280×720.
 - Se verifica el comando frontend y el estado honesto del control, no la mutación real ni la ejecución de Session en Tauri.
+
+
+## Corrección de criterio de validación Tauri — 2026-09-29
+
+- La arquitectura y el destino de la interfaz siguen siendo la aplicación de escritorio Tauri. No se aprobó ni planificó migración a WebAssembly.
+- Los smokes de Firefox anteriores ejecutan el DOM/CSS/JS con un adaptador simulado; son experimentos auxiliares de handlers y no prueban WebKitGTK, integración Tauri ni la interfaz que usa la persona. No deben presentarse como QA visual/runtime ni como criterio de aceptación de 3.1.
+- Para cerrar 3.1 sigue siendo obligatoria la revisión de la aplicación Tauri con Demo MIDI y tamaños objetivo, más aceptación visual explícita. No cambiar arquitectura ni scope fuera del delta OpenSpec aprobado.
