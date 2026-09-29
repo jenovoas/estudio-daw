@@ -429,3 +429,11 @@ abiertas por falta de QA y aceptación visual.
   sin proyecto; no se declara como QA de Demo, dispositivo, plugin ni audio.
   Sigue abierto para continuar la verificación integrada cuando haya un proyecto
   cargado desde la propia UI.
+- **Corrección del botón Navegador (reporte visual runtime):** al ocultar el
+  `aside.browser`, CSS Grid retiraba su posición y auto-colocaba `.editor` en la
+  primera columna de ancho cero. Se fijó `.workstation > .editor` en la columna
+  2, conservando la misma clase `browser-collapsed` y su atajo. Un smoke Firefox
+  con `main.js` real verificó ancho expandido al ocultar y ancho normal al
+  restaurar en 760×520, 1280×720 y 1920×1080. Conserva las verificaciones MIDI,
+  filtros, categorías y Session. La captura runtime del reporte no equivale a
+  repetición Tauri de la Demo; esa comprobación sigue pendiente.

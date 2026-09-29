@@ -62,6 +62,7 @@ button:disabled { opacity: .4; cursor: not-allowed !important; }
 .button-demo:hover:not(:disabled) { background: #423629; color: #ffe0bf; }
 
 .workstation { height: calc(100% - 50px); min-height: 449px; display: grid; grid-template-columns: 280px minmax(0, 1fr); }
+.workstation > .editor { grid-column: 2; }
 .browser { min-width: 0; position: relative; display: flex; flex-direction: column; padding: 0; overflow-x: hidden; overflow-y: auto; background: #202325; border-right: 1px solid #111314; box-shadow: none; }
 .browser-title { height: 32px; flex: none; display: flex; align-items: center; justify-content: space-between; padding: 0 12px; border-bottom: 1px solid #34393c; color: #c2c6c8; font-size: 11px; font-weight: 750; letter-spacing: 1px; }
 .browser-chevron { color: #92989b; font-size: 14px; }
