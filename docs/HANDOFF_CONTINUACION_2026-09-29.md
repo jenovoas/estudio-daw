@@ -407,3 +407,14 @@ abiertas por falta de QA y aceptación visual.
   repitieron compilación, sintaxis JS, diff check, OpenSpec estricta y Firefox a
   ambos tamaños; el comportamiento del piano, el detalle y Session conserva el
   indicador `BEHAVIOR PASS`.
+- El navegador ya no desplaza horizontalmente las categorías para mostrar Audio:
+  pasaron a una cuadrícula de dos columnas en 1280×720 y 1920×1080. El smoke
+  comprueba ancho de scroll, límites geométricos y que ninguna etiqueta se
+  abrevie; Firefox muestra Todo, Clips MIDI, Instrumentos y Audio a la vez. Se
+  conserva búsqueda y selección. El panel usa una plataforma simulada; no se
+  presenta como QA Tauri.
+- En el viewport mínimo 760×520, el smoke reveló que `min-height: 62px` del
+  modo de ventana baja mantenía visible un hueco al ocultar el detalle. Se anuló
+  sólo para el estado `clip-detail-hidden`; Firefox confirmó el colapso y
+  mantuvo `BEHAVIOR PASS`. A 760 px de ancho el navegador apila sus categorías.
+  Sigue siendo una comprobación headless, no captura Tauri.

@@ -442,6 +442,7 @@ button:disabled { opacity: .4; cursor: not-allowed !important; }
   .arrangement-track-list, .arrangement-lanes { grid-auto-rows: 72px; }
   .midi-clip { height: 51px; }
   .lower-panel { min-height: 62px; }
+  .editor.clip-detail-hidden > .lower-panel { min-height: 0; border-top: 0; }
   .lower-panel-title { height: 21px; }
   .audio-summary { min-height: 31px; }
   .status-message { min-height: 39px; }
@@ -465,8 +466,8 @@ button:disabled { opacity: .4; cursor: not-allowed !important; }
 /* Distribución de estación: controles globales, herramientas locales y lienzo. */
 .browser-panel { min-width: 0; padding: 0 10px; }
 .browser-panel .browser-section-spaced { padding-top: 11px; }
-.browser-categories { display: flex; flex: none; gap: 3px; margin: 9px 0 2px; padding-bottom: 7px; overflow-x: auto; border-bottom: 1px solid #34393c; scrollbar-width: thin; }
-.browser-category { min-height: 25px; flex: none; padding: 3px 8px; border: 1px solid transparent; border-radius: 3px; background: transparent; color: #aeb5b8; font-size: 11px; cursor: pointer; }
+.browser-categories { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); flex: none; gap: 3px; margin: 9px 0 2px; padding-bottom: 7px; border-bottom: 1px solid #34393c; }
+.browser-category { min-width: 0; min-height: 25px; overflow: hidden; padding: 3px 5px; border: 1px solid transparent; border-radius: 3px; background: transparent; color: #aeb5b8; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
 .browser-category:hover, .browser-category:focus-visible { background: #303538; color: #f1f2f2; }
 .browser-category.is-selected { border-color: #554333; background: #403326; color: #ffd0a5; }
 .browser-content-section[hidden], .browser-categories[hidden] { display: none; }
@@ -596,6 +597,7 @@ button:disabled { opacity: .4; cursor: not-allowed !important; }
   .appbar { gap: 5px; padding: 0 6px; }
   .project-identity > span, .ui-zoom-controls { display: none; }
   .workstation { grid-template-columns: 176px minmax(0,1fr); }
+  .browser-categories { grid-template-columns: minmax(0,1fr); }
   .arrangement-grid { min-width: 520px; grid-template-columns: minmax(340px,1fr) 176px; }
   .surface-toolbar-spacer { flex-basis: 0; }
   .session-matrix { grid-template-columns: repeat(var(--session-track-columns,1), minmax(104px,1fr)) minmax(150px,160px); }
