@@ -468,3 +468,9 @@ abiertas por falta de QA y aceptación visual.
   refrescar y reabrir el WebView. QA Tauri y cierre de 3.1 siguen pendientes.
 - Registrar SHA, verificaciones de crate y publicación en la bitácora cuando se
   complete el corte.
+
+
+## Continuidad de superficies y carriles — 2026-09-29
+
+- Sobre `c4b096e`, el smoke headless de Firefox con `main.js` y CSS reales más adaptador Tauri simulado cubrió 760×520, 1280×720 y 1920×1080. Scroll y zoom del piano roll sobreviven a cambios Clip/Dispositivo y Arreglo/Sesión; pistas MIDI/audio mantienen alturas independientes, clips alineados y preferencias persistidas incluso en una segunda apertura del perfil.
+- Esto verifica frontend aislado, no Tauri runtime. `workstation-arrangement-surface-v2` sigue en 10/50; 3.1.3/3.1.5/3.1.6 permanecen abiertas hasta QA Tauri, matriz y aceptación visual.
