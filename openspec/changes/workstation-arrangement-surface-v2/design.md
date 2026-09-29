@@ -584,3 +584,30 @@ Revisado el 2026-09-27:
 - Ardour: [índice del menú principal](https://manual.ardour.org/ardours-interface/main-menu/), [menú Session](https://manual.ardour.org/ardours-interface/main-menu/Session-menu/), [menú Transporte](https://manual.ardour.org/ardours-interface/main-menu/Transport-menu/), [menú Edición](https://manual.ardour.org/ardours-interface/main-menu/Edit-menu/), [menú Región](https://manual.ardour.org/ardours-interface/main-menu/Region-menu/), [menú Pista](https://manual.ardour.org/ardours-interface/main-menu/Track-menu/), [menú Vista](https://manual.ardour.org/ardours-interface/main-menu/View-menu/), [menú Ventana](https://manual.ardour.org/ardours-interface/main-menu/Window-menu/), [controles de pista de audio](https://manual.ardour.org/working-with-tracks/audio-track-controls/), [canales del mezclador](https://manual.ardour.org/ardours-interface/audio-midi-mixer-strips/), [sesiones y pistas](https://manual.ardour.org/working-with-tracks/), [importación de medios](https://manual.ardour.org/adding-pre-existing-material/), [regiones](https://manual.ardour.org/working-with-regions/), [flujo de matriz de disparos](https://manual.ardour.org/cue/).
 
 La lista de Ableton refleja superficies, ámbitos de menú/función y páginas de configuración documentadas para Live 12; la referencia de Ardour se limita a conceptos de flujo de señal y medios, no a la experiencia visual o creativa. Las opciones contextuales que dependen de dispositivos y selecciones se señalan como condicionales. La tarea 0.2 se cerró mediante cotejo documental de opciones publicadas; este documento no afirma paridad de funciones.
+
+## Revisión de jerarquía orientada al músico — 2026-09-29
+
+La persona usuaria indica que la interfaz actual dispersa acciones de pista y
+dispositivos y cuesta encontrar opciones. El flujo se reorganiza alrededor de la
+pista seleccionada: Browser ofrece contenido; Arrangement y Session muestran
+identidad, estado y acciones inmediatas de la pista; Mixer se limita a ruteo y
+mezcla; la vista inferior concentra edición contextual y cadena de dispositivos.
+Los accesos en pistas sólo navegan a esa cadena. Los controles de agrupación
+aparecen únicamente con dos o más pistas seleccionadas. La cadena presenta el
+instrumento real y declara que los efectos todavía no existen en el motor; no
+se habilitan espacios falsos ni editores duplicados en cada superficie.
+
+Esta decisión toma como referencia funcional el Browser de dispositivos y la
+Device View de pista descritos por
+[Ableton, Conceptos de Live](https://www.ableton.com/en/manual/live-concepts/),
+los controles de pista descritos en
+[Arrangement View](https://www.ableton.com/en/manual/arrangement-view/) y el
+orden compartido Editor/Mezclador de
+[Ardour](https://manual.ardour.org/working-with-tracks/controlling-track-ordering/).
+Guían la organización de Estudio DAW; no representan paridad ni autorizan
+copiar código o activos.
+
+El piano roll expone el rango MIDI completo (0–127), por lo que cualquier clip
+puede recorrer más de cuatro octavas. La rueda desplaza alturas y Ctrl+rueda
+ajusta la escala vertical entre 4 y 28 px por semitono, anclando el tono bajo el
+puntero. La vista inicial enfoca las notas del clip y guarda su desplazamiento.

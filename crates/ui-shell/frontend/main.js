@@ -27,6 +27,7 @@ const elements = {
   path: document.querySelector("#project-path"),
   name: document.querySelector("#project-name"),
   browserMediaChannels: document.querySelector("#browser-media-channels"),
+  browserCategoryList: document.querySelector("#browser-category-list"),
   browserMediaTools: document.querySelector("#browser-media-tools"),
   browserMediaList: document.querySelector("#browser-media-list"),
   browserMidiList: document.querySelector("#browser-midi-list"),
@@ -122,10 +123,14 @@ let editCursorProjectId = null;
 let selectedClipId = null;
 let selectedDetailTab = "clip";
 let browserVisible = true;
+let browserSelectedCategory = "all";
 let clipDetailVisible = true;
 let mixerPanelVisible = false;
 let selectedMidiNote = null;
 const waveformCache = new Map();
+const pianoRollScrollPositions = new Map();
+const pianoRollInitializedClips = new Set();
+let pianoRollRowHeight = 9;
 const vst3EditorOpenByTrack = new Map();
 let previewContext = null;
 let currentPreview = null;
@@ -588,6 +593,20 @@ function selectSurface(surface) {
   updateWorkspaceLayout();
 }
 
+function focusClipInArrangement(clip, snapshot) {
+  selectedClipId = clip.id;
+  selectedDetailTab = "clip";
+  clipDetailVisible = true;
+  mixerPanelVisible = false;
+  selectSurface("arrangement");
+  renderClipInspector(snapshot);
+  updateWorkspaceLayout();
+  elements.lanes.querySelectorAll(".is-inspected").forEach((item) => item.classList.remove("is-inspected"));
+  const target = elements.lanes.querySelector(`[data-clip-id="${CSS.escape(clip.id)}"]`);
+  target?.classList.add("is-inspected");
+  target?.scrollIntoView({ block: "nearest", inline: "nearest" });
+}
+
 function updateReturnToArrangementButton() {
   elements.returnToArrangement.hidden = !sessionOverrideActive;
   elements.returnToArrangement.disabled = projectTransportState !== "playing";
@@ -713,8 +732,39 @@ function vst3PluginLabel(path) {
   return file.replace(/\.vst3$/i, "") || "VST3";
 }
 
-function createTrackInstrumentControl(track) {
+function instrumentBackendLabel(backend) {
+  if (backend === "sine") return "Sinte interno";
+  if (backend === "fluidsynth") return "SoundFont";
+  if (backend === "standalone") return "Analog Lab externo";
+  if (backend === "vst3") return "VST3";
+  return backend || "Instrumento";
+}
+
+function createTrackInstrumentControl(track, compact = false) {
   if (track.virtualMaster || track.kind !== "midi") return null;
+  const openDeviceDetail = () => {
+    selectedTrackIds = new Set([track.id]);
+    selectedDetailTab = "device";
+    clipDetailVisible = true;
+    mixerPanelVisible = false;
+    syncTrackSelectionUi();
+    renderDeviceInspector(lastSnapshot);
+    updateWorkspaceLayout();
+  };
+  if (compact) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "track-instrument-trigger";
+    const instrumentName = track.instrument?.backend === "vst3"
+      ? vst3PluginLabel(track.instrument.plugin?.path)
+      : track.instrument?.backend === "standalone"
+        ? "Analog Lab"
+        : track.instrument ? instrumentBackendLabel(track.instrument.backend) : "Sin instrumento";
+    button.textContent = `${instrumentName} · Dispositivo`;
+    button.title = `Abrir la cadena de dispositivos de ${track.name}`;
+    button.addEventListener("click", openDeviceDetail);
+    return button;
+  }
   const currentVst3 = track.instrument?.backend === "vst3" ? track.instrument : null;
   const chooseVst3 = async () => {
     const path = await platform.selectVst3Plugin();
@@ -811,7 +861,12 @@ function createTrackInstrumentControl(track) {
   const panel = document.createElement("details");
   panel.className = "track-instrument-control";
   const summary = document.createElement("summary");
-  summary.textContent = current ? "Instrumento externo · Analog Lab" : "Elegir instrumento";
+  const builtIn = track.instrument && track.instrument.backend !== "standalone" && track.instrument.backend !== "vst3";
+  summary.textContent = current
+    ? "Instrumento externo · Analog Lab"
+    : builtIn
+      ? "Cambiar instrumento"
+      : "Elegir instrumento";
   panel.append(summary);
   const chooseVst3Button = document.createElement("button");
   chooseVst3Button.type = "button";
@@ -1048,6 +1103,8 @@ function syncTrackSelectionUi() {
   }
   const count = document.querySelector(".track-group-selection-count");
   if (count) count.textContent = `${selectedTrackIds.size} seleccionadas`;
+  const groupToolbar = document.querySelector(".track-group-toolbar");
+  if (groupToolbar) groupToolbar.hidden = selectedTrackIds.size < 2;
   const canApply = selectedTrackIds.size > 0;
   for (const button of document.querySelectorAll("[data-track-group-action]")) {
     button.disabled = !canApply || (button.dataset.trackGroupAction === "assign" && !trackGroupDraft.trim());
@@ -1388,6 +1445,8 @@ function renderSessionSurface(snapshot) {
     type.textContent = track.kind.toUpperCase();
     const meter = createTrackMeter(track);
     header.append(name, type);
+    const instrumentControl = createTrackInstrumentControl(track, true);
+    if (instrumentControl) header.append(instrumentControl);
     if (meter) header.append(meter);
     const removeButton = createTrackRemovalButton(track);
     const orderControls = createTrackOrderControls(track, snapshot.tracks);
@@ -1646,8 +1705,6 @@ function renderMixerSurface(tracks) {
     if (orderControls) channelHeading.append(orderControls);
     if (removeButton) channelHeading.append(removeButton);
     channel.append(channelHeading, role, routing, mix);
-    const instrumentControl = createTrackInstrumentControl(track);
-    if (instrumentControl) channel.append(instrumentControl);
     if (inputControl) channel.append(inputControl);
     if (outputControl) channel.append(outputControl);
     const meter = createTrackMeter(track);
@@ -1678,15 +1735,30 @@ function renderDeviceInspector(snapshot) {
   const heading = document.createElement("strong");
   heading.textContent = focusedTrack.name;
   const description = document.createElement("span");
-  description.textContent = "Instrumento de pista";
-  elements.deviceInspector.append(heading, description);
+  description.className = "device-chain-caption";
+  description.textContent = `CADENA DE PISTA · ${focusedTrack.kind.toUpperCase()}`;
+  const chain = document.createElement("div");
+  chain.className = "device-chain";
+  const instrumentSlot = document.createElement("section");
+  instrumentSlot.className = "device-chain-slot";
+  const instrumentHeading = document.createElement("strong");
+  instrumentHeading.textContent = "INSTRUMENTO";
   const control = createTrackInstrumentControl(focusedTrack);
-  if (control) elements.deviceInspector.append(control);
+  if (control) instrumentSlot.append(instrumentHeading, control);
   else {
     const empty = document.createElement("span");
-    empty.textContent = "No hay instrumento asignado.";
-    elements.deviceInspector.append(empty);
+    empty.textContent = "Esta pista no usa instrumento MIDI.";
+    instrumentSlot.append(instrumentHeading, empty);
   }
+  const effectsSlot = document.createElement("section");
+  effectsSlot.className = "device-chain-slot device-chain-unavailable";
+  const effectsHeading = document.createElement("strong");
+  effectsHeading.textContent = "EFECTOS";
+  const effectsState = document.createElement("span");
+  effectsState.textContent = "La cadena de efectos aún no está disponible en el motor.";
+  effectsSlot.append(effectsHeading, effectsState);
+  chain.append(instrumentSlot, effectsSlot);
+  elements.deviceInspector.append(heading, description, chain);
 }
 
 function updateTrackMixer(track, changes, title) {
@@ -1715,6 +1787,8 @@ function renderSnapshot(snapshot) {
     selectedTrackIds = new Set();
     selectedClipId = null;
     selectedMidiNote = null;
+    pianoRollScrollPositions.clear();
+    pianoRollInitializedClips.clear();
     trackGroupDraft = "";
     editCursorTick = 0;
     transportPositionTick = 0;
@@ -1776,6 +1850,7 @@ function renderSnapshot(snapshot) {
   elements.redo.disabled = !snapshot.canRedo;
   if (!document.querySelector(".track-group-toolbar")) {
     const toolbar = createTrackGroupToolbar();
+    toolbar.hidden = selectedTrackIds.size < 2;
     document.querySelector(".surface-toolbar").prepend(toolbar);
   }
   const groupInput = document.querySelector(".track-group-toolbar input");
@@ -1857,7 +1932,7 @@ function renderSnapshot(snapshot) {
     if (orderControls) headingRow.append(orderControls);
     if (removeButton) headingRow.append(removeButton);
     row.append(headingRow, details);
-    const instrumentControl = createTrackInstrumentControl(track);
+    const instrumentControl = createTrackInstrumentControl(track, true);
     if (instrumentControl) row.append(instrumentControl);
     const meter = createTrackMeter(track);
     if (meter) row.append(meter);
@@ -2080,7 +2155,7 @@ function renderClipInspector(snapshot) {
     const heading = document.createElement("strong");
     heading.textContent = "Editor MIDI";
     const instruction = document.createElement("span");
-    instruction.textContent = "Clic en la rejilla para añadir · arrastra una nota para moverla";
+    instruction.textContent = "Clic: añadir · arrastra: mover · Ctrl+rueda: zoom vertical · rueda: registro";
     toolbar.append(heading, instruction);
     pianoRoll.append(toolbar);
     const ruler = document.createElement("div");
@@ -2102,6 +2177,8 @@ function renderClipInspector(snapshot) {
     pianoRoll.append(ruler);
     const grid = document.createElement("div");
     grid.className = "piano-roll-grid";
+    grid.style.setProperty("--piano-key-height", `${pianoRollRowHeight}px`);
+    grid.dataset.zoomedOut = String(pianoRollRowHeight < 9);
     const stepsPerBar = Math.max(1, Math.round((snapshot.beatsPerBar || 4) * 2));
     const steps = Math.min(256, Math.max(16, Math.ceil(midiClip.durationTicks / Math.max(1, midiClip.ppq / 2) / 16) * 16));
     grid.style.setProperty("--steps", String(steps));
@@ -2126,13 +2203,15 @@ function renderClipInspector(snapshot) {
       selectedMidiNote = updatedNote ? { clipId: midiClip.id, ...updatedNote } : null;
       return updated;
     });
-    for (let key = 83; key >= 48; key--) {
+    const noteNames = ["C", "C♯", "D", "D♯", "E", "F", "F♯", "G", "G♯", "A", "A♯", "B"];
+    for (let key = 127; key >= 0; key--) {
       const lane = document.createElement("div");
       const blackKey = [1, 3, 6, 8, 10].includes(key % 12);
       lane.className = `piano-roll-row${key % 12 === 0 ? " octave" : ""}${blackKey ? " black-key" : ""}`;
       const label = document.createElement("span");
       label.className = "piano-roll-key";
-      label.textContent = key % 12 === 0 ? `C${Math.floor(key / 12) - 1}` : "";
+      label.textContent = `${noteNames[key % 12]}${Math.floor(key / 12) - 1}`;
+      label.title = `Nota MIDI ${key}`;
       lane.append(label);
       const cells = document.createElement("div");
       cells.className = "piano-roll-cells";
@@ -2153,14 +2232,14 @@ function renderClipInspector(snapshot) {
       grid.append(lane);
     }
     for (const note of midiClip.notes) {
-      const row = grid.querySelectorAll(".piano-roll-row")[83 - note.key];
+      const row = grid.querySelectorAll(".piano-roll-row")[127 - note.key];
       if (!row) continue;
       const block = document.createElement("span");
       const isSelected = selectedMidiNote?.clipId === midiClip.id
         && selectedMidiNote.noteOnIndex === note.noteOnIndex
         && selectedMidiNote.noteOffIndex === note.noteOffIndex;
       block.className = `piano-roll-note${isSelected ? " selected" : ""}`;
-      block.style.left = `calc(34px + ${Math.max(0, note.startBeats * 2 / steps) * 100}%)`;
+      block.style.left = `calc(42px + ${Math.max(0, note.startBeats * 2 / steps) * 100}%)`;
       block.style.width = `max(8px, ${Math.max(0.008, note.durationBeats * 2 / steps) * 100}%)`;
       block.title = `Nota ${note.key}, velocidad ${note.velocity}`;
       const resizeHandle = document.createElement("span");
@@ -2183,7 +2262,8 @@ function renderClipInspector(snapshot) {
           document.removeEventListener("pointermove", move);
           document.removeEventListener("pointerup", up);
           const horizontalSteps = Math.round((upEvent.clientX - startX) / pixelPerStep);
-          const semitones = Math.round((startY - upEvent.clientY) / 14);
+          const rowHeight = Number.parseFloat(grid.style.getPropertyValue("--piano-key-height")) || pianoRollRowHeight;
+          const semitones = Math.round((startY - upEvent.clientY) / rowHeight);
           if (!moved) return;
           suppressNoteClick = true;
           const noteLength = note.endTick - note.startTick;
@@ -2209,6 +2289,41 @@ function renderClipInspector(snapshot) {
       });
       row.append(block);
     }
+    grid.addEventListener("wheel", (event) => {
+      event.preventDefault();
+      if (!event.ctrlKey && !event.metaKey) {
+        const lineHeight = pianoRollRowHeight;
+        const wheelDelta = event.deltaMode === WheelEvent.DOM_DELTA_LINE
+          ? event.deltaY * lineHeight
+          : event.deltaMode === WheelEvent.DOM_DELTA_PAGE
+            ? event.deltaY * grid.clientHeight
+            : event.deltaY;
+        grid.scrollTop = Math.max(0, Math.min(
+          grid.scrollHeight - grid.clientHeight,
+          grid.scrollTop + wheelDelta,
+        ));
+        pianoRollScrollPositions.set(midiClip.id, grid.scrollTop);
+        pianoRollInitializedClips.add(midiClip.id);
+        return;
+      }
+      const oldHeight = pianoRollRowHeight;
+      const nextHeight = Math.max(4, Math.min(28, oldHeight * (event.deltaY < 0 ? 1.12 : 1 / 1.12)));
+      if (nextHeight === oldHeight) return;
+      const bounds = grid.getBoundingClientRect();
+      const pointerY = Math.max(0, Math.min(grid.clientHeight, event.clientY - bounds.top));
+      const anchoredPitchRow = (grid.scrollTop + pointerY) / oldHeight;
+      pianoRollRowHeight = nextHeight;
+      grid.style.setProperty("--piano-key-height", `${nextHeight}px`);
+      grid.dataset.zoomedOut = String(nextHeight < 8);
+      requestAnimationFrame(() => {
+        grid.scrollTop = Math.max(0, Math.min(
+          grid.scrollHeight - grid.clientHeight,
+          anchoredPitchRow * nextHeight - pointerY,
+        ));
+        pianoRollScrollPositions.set(midiClip.id, grid.scrollTop);
+        pianoRollInitializedClips.add(midiClip.id);
+      });
+    }, { passive: false });
     pianoRoll.append(grid);
     const velocityLane = document.createElement("div");
     velocityLane.className = "piano-roll-velocity";
@@ -2287,6 +2402,38 @@ function renderClipInspector(snapshot) {
       pianoRoll.append(editor);
     }
     body.append(pianoRoll);
+    const hasInitialPianoRollFrame = pianoRollInitializedClips.has(midiClip.id);
+    const savedPianoRollScrollTop = hasInitialPianoRollFrame ? pianoRollScrollPositions.get(midiClip.id) : undefined;
+    grid.addEventListener("scroll", () => {
+      if (pianoRollInitializedClips.has(midiClip.id)) pianoRollScrollPositions.set(midiClip.id, grid.scrollTop);
+    }, { passive: true });
+    const positionInitialPitchView = (attempt = 0) => {
+      if (!grid.isConnected) return;
+      if (grid.scrollHeight <= grid.clientHeight && attempt < 60) {
+        requestAnimationFrame(() => positionInitialPitchView(attempt + 1));
+        return;
+      }
+      const maxScrollTop = Math.max(0, grid.scrollHeight - grid.clientHeight);
+      if (savedPianoRollScrollTop !== undefined) {
+        grid.scrollTop = Math.min(savedPianoRollScrollTop, maxScrollTop);
+        return;
+      }
+      const noteRows = midiClip.notes
+        .map((note) => 127 - note.key)
+        .filter((row) => row >= 0 && row < 128);
+      if (!noteRows.length) {
+        pianoRollInitializedClips.add(midiClip.id);
+        return;
+      }
+      const rowHeight = grid.querySelector(".piano-roll-row")?.getBoundingClientRect().height ?? pianoRollRowHeight;
+      const firstVisibleNote = Math.min(...noteRows);
+      const lastVisibleNote = Math.max(...noteRows);
+      const notesCenter = ((firstVisibleNote + lastVisibleNote + 1) / 2) * rowHeight;
+      grid.scrollTop = Math.max(0, Math.min(maxScrollTop, notesCenter - grid.clientHeight / 2));
+      pianoRollInitializedClips.add(midiClip.id);
+      pianoRollScrollPositions.set(midiClip.id, grid.scrollTop);
+    };
+    positionInitialPitchView();
   }
 }
 
@@ -2332,14 +2479,7 @@ function renderProjectMedia(snapshot) {
     button.textContent = `${clip.name} · ${track?.name ?? "Pista desconocida"}`;
     button.title = `${clip.name} · ${clip.noteCount} notas; seleccionar y enfocar en Arreglo`;
     button.addEventListener("click", () => {
-      selectedClipId = clip.id;
-      selectedDetailTab = "clip";
-      selectSurface("arrangement");
-      renderClipInspector(snapshot);
-      updateWorkspaceLayout();
-      const target = elements.lanes.querySelector(`[data-clip-id="${CSS.escape(clip.id)}"]`);
-      target?.classList.add("is-inspected");
-      target?.scrollIntoView({ block: "nearest", inline: "nearest" });
+      focusClipInArrangement(clip, snapshot);
     });
     elements.browserMidiList.append(button);
   }
@@ -2357,7 +2497,7 @@ function renderProjectMedia(snapshot) {
     button.type = "button";
     button.className = "browser-content-item";
     const instrument = track.instrument;
-    button.textContent = `${track.name} · ${instrument.backend === "vst3" ? vst3PluginLabel(instrument.plugin?.path) : instrument.backend ?? "Instrumento asignado"}`;
+    button.textContent = `${track.name} · ${instrument.backend === "vst3" ? vst3PluginLabel(instrument.plugin?.path) : instrumentBackendLabel(instrument.backend)}`;
     button.title = "Abrir el instrumento asignado a esta pista";
     button.addEventListener("click", () => {
       selectedTrackIds = new Set([track.id]);
@@ -2378,7 +2518,6 @@ function renderProjectMedia(snapshot) {
   }
   const clips = snapshot.audioClips ?? [];
   elements.browserAudioContent.hidden = clips.length === 0;
-  elements.browserLibraryEmpty.hidden = snapshot.midiClips.length + instrumentTracks.length + clips.length > 0;
   elements.browserMediaTools.hidden = clips.length === 0;
   const query = contentQuery;
   const channelFilter = elements.browserMediaChannels.value;
@@ -2389,6 +2528,36 @@ function renderProjectMedia(snapshot) {
       || (channelFilter === "multi" ? clip.channels > 2 : clip.channels === Number(channelFilter));
     return channelMatch && (!query || searchable.includes(query));
   });
+  const availableCategories = [
+    { id: "midi", label: "Clips MIDI", count: midiMatches.length, total: snapshot.midiClips.length },
+    { id: "instruments", label: "Instrumentos", count: instrumentMatches.length, total: instrumentTracks.length },
+    { id: "audio", label: "Audio", count: matching.length, total: clips.length },
+  ].filter((category) => category.total > 0);
+  if (browserSelectedCategory !== "all" && !availableCategories.some((category) => category.id === browserSelectedCategory)) {
+    browserSelectedCategory = "all";
+  }
+  const visibleCategories = availableCategories.length > 1
+    ? [{ id: "all", label: "Todo", count: availableCategories.reduce((total, category) => total + category.count, 0) }, ...availableCategories]
+    : availableCategories;
+  elements.browserCategoryList.replaceChildren();
+  for (const category of visibleCategories) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = `browser-category${browserSelectedCategory === category.id ? " is-selected" : ""}`;
+    button.textContent = category.label;
+    button.setAttribute("aria-pressed", String(browserSelectedCategory === category.id));
+    button.setAttribute("aria-label", `${category.label}, ${category.count} elementos`);
+    button.addEventListener("click", () => {
+      browserSelectedCategory = category.id;
+      renderProjectMedia(lastSnapshot);
+    });
+    elements.browserCategoryList.append(button);
+  }
+  elements.browserCategoryList.hidden = visibleCategories.length === 0;
+  elements.browserMidiContent.hidden = snapshot.midiClips.length === 0 || !["all", "midi"].includes(browserSelectedCategory);
+  elements.browserInstrumentContent.hidden = instrumentTracks.length === 0 || !["all", "instruments"].includes(browserSelectedCategory);
+  elements.browserAudioContent.hidden = clips.length === 0 || !["all", "audio"].includes(browserSelectedCategory);
+  elements.browserLibraryEmpty.hidden = availableCategories.length > 0;
   elements.browserMediaChannels.disabled = clips.length === 0;
   if (!matching.length) {
     const empty = document.createElement("span");
@@ -3122,7 +3291,11 @@ elements.demoProject.addEventListener("click", async () => {
   await whileBusy([elements.demoProject], async () => { try {
     const snapshot = await platform.demoMidiProject();
     renderSnapshot(snapshot);
-    setNotice("Demo MIDI lista", "Siete notas están preparadas en la pista. Pulsa Play para oírlas por la salida configurada.");
+    const firstMidiClip = snapshot.midiClips[0];
+    if (firstMidiClip) focusClipInArrangement(firstMidiClip, snapshot);
+    setNotice("Demo MIDI lista", firstMidiClip
+      ? "El piano roll está abierto con el clip de prueba seleccionado. Pulsa Play para oírlo por la salida configurada."
+      : "No hay clips MIDI para abrir. Crea una pista o importa un clip para empezar.");
   } catch (error) {
     setNotice("No se pudo preparar la demo MIDI", String(error));
   } });

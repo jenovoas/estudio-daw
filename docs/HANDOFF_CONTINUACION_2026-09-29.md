@@ -174,3 +174,153 @@ El corte de implementación y este handoff quedaron publicados en `2a613fa`
 (`feat: reorganize workstation UI surfaces`), en `origin/main`. El árbol de
 trabajo quedó limpio tras el push; las subtareas 3.1.1–3.1.6 y 3.1 siguen
 abiertas por falta de QA y aceptación visual.
+
+## Continuación de QA visual — categorías Browser y acceso a dispositivo — 2026-09-29
+
+- SHA inicial de esta continuación: `732a891`; el código sigue sin commit.
+- El Browser ahora filtra categorías reales (Todo, Clips MIDI, Instrumentos,
+  Audio), conserva búsqueda/listas actuales y esconde categorías vacías. Las
+  cabeceras compactas del Arreglo enlazan al detalle del dispositivo e informan
+  el backend asignado; no se añadieron contratos Tauri ni capacidades del motor.
+- Se revisó Demo MIDI en la aplicación Tauri a 1842×1066: Arreglo, categorías y
+  controles compactos quedaron visibles en una captura. Esto no cubre los
+  tamaños exigidos 1920×1080 y 1280×720 ni la matriz completa de Session,
+  mezclador y selección Clip/Dispositivo. El intento de cambiar el tamaño desde
+  Tauri fue rechazado porque `window.set_size` no está permitido por las
+  capacidades actuales; no se amplió ese permiso.
+- En la continuación, Hyprland sí fijó la ventana a 1280×720. Durante la
+  inspección remota, el proceso terminó con `free(): corrupted unsorted chunks`;
+  no hay captura verificable de ese tamaño. Un segundo `cargo run` quedó sin
+  ventana y se interrumpió; la relación causal entre inspector y error no está
+  determinada. Repetir QA sin inspector remoto antes de atribuirlo al código.
+- `node --check` para `main.js` y `platform-tauri.js`, `git diff --check` y
+  `openspec validate workstation-arrangement-surface-v2 --strict` pasaron. No
+  se ejecutaron suites. 3.1.1–3.1.6 siguen abiertas hasta cubrir matriz y
+  aceptación visual del usuario. No avanzar otras tareas.
+
+## Prioridad UI y dispositivos — seguimiento de la sesión
+
+- La persona usuaria indicó que la UI creativa es el criterio principal para
+  decidir la continuidad del proyecto y que plugins/dispositivos MIDI son
+  esenciales. Mantener el corte actual en UI 3.1; después priorizar las tareas
+  aceptadas 4.6.2–4.6.7 y 5.6, sin tratarlas como capacidades concluidas.
+- Demo MIDI fue cargada de nuevo. En Arreglo se ve el clip «Melodía de prueba»
+  y siete notas listas. En Session, la Demo base tiene una pista y ninguna
+  escena; añadir una escena y asignar el clip existente mediante la UI funcionó,
+  pero lanzar sigue deshabilitado con el motor desconectado. Se restauró la
+  Demo base tras esa comprobación.
+- El detalle Dispositivo presenta VST3/Analog Lab y selector de puertos MIDI
+  destino más retorno de audio. Tauri enumeró Midi Through, AudioBox USB 96 MIDI
+  1 y BlueZ; `aconnect -l` no mostró KeyLab en esta sesión. La UI aún no expone
+  entrada general de hardware MIDI para tocar/grabar; es un pendiente explícito
+  de 5.6, no debe confundirse con la entrada MIDI de Analog Lab standalone.
+- La auditoría visual detectó tipografía frontend de 6–10 px frente al mínimo
+  de 11 px previsto en `design.md`; los estilos locales ahora elevan ese piso y
+  comprimen ligeramente las filas cortas para evitar recorte. La compilación
+  Tauri confirmó los cambios en runtime a 960×1066 (ventana en mosaico); a ese
+  ancho algunas etiquetas del Browser se recortan por falta de espacio. Los
+  tamaños requeridos 1920×1080 y 1280×720, la matriz completa y aceptación
+  visual siguen pendientes. No mover la ventana ni enviarla al scratchpad.
+- Validación final de esta continuación: `node --check` para ambos scripts
+  frontend, `openspec validate workstation-arrangement-surface-v2 --strict` y
+  `git diff --check` pasaron. Sin suites Rust. OpenSpec 3.1 y subtareas siguen
+  abiertas.
+
+## Entrada creativa directa al piano roll — continuación
+
+- La captura nueva de la persona usuaria mostró el clip «Melodía de prueba» en
+  Arreglo, pero el panel inferior vacío; el piano roll existente sólo aparecía
+  tras seleccionar el clip. Se ajustó el botón Demo MIDI para seleccionar y
+  enfocar el primer clip real en Arreglo, abrir el detalle contextual y ampliar
+  ese panel a 38vh (mínimo 260 px), dejando el lienzo superior visible. También
+  se reutilizó el enfoque desde las filas MIDI del Browser.
+- Archivos locales de este corte: `crates/ui-shell/frontend/main.js` y
+  `styles.css`, además de `tasks.md` y este handoff. `cargo check -p
+  estudio-daw-ui-shell`, `node --check crates/ui-shell/frontend/main.js` y
+  `git diff --check` pasaron. No hubo verificación Tauri runtime del nuevo
+  estado; la captura recibida es la línea base, no el resultado.
+- Continuar probando la primera apertura de Demo y la selección repetida de
+  clips, junto con mezcla/ocultación del detalle, y revisar alturas normales y
+  720 px. Mantener 3.1 abierta y seguir UI-first; después de la aceptación
+  visual, priorizar las tareas ya aceptadas de plugins y entrada MIDI.
+- La captura siguiente confirmó que el panel abría, pero las siete notas (MIDI
+  60–67) quedaban por debajo del tramo visible de 36 teclas. El piano roll ahora
+  centra la primera vez el registro que contiene notas y conserva el scroll por
+  clip entre reconstrucciones. La captura posterior de la persona usuaria
+  (1842×1066) confirma el editor abierto con notas visibles; la ficha muestra 12
+  notas. Aún no comprueba el redimensionado ni que todas queden a la vista.
+  `node --check`, validación OpenSpec estricta y `git diff --check` pasan.
+
+## Jerarquía musical y piano roll — implementación local
+
+- Clip/Dispositivo se movió a la barra del panel inferior; cada encabezado de
+  pista ofrece sólo navegación a su cadena; Mixer deja de duplicar controles de
+  instrumento; los controles de grupo se ocultan hasta seleccionar varias
+  pistas. La cadena agrupa Instrumento y declara que Efectos aún no están
+  disponibles en el motor.
+- El piano roll ahora cubre MIDI 0–127; rueda desplaza el registro y Ctrl+rueda
+  ajusta 4–28 px por semitono anclado al puntero. Conserva el encuadre vertical
+  por clip y centra inicialmente las notas reales.
+- Validación: `node --check` de ambos scripts, comprobación de 88 IDs HTML
+  únicos, `cargo check -p estudio-daw-ui-shell`, `openspec validate
+  workstation-arrangement-surface-v2 --strict` y `git diff --check` pasaron.
+  No hay captura Tauri runtime posterior a estos cambios; 3.1 permanece abierta.
+- La dirección se apoya en Browser→Device View y selección de pista de Ableton,
+  junto al orden sincronizado Editor/Mezclador de Ardour; fuentes oficiales y
+  decisiones de producto están documentadas en `design.md`.
+
+## Corrección de scroll inicial del piano roll — 2026-09-29
+
+- La nueva captura de la persona usuaria mostró la rejilla MIDI abierta en C9,
+  sin las notas del Demo. La causa estaba en el orden de renderizado: se podía
+  guardar el `scrollTop` inicial antes del centrado de notas y restaurarlo en
+  renders siguientes.
+- El scroll sólo se conserva después de completar el primer encuadre del clip;
+  el primer encuadre vuelve a centrarse en el rango de notas existente. El
+  arrastre vertical de notas ahora convierte píxeles a semitonos con la altura
+  de tecla activa, también después del zoom.
+- Verificación de código: `node --check crates/ui-shell/frontend/main.js`,
+  `cargo check -p estudio-daw-ui-shell`, `openspec validate
+  workstation-arrangement-surface-v2 --strict` y `git diff --check` pasaron.
+  Falta confirmar en la ventana Tauri que el Demo sitúa sus notas en el primer
+  encuadre y que el zoom/arrastre se sienten correctos; 3.1 permanece abierta.
+
+## Segundo ajuste del piano roll — 2026-09-29
+
+- La captura posterior confirmó que seguía en C9: el primer arreglo de scroll
+  no resolvió el caso runtime. Se impone una rejilla de altura no colapsable y
+  se espera a que el contenido realmente desborde antes de guardar/centrar la
+  posición inicial. La rueda ahora cambia `scrollTop` explícitamente; Ctrl+rueda
+  conserva el zoom vertical.
+- Las teclas se rediseñan con naturales claros, alteraciones oscuras y nombre
+  musical en cada semitono. Se amplía la altura inicial del panel contextual y
+  el registro base queda en 9 px por tecla para mostrar aproximadamente cuatro
+  octavas en 1080p. La rejilla mantiene inserción de notas con clic.
+- Esta captura llega antes de una verificación de la nueva compilación. Tras
+  compilar, abrir una instancia actualizada y cargar Demo MIDI; verificar el
+  primer encuadre, wheel/scroll, zoom con Ctrl+rueda y colores/etiquetas de las
+  teclas. No declarar resuelto hasta observar esas interacciones.
+
+- La primera captura posterior a esta compilación mostró las teclas blancas y
+  las etiquetas, pero reveló que el cuerpo del editor no se estiraba con el
+  panel inferior. Ahora el piano roll ocupa la fila disponible y aplica el
+  encuadre inicial sincrónicamente tras medir el overflow, con reintento de
+  frame sólo si el layout todavía no tiene altura. Falta relanzar esta última
+  compilación y revisar una captura del Demo.
+- La inspección del DOM/CSS encontró la causa estructural: `.lower-panel` era
+  un contenedor de bloque, aunque sus hijos dependían de `flex: 1`; por eso
+  `#clip-inspector` conservaba altura intrínseca y dejaba el resto como espacio
+  vacío. El primer ajuste a Flex no bastó: el contenedor inferior también
+  incluye buffers y necesita filas explícitas. Ahora usa una fila expansible
+  para Clip/Dispositivo, una fila inferior para buffers y un `--detail-height`
+  conectado al tirador de redimensionado.
+- La causa final del panel recortado era más concreta: una regla antigua
+  mantenía `max-height: 260px` y ninguna regla posterior la anulaba. Se quitó
+  ese límite en la regla final y se comprobó el CSS real con un fixture HTML
+  renderizado por Firefox headless a 1842×1066: panel 576 px, editor 512 px,
+  rejilla MIDI 386 px y contenido vertical desplazable de 1792 px. La captura
+  muestra el editor ocupando el panel, sin el hueco interno anterior y con el
+  scrollbar del registro MIDI. `node --check` (ambos scripts), compilación del
+  crate UI, validación OpenSpec estricta y `git diff --check` pasan. La ventana
+  Tauri abierta no se manipuló ni se recargó; 3.1 sigue abierta para QA de
+  interacción real y tamaños objetivo.
