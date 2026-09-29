@@ -364,3 +364,11 @@ abiertas por falta de QA y aceptación visual.
   `git diff --check` pasan. Capturas headless en `/tmp/estudio-daw-ui-smoke-
   controls-{1280,1920}.png`; no son Tauri runtime. El corte continúa sin QA
   visual Tauri ni aceptación de dirección.
+- Se consolidaron también los valores activos de altura/tema del marco `.appbar`
+  y alto/columna base de `.workstation` en sus declaraciones originales, y se
+  quitaron las redefiniciones tardías del marco y un segundo selector de
+  navegador contraído. El smoke Firefox se repitió a 1280×720 y 1920×1080;
+  conservó métricas de resize (216→296→320 y 583→663→687 px), scroll local y
+  página limitada al viewport. `cargo check -p estudio-daw-ui-shell`, `node
+  --check`, `git diff --check` y validación OpenSpec estricta pasan. Sigue siendo
+  fixture headless con plataforma simulada; no acredita runtime Tauri.

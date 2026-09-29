@@ -26,7 +26,7 @@ button { color: inherit; }
 button:focus-visible, select:focus-visible, input:focus-visible, a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 button:disabled { opacity: .4; cursor: not-allowed !important; }
 
-.appbar { height: 43px; display: flex; align-items: center; gap: 13px; padding: 0 13px; background: var(--chrome); border-bottom: 1px solid #090a0b; box-shadow: 0 1px #373a3c; }
+.appbar { height: 28px; min-width: 0; display: flex; align-items: center; gap: 13px; padding: 0 13px; background: #17191b; border-bottom: 1px solid #090a0b; box-shadow: none; }
 .brand { height: 100%; display: flex; align-items: center; gap: 8px; color: #f0f1f1; text-decoration: none; font-size: 12px; font-weight: 760; letter-spacing: .1px; flex: none; }
 .brand-mark { width: 23px; height: 23px; display: grid; place-items: center; border-radius: 5px; color: #21170d; background: var(--accent); box-shadow: 0 1px #ffd2a5 inset; font-size: 13px; font-weight: 900; }
 .brand-light { color: #a5a9ab; font-weight: 450; }
@@ -61,7 +61,7 @@ button:disabled { opacity: .4; cursor: not-allowed !important; }
 .button-demo { color: #c7b5a2; border-color: #544638; background: #302a24; font-size: 11px; font-weight: 550; }
 .button-demo:hover:not(:disabled) { background: #423629; color: #ffe0bf; }
 
-.workstation { height: calc(100% - 65px); min-height: 449px; display: grid; grid-template-columns: 236px minmax(0, 1fr); }
+.workstation { height: calc(100% - 50px); min-height: 449px; display: grid; grid-template-columns: 280px minmax(0, 1fr); }
 .browser { min-width: 0; position: relative; display: flex; flex-direction: column; padding: 0 10px; overflow-x: hidden; overflow-y: auto; background: #25282a; border-right: 1px solid #151718; box-shadow: 1px 0 #383c3f; }
 .browser-title { height: 39px; flex: none; display: flex; align-items: center; justify-content: space-between; padding: 0 3px; border-bottom: 1px solid #3a3e41; color: #c2c6c8; font-size: 11px; font-weight: 750; letter-spacing: 1px; }
 .browser-chevron { color: #92989b; font-size: 14px; }
@@ -459,9 +459,6 @@ button:disabled { opacity: .4; cursor: not-allowed !important; }
 }
 
 /* Distribución de estación: controles globales, herramientas locales y lienzo. */
-.appbar { height: 28px; min-width: 0; background: #17191b; box-shadow: none; }
-.workstation { height: calc(100% - 50px); grid-template-columns: 280px minmax(0, 1fr); }
-.workstation.browser-collapsed { grid-template-columns: 0 minmax(0, 1fr); }
 .browser { min-width: 0; padding: 0; background: #202325; border-right-color: #111314; box-shadow: none; }
 .browser-title { height: 32px; padding: 0 12px; border-bottom-color: #34393c; }
 .browser-panel { min-width: 0; padding: 0 10px; }
@@ -584,8 +581,6 @@ button:disabled { opacity: .4; cursor: not-allowed !important; }
 .mixer-channel { min-width: 150px; }
 .status-message { height: 22px; min-height: 22px; overflow: hidden; }
 .audio-settings { max-height: 30vh; overflow: auto; }
-.workstation.browser-collapsed { grid-template-columns: 0 minmax(0,1fr); }
-.workstation.browser-collapsed .browser { display: none; }
 .statusbar { min-height: 22px; }
 
 @media (max-width: 1400px) {
