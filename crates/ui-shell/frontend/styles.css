@@ -448,7 +448,7 @@ button:disabled { opacity: .4; cursor: not-allowed !important; }
 
 /* Distribución de estación: controles globales, herramientas locales y lienzo. */
 .appbar { height: 38px; min-width: 0; background: #17191b; box-shadow: none; }
-.workstation { height: calc(100% - 60px); grid-template-columns: 280px minmax(0, 1fr); }
+.workstation { height: calc(100% - 65px); grid-template-columns: 280px minmax(0, 1fr); }
 .workstation.browser-collapsed { grid-template-columns: 0 minmax(0, 1fr); }
 .browser { min-width: 0; padding: 0; background: #202325; border-right-color: #111314; box-shadow: none; }
 .browser-title { height: 32px; padding: 0 12px; border-bottom-color: #34393c; }
@@ -616,6 +616,8 @@ button:disabled { opacity: .4; cursor: not-allowed !important; }
 }
 @media (max-height: 760px) {
   .editor { grid-template-rows: 40px 30px minmax(200px,1fr) 0 minmax(156px,30vh) auto; }
+  .editor.has-midi-editor:not(.mixer-panel-open) { grid-template-rows: 40px 30px minmax(200px,1fr) 0 minmax(190px,var(--detail-height,30vh)) auto; }
+  .editor.has-midi-editor.mixer-panel-open { grid-template-rows: 40px 30px minmax(180px,1fr) minmax(120px,20vh) minmax(190px,var(--detail-height,24vh)) auto; }
   .arrangement-track-list, .arrangement-lanes { grid-auto-rows: 56px; }
   .track-row { grid-template-rows: 20px 15px 13px 2px; padding: 2px 5px; }
   .track-row-heading { min-height: 20px; }

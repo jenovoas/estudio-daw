@@ -324,3 +324,14 @@ abiertas por falta de QA y aceptación visual.
   crate UI, validación OpenSpec estricta y `git diff --check` pasan. La ventana
   Tauri abierta no se manipuló ni se recargó; 3.1 sigue abierta para QA de
   interacción real y tamaños objetivo.
+- Revisión automática adicional en Firefox headless con el CSS del proyecto y
+  un DOM representativo: en 1920×1080, panel 583 px, editor 519 px, rejilla 393
+  px y contenido 1024 px (49 semitonos visibles, cuatro octavas); en 1280×720,
+  panel 216 px, editor 152 px y rejilla 120 px. Transporte simulado, panel,
+  buffer y barra inferior permanecen dentro del viewport estrecho, con scroll
+  local de notas. La rejilla por tecla quedó en 8 px para mostrar cuatro
+  octavas en escritorio; en ventanas bajas el registro visible se reduce y se
+  recorre con rueda. El panel estrecho inicia en 30vh y el tirador se limita al
+  espacio restante después de reservar superficie musical y controles. Esto
+  prueba layout CSS/DOM, no una sesión Tauri ni los gestos reales; 3.1 continúa
+  abierta.

@@ -130,7 +130,7 @@ let selectedMidiNote = null;
 const waveformCache = new Map();
 const pianoRollScrollPositions = new Map();
 const pianoRollInitializedClips = new Set();
-let pianoRollRowHeight = 9;
+let pianoRollRowHeight = 8;
 const vst3EditorOpenByTrack = new Map();
 let previewContext = null;
 let currentPreview = null;
@@ -3448,15 +3448,24 @@ document.addEventListener("keydown", (event) => {
 });
 renderApplicationMenu();
 
+function panelResizeBounds() {
+  const editorHeight = elements.editor.clientHeight;
+  const minHeight = editorHeight <= 760 ? 190 : 330;
+  const arrangementMinimum = editorHeight <= 760 ? 200 : 220;
+  const fixedHeight = document.querySelector(".transport-bar").getBoundingClientRect().height
+    + document.querySelector(".surface-toolbar").getBoundingClientRect().height
+    + elements.notice.getBoundingClientRect().height
+    + (elements.editor.classList.contains("mixer-panel-open") ? elements.mixerView.getBoundingClientRect().height : 0);
+  return { minHeight, maxHeight: Math.max(minHeight, editorHeight - fixedHeight - arrangementMinimum) };
+}
+
 document.querySelector(".panel-grip").addEventListener("pointerdown", (event) => {
   if (!elements.editor.classList.contains("has-midi-editor")) return;
   event.preventDefault();
   const startY = event.clientY;
   const startHeight = document.querySelector(".lower-panel").getBoundingClientRect().height;
-  const editorHeight = elements.editor.getBoundingClientRect().height;
-  const minHeight = editorHeight <= 680 ? 190 : 330;
-  const maxHeight = Math.max(minHeight, editorHeight - 240);
   const resize = (moveEvent) => {
+    const { minHeight, maxHeight } = panelResizeBounds();
     const height = Math.max(minHeight, Math.min(maxHeight, startHeight + startY - moveEvent.clientY));
     elements.editor.style.setProperty("--detail-height", `${height}px`);
   };
@@ -3471,9 +3480,9 @@ document.querySelector(".panel-grip").addEventListener("keydown", (event) => {
   if (!elements.editor.classList.contains("has-midi-editor") || !["ArrowUp", "ArrowDown"].includes(event.key)) return;
   event.preventDefault();
   const current = document.querySelector(".lower-panel").getBoundingClientRect().height;
-  const minHeight = elements.editor.clientHeight <= 680 ? 190 : 330;
+  const { minHeight, maxHeight } = panelResizeBounds();
   const next = current + (event.key === "ArrowUp" ? 24 : -24);
-  elements.editor.style.setProperty("--detail-height", `${Math.max(minHeight, Math.min(elements.editor.clientHeight - 240, next))}px`);
+  elements.editor.style.setProperty("--detail-height", `${Math.max(minHeight, Math.min(maxHeight, next))}px`);
 });
 
 // Este shell inicial sólo resume datos compactos; jamás solicita PCM o buffers
