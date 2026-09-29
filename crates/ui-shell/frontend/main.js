@@ -26,10 +26,19 @@ const elements = {
   contextMenu: document.querySelector("#action-context-menu"),
   path: document.querySelector("#project-path"),
   name: document.querySelector("#project-name"),
-  browserMediaSearch: document.querySelector("#browser-media-search"),
   browserMediaChannels: document.querySelector("#browser-media-channels"),
   browserMediaTools: document.querySelector("#browser-media-tools"),
   browserMediaList: document.querySelector("#browser-media-list"),
+  browserMidiList: document.querySelector("#browser-midi-list"),
+  browserMidiContent: document.querySelector("#browser-midi-content"),
+  browserInstrumentList: document.querySelector("#browser-instrument-list"),
+  browserInstrumentContent: document.querySelector("#browser-instrument-content"),
+  browserAudioContent: document.querySelector("#browser-audio-content"),
+  browserLibraryEmpty: document.querySelector("#browser-library-empty"),
+  browserContentSearch: document.querySelector("#browser-content-search"),
+  deviceInspector: document.querySelector("#device-inspector"),
+  detailClipTab: document.querySelector("#detail-clip-tab"),
+  detailDeviceTab: document.querySelector("#detail-device-tab"),
   transportTempo: document.querySelector("#transport-tempo"),
   transport: document.querySelector("#transport-state"),
   transportPosition: document.querySelector("#transport-position"),
@@ -111,6 +120,7 @@ let arrangementStartBar = 1;
 let arrangementTotalBars = 16;
 let editCursorProjectId = null;
 let selectedClipId = null;
+let selectedDetailTab = "clip";
 let browserVisible = true;
 let clipDetailVisible = true;
 let mixerPanelVisible = false;
@@ -477,18 +487,28 @@ function handleWorkstationShortcut(event) {
 }
 
 function updateWorkspaceLayout() {
+  const sessionActive = elements.showSession.classList.contains("is-selected");
   elements.workstation.classList.toggle("browser-collapsed", !browserVisible);
   elements.editor.classList.toggle("clip-detail-hidden", !clipDetailVisible);
-  elements.editor.classList.toggle("mixer-panel-open", mixerPanelVisible);
-  elements.mixerView.hidden = !mixerPanelVisible;
-  elements.clipInspector.hidden = mixerPanelVisible;
-  elements.lowerPanelTitle.textContent = mixerPanelVisible ? "MEZCLADOR" : "DETALLE DE CLIP";
+  elements.editor.classList.toggle("mixer-panel-open", mixerPanelVisible && !sessionActive);
+  elements.mixerView.hidden = !mixerPanelVisible || sessionActive;
+  elements.showMixer.disabled = sessionActive;
+  elements.showMixer.title = sessionActive
+    ? "La mezcla está alineada bajo las pistas en Session"
+    : "Mostrar u ocultar el mezclador (Ctrl+3)";
+  elements.clipInspector.hidden = selectedDetailTab !== "clip";
+  elements.deviceInspector.hidden = selectedDetailTab !== "device";
+  elements.lowerPanelTitle.textContent = selectedDetailTab === "device" ? "DISPOSITIVO" : "DETALLE DE CLIP";
+  elements.detailClipTab.classList.toggle("is-selected", selectedDetailTab === "clip");
+  elements.detailDeviceTab.classList.toggle("is-selected", selectedDetailTab === "device");
+  elements.detailClipTab.setAttribute("aria-pressed", String(selectedDetailTab === "clip"));
+  elements.detailDeviceTab.setAttribute("aria-pressed", String(selectedDetailTab === "device"));
   elements.showMixer.setAttribute("aria-pressed", String(mixerPanelVisible));
   elements.toggleBrowser.setAttribute("aria-pressed", String(browserVisible));
   elements.toggleBrowser.title = browserVisible
     ? "Ocultar navegador (Ctrl+Alt+B)"
     : "Mostrar navegador (Ctrl+Alt+B)";
-  const clipViewVisible = clipDetailVisible && !mixerPanelVisible;
+  const clipViewVisible = clipDetailVisible;
   elements.toggleClipDetail.setAttribute("aria-pressed", String(clipViewVisible));
   elements.toggleClipDetail.title = clipViewVisible
     ? "Ocultar detalle del clip (Mayús+Tab)"
@@ -565,6 +585,7 @@ function selectSurface(surface) {
     button.classList.toggle("is-selected", active);
     button.setAttribute("aria-selected", String(active));
   }
+  updateWorkspaceLayout();
 }
 
 function updateReturnToArrangementButton() {
@@ -1347,12 +1368,16 @@ function renderSessionSurface(snapshot) {
   grid.style.setProperty("--session-track-columns", String(tracks.length));
   const corner = document.createElement("div");
   corner.className = "session-matrix-corner";
-  corner.textContent = "ESCENA";
+  corner.textContent = "PISTAS";
+  corner.style.gridColumn = String(tracks.length + 1);
+  corner.style.gridRow = "1";
   grid.append(corner);
-  for (const track of tracks) {
+  for (const [trackIndex, track] of tracks.entries()) {
     const header = document.createElement("div");
     header.className = "session-track-header";
     header.dataset.trackId = track.id;
+    header.style.gridColumn = String(trackIndex + 1);
+    header.style.gridRow = "1";
     header.style.setProperty("--track-color", track.color);
     header.append(createTrackSelectionControl(track));
     const identity = createTrackIdentityControl(track);
@@ -1364,10 +1389,6 @@ function renderSessionSurface(snapshot) {
     const meter = createTrackMeter(track);
     header.append(name, type);
     if (meter) header.append(meter);
-    const controls = createTrackMixerControls(track, true);
-    if (controls) header.append(controls);
-    const instrumentControl = createTrackInstrumentControl(track);
-    if (instrumentControl) header.append(instrumentControl);
     const removeButton = createTrackRemovalButton(track);
     const orderControls = createTrackOrderControls(track, snapshot.tracks);
     if (orderControls) header.append(orderControls);
@@ -1377,6 +1398,8 @@ function renderSessionSurface(snapshot) {
   for (const [sceneIndex, scene] of (snapshot.scenes ?? []).entries()) {
     const sceneHeader = document.createElement("div");
     sceneHeader.className = "session-scene-header";
+    sceneHeader.style.gridColumn = String(tracks.length + 1);
+    sceneHeader.style.gridRow = String(sceneIndex + 2);
     const sceneName = document.createElement("input");
     sceneName.value = scene.name;
     sceneName.setAttribute("aria-label", `Nombre de escena ${scene.name}`);
@@ -1428,9 +1451,11 @@ function renderSessionSurface(snapshot) {
     launchScene.addEventListener("click", () => launchSessionScene(scene.id, snapshot));
     sceneHeader.append(launchScene, sceneName, moveUp, moveDown, remove);
     grid.append(sceneHeader);
-    for (const track of tracks) {
+    for (const [trackIndex, track] of tracks.entries()) {
       const cell = document.createElement("div");
       cell.className = "session-cell";
+      cell.style.gridColumn = String(trackIndex + 1);
+      cell.style.gridRow = String(sceneIndex + 2);
       cell.style.setProperty("--track-color", track.color);
       if (track.annotation) cell.title = track.annotation;
       const slot = (snapshot.clipSlots ?? []).find((item) => item.sceneId === scene.id && item.trackId === track.id);
@@ -1507,7 +1532,49 @@ function renderSessionSurface(snapshot) {
     const empty = document.createElement("div");
     empty.className = "surface-empty session-empty-state";
     empty.textContent = "Aún no hay escenas. Añade una escena y asigna clips existentes a las casillas.";
+    empty.style.gridColumn = `1 / span ${tracks.length + 1}`;
+    empty.style.gridRow = "2";
     grid.append(empty);
+  }
+  const mixerRow = Math.max(1, (snapshot.scenes ?? []).length) + 2;
+  const mixerLabel = document.createElement("div");
+  mixerLabel.className = "session-mixer-label";
+  mixerLabel.textContent = "MEZCLA";
+  mixerLabel.style.gridColumn = String(tracks.length + 1);
+  mixerLabel.style.gridRow = String(mixerRow);
+  grid.append(mixerLabel);
+  for (const [trackIndex, track] of tracks.entries()) {
+    const mixerCell = document.createElement("div");
+    mixerCell.className = "session-mixer-cell";
+    mixerCell.dataset.trackId = track.id;
+    mixerCell.style.setProperty("--track-color", track.color);
+    mixerCell.style.gridColumn = String(trackIndex + 1);
+    mixerCell.style.gridRow = String(mixerRow);
+    const meter = createTrackMeter(track);
+    const controls = createTrackMixerControls(track, true);
+    if (meter) mixerCell.append(meter);
+    if (controls) mixerCell.append(controls);
+    grid.append(mixerCell);
+  }
+  const mixExtras = document.createElement("div");
+  mixExtras.className = "session-mixer-extras";
+  for (const track of snapshot.tracks.filter((item) => ["bus", "return", "master"].includes(item.role))) {
+    const channel = document.createElement("div");
+    channel.className = "session-mixer-extra";
+    channel.style.setProperty("--track-color", track.color);
+    const label = document.createElement("strong");
+    label.textContent = track.name;
+    channel.append(label);
+    const meter = createTrackMeter(track);
+    const controls = createTrackMixerControls(track, true);
+    if (meter) channel.append(meter);
+    if (controls) channel.append(controls);
+    mixExtras.append(channel);
+  }
+  if (mixExtras.childElementCount) {
+    mixExtras.style.gridColumn = String(tracks.length + 1);
+    mixExtras.style.gridRow = String(mixerRow + 1);
+    grid.append(mixExtras);
   }
   elements.sessionView.append(grid);
 }
@@ -1590,6 +1657,36 @@ function renderMixerSurface(tracks) {
     channels.append(channel);
   }
   elements.mixerView.append(channels);
+}
+
+function renderDeviceInspector(snapshot) {
+  elements.deviceInspector.replaceChildren();
+  const selectedClip = snapshot.midiClips.find((clip) => clip.id === selectedClipId)
+    ?? (snapshot.audioClips ?? []).find((clip) => clip.id === selectedClipId);
+  const focusedTrack = [...selectedTrackIds]
+    .map((id) => snapshot.tracks.find((track) => track.id === id))
+    .find((track) => track && track.kind === "midi")
+    ?? snapshot.tracks.find((track) => track.id === selectedClip?.trackId)
+    ?? snapshot.tracks.find((track) => track.kind === "midi" && track.role !== "master");
+  if (!focusedTrack) {
+    const empty = document.createElement("p");
+    empty.className = "surface-empty";
+    empty.textContent = "Selecciona una pista MIDI para ver su instrumento asignado.";
+    elements.deviceInspector.append(empty);
+    return;
+  }
+  const heading = document.createElement("strong");
+  heading.textContent = focusedTrack.name;
+  const description = document.createElement("span");
+  description.textContent = "Instrumento de pista";
+  elements.deviceInspector.append(heading, description);
+  const control = createTrackInstrumentControl(focusedTrack);
+  if (control) elements.deviceInspector.append(control);
+  else {
+    const empty = document.createElement("span");
+    empty.textContent = "No hay instrumento asignado.";
+    elements.deviceInspector.append(empty);
+  }
 }
 
 function updateTrackMixer(track, changes, title) {
@@ -1679,14 +1776,14 @@ function renderSnapshot(snapshot) {
   elements.redo.disabled = !snapshot.canRedo;
   if (!document.querySelector(".track-group-toolbar")) {
     const toolbar = createTrackGroupToolbar();
-    const viewSeparator = document.querySelector(".transport-view-separator");
-    document.querySelector(".transport-bar").insertBefore(toolbar, viewSeparator);
+    document.querySelector(".surface-toolbar").prepend(toolbar);
   }
   const groupInput = document.querySelector(".track-group-toolbar input");
   if (groupInput && groupInput.value !== trackGroupDraft) groupInput.value = trackGroupDraft;
   syncTrackSelectionUi();
   renderSessionSurface(snapshot);
   renderMixerSurface(snapshot.tracks);
+  renderDeviceInspector(snapshot);
   const previousTrack = elements.importTrack.value;
   elements.importTrack.replaceChildren();
   const audioTracks = snapshot.tracks.filter((track) => track.role === "audio");
@@ -2218,9 +2315,72 @@ function makeInspectorNumber(caption, value, min, max, step, onChange) {
 
 function renderProjectMedia(snapshot) {
   elements.browserMediaList.replaceChildren();
+  elements.browserMidiList.replaceChildren();
+  elements.browserInstrumentList.replaceChildren();
+  const contentQuery = elements.browserContentSearch.value.trim().toLocaleLowerCase();
+  const midiTracks = snapshot.tracks.filter((track) => track.kind === "midi" && track.role !== "master");
+  elements.browserMidiContent.hidden = snapshot.midiClips.length === 0;
+  const midiMatches = snapshot.midiClips.filter((clip) => {
+    const track = midiTracks.find((item) => item.id === clip.trackId);
+    return `${clip.name} ${track?.name ?? ""}`.toLocaleLowerCase().includes(contentQuery);
+  });
+  for (const clip of midiMatches) {
+    const track = midiTracks.find((item) => item.id === clip.trackId);
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "browser-content-item";
+    button.textContent = `${clip.name} · ${track?.name ?? "Pista desconocida"}`;
+    button.title = `${clip.name} · ${clip.noteCount} notas; seleccionar y enfocar en Arreglo`;
+    button.addEventListener("click", () => {
+      selectedClipId = clip.id;
+      selectedDetailTab = "clip";
+      selectSurface("arrangement");
+      renderClipInspector(snapshot);
+      updateWorkspaceLayout();
+      const target = elements.lanes.querySelector(`[data-clip-id="${CSS.escape(clip.id)}"]`);
+      target?.classList.add("is-inspected");
+      target?.scrollIntoView({ block: "nearest", inline: "nearest" });
+    });
+    elements.browserMidiList.append(button);
+  }
+  if (!midiMatches.length) {
+    const empty = document.createElement("span");
+    empty.className = "browser-media-empty";
+    empty.textContent = snapshot.midiClips.length ? "No hay clips MIDI que coincidan." : "Sin clips MIDI.";
+    elements.browserMidiList.append(empty);
+  }
+  const instrumentTracks = midiTracks.filter((track) => track.instrument);
+  elements.browserInstrumentContent.hidden = instrumentTracks.length === 0;
+  const instrumentMatches = instrumentTracks.filter((item) => `${item.name} ${item.instrument?.plugin?.path ?? item.instrument?.backend ?? ""}`.toLocaleLowerCase().includes(contentQuery));
+  for (const track of instrumentMatches) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "browser-content-item";
+    const instrument = track.instrument;
+    button.textContent = `${track.name} · ${instrument.backend === "vst3" ? vst3PluginLabel(instrument.plugin?.path) : instrument.backend ?? "Instrumento asignado"}`;
+    button.title = "Abrir el instrumento asignado a esta pista";
+    button.addEventListener("click", () => {
+      selectedTrackIds = new Set([track.id]);
+      selectedDetailTab = "device";
+      syncTrackSelectionUi();
+      renderDeviceInspector(snapshot);
+      updateWorkspaceLayout();
+      selectSurface("arrangement");
+      document.querySelector(`.track-row[data-track-id="${CSS.escape(track.id)}"]`)?.scrollIntoView({ block: "nearest" });
+    });
+    elements.browserInstrumentList.append(button);
+  }
+  if (!instrumentMatches.length && instrumentTracks.length) {
+    const empty = document.createElement("span");
+    empty.className = "browser-media-empty";
+    empty.textContent = "No hay instrumentos que coincidan con la búsqueda.";
+    elements.browserInstrumentList.append(empty);
+  }
   const clips = snapshot.audioClips ?? [];
+  elements.browserAudioContent.hidden = clips.length === 0;
+  elements.browserLibraryEmpty.hidden = snapshot.midiClips.length + instrumentTracks.length + clips.length > 0;
   elements.browserMediaTools.hidden = clips.length === 0;
-  const query = elements.browserMediaSearch.value.trim().toLocaleLowerCase();
+  const query = contentQuery;
   const channelFilter = elements.browserMediaChannels.value;
   const matching = clips.filter((clip) => {
     const trackName = snapshot.tracks.find((track) => track.id === clip.trackId)?.name ?? "";
@@ -2229,7 +2389,6 @@ function renderProjectMedia(snapshot) {
       || (channelFilter === "multi" ? clip.channels > 2 : clip.channels === Number(channelFilter));
     return channelMatch && (!query || searchable.includes(query));
   });
-  elements.browserMediaSearch.disabled = clips.length === 0;
   elements.browserMediaChannels.disabled = clips.length === 0;
   if (!matching.length) {
     const empty = document.createElement("span");
@@ -2263,8 +2422,10 @@ function renderProjectMedia(snapshot) {
     });
     const select = () => {
       selectedClipId = clip.id;
+      selectedDetailTab = "clip";
       selectSurface("arrangement");
       renderClipInspector(snapshot);
+      updateWorkspaceLayout();
       const target = [...elements.lanes.querySelectorAll("[data-clip-id]")]
         .find((block) => block.dataset.clipId === clip.id);
       if (!target) return;
@@ -2282,10 +2443,12 @@ function renderProjectMedia(snapshot) {
 function bindClipSelection(block, clipId, snapshot) {
   const select = () => {
     selectedClipId = clipId;
+    selectedDetailTab = "clip";
     for (const selected of elements.lanes.querySelectorAll(".is-inspected")) {
       selected.classList.remove("is-inspected");
     }
     renderClipInspector(snapshot);
+    updateWorkspaceLayout();
     block.classList.add("is-inspected");
   };
   block.addEventListener("click", (event) => {
@@ -2886,7 +3049,7 @@ elements.importBar.addEventListener("change", () => {
   editCursorTick = Math.round((bar - 1) * beatsPerBar * 480);
   renderEditCursor();
 });
-elements.browserMediaSearch.addEventListener("input", () => {
+elements.browserContentSearch.addEventListener("input", () => {
   if (lastSnapshot) renderProjectMedia(lastSnapshot);
 });
 elements.browserMediaChannels.addEventListener("change", () => {
@@ -2909,7 +3072,15 @@ elements.showArrangement.addEventListener("click", () => selectSurface("arrangem
 elements.showSession.addEventListener("click", () => selectSurface("session"));
 elements.showMixer.addEventListener("click", () => {
   mixerPanelVisible = !mixerPanelVisible;
-  clipDetailVisible = true;
+  updateWorkspaceLayout();
+});
+elements.detailClipTab.addEventListener("click", () => {
+  selectedDetailTab = "clip";
+  updateWorkspaceLayout();
+});
+elements.detailDeviceTab.addEventListener("click", () => {
+  selectedDetailTab = "device";
+  if (lastSnapshot) renderDeviceInspector(lastSnapshot);
   updateWorkspaceLayout();
 });
 elements.toggleBrowser.addEventListener("click", () => {

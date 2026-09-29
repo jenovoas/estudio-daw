@@ -22,7 +22,7 @@
       </div>
       <nav class="project-actions" aria-label="Acciones de proyecto">
         <button id="new-project" class="icon-button" title="Crear un proyecto nuevo" aria-label="Nuevo proyecto">＋</button>
-        <button id="demo-project" class="button button-demo" title="Cargar una sesión MIDI de demostración">Demo MIDI</button>
+        <button id="demo-project" class="button button-demo" title="Cargar una sesión MIDI de demostración" hidden>Demo MIDI</button>
         <button id="open-project" class="icon-button" title="Abrir un proyecto" aria-label="Abrir proyecto">↗</button>
         <button id="save-project-as" class="icon-button" title="Guardar proyecto como" aria-label="Guardar como" disabled>⤓</button>
         <button id="save-project" class="icon-button icon-save" title="Guardar proyecto" aria-label="Guardar" disabled>▣</button>
@@ -33,16 +33,15 @@
       <aside class="browser" aria-label="Navegador del proyecto">
         <div class="browser-title"><span>NAVEGADOR</span><span class="browser-chevron">⌄</span></div>
         <nav class="browser-tabs" role="tablist" aria-label="Contenido del navegador">
-          <button class="browser-tab is-selected" id="browser-project-tab" type="button" role="tab" aria-selected="true" aria-controls="browser-project-panel"><span>◈</span>Proyecto</button>
+          <button class="browser-tab is-selected" id="browser-project-tab" type="button" role="tab" aria-selected="true" aria-controls="browser-project-panel"><span>◈</span>Contenido</button>
           <button class="browser-tab" id="browser-create-tab" type="button" role="tab" aria-selected="false" aria-controls="browser-create-panel"><span>＋</span>Crear</button>
         </nav>
         <section id="browser-project-panel" class="browser-panel" role="tabpanel" aria-labelledby="browser-project-tab">
-          <div class="browser-section-label browser-section-spaced">MEDIOS DEL PROYECTO</div>
-          <div id="browser-media-tools" class="browser-media-tools" hidden>
-            <label class="media-import-field">Buscar audio<input id="browser-media-search" type="search" placeholder="Nombre, fuente o pista" disabled /></label>
-            <label class="media-import-field">Canales<select id="browser-media-channels" disabled><option value="all">Todos</option><option value="1">Mono</option><option value="2">Estéreo</option><option value="multi">Más de 2</option></select></label>
-          </div>
-          <div id="browser-media-list" class="browser-media-list" aria-live="polite"><span class="browser-media-empty">Sin audio importado.</span></div>
+          <label class="browser-search">Buscar contenido<input id="browser-content-search" type="search" placeholder="Nombre, pista, fuente" /></label>
+          <p id="browser-library-empty" class="browser-empty-hint" hidden>El proyecto aún no tiene clips ni medios. Puedes crear una pista o importar audio.</p>
+          <section id="browser-midi-content" class="browser-content-section" hidden><div class="browser-section-label browser-section-spaced">CLIPS MIDI</div><div id="browser-midi-list" class="browser-content-list" aria-live="polite"></div></section>
+          <section id="browser-instrument-content" class="browser-content-section" hidden><div class="browser-section-label browser-section-spaced">INSTRUMENTOS ASIGNADOS</div><div id="browser-instrument-list" class="browser-content-list" aria-live="polite"></div></section>
+          <section id="browser-audio-content" class="browser-content-section" hidden><div class="browser-section-label browser-section-spaced">AUDIO DEL PROYECTO</div><div id="browser-media-tools" class="browser-media-tools" hidden><label class="media-import-field">Canales<select id="browser-media-channels" disabled><option value="all">Todos</option><option value="1">Mono</option><option value="2">Estéreo</option><option value="multi">Más de 2</option></select></label></div><div id="browser-media-list" class="browser-media-list" aria-live="polite"></div></section>
           <details class="browser-import">
             <summary><span class="action-glyph">♫</span><span>Importar audio</span></summary>
             <label class="media-import-field">Pista de destino<select id="audio-import-track" disabled><option value="">Crea una pista de audio</option></select></label>
@@ -54,7 +53,7 @@
             <button id="browser-import-audio" class="browser-action" disabled><span class="action-glyph">♫</span><span><strong>Elegir archivo</strong><small>Revisa y preescucha antes de importar</small></span><span class="action-arrow">›</span></button>
             <div class="audio-import-actions"><button id="audio-import-preview" disabled>▶ Escuchar</button><button id="audio-import-commit" disabled>Importar</button></div>
           </details>
-        </div>
+        </section>
         <section id="browser-create-panel" class="browser-panel browser-create-panel" role="tabpanel" aria-labelledby="browser-create-tab" hidden>
           <div class="browser-section-label browser-section-spaced">PISTAS</div>
           <p class="browser-panel-hint">Añade una pista al proyecto y empieza a construir el arreglo.</p>
@@ -85,22 +84,24 @@
             <button id="loop-point-b" class="history-button" title="Fijar fin del rango en el cursor">B</button>
             <button id="loop-range-clear" class="history-button" title="Limpiar rango">×</button>
           </span>
-          <span class="transport-separator"></span>
-          <span class="transport-spacer"></span>
           <button id="undo" class="history-button" title="Deshacer último cambio" aria-label="Deshacer" disabled>↶</button>
           <button id="redo" class="history-button" title="Rehacer último cambio" aria-label="Rehacer" disabled>↷</button>
-          <span id="revision" class="revision">REV —</span>
-          <span class="transport-separator transport-view-separator"></span>
+          <span id="revision" class="revision" hidden>REV —</span>
+          <button id="return-to-arrangement" class="button button-accent" type="button" hidden disabled>↶ Volver a Arreglo</button>
+        </section>
+
+        <section class="surface-toolbar" aria-label="Herramientas de la superficie">
           <div class="view-tabs" role="tablist" aria-label="Vistas de composición">
             <button id="show-arrangement" class="view-tab is-selected" title="Arreglo (Tab / Ctrl+1)" role="tab" aria-selected="true"><span class="tab-icon">▥</span>Arreglo</button>
             <button id="show-session" class="view-tab" title="Sesión (Tab / Ctrl+2)" role="tab" aria-selected="false"><span class="tab-icon">▦</span>Sesión</button>
           </div>
-          <button id="show-mixer" class="workspace-view-toggle mixer-panel-toggle" type="button" title="Mostrar u ocultar el mezclador (Ctrl+3)" aria-pressed="false"><span class="tab-icon">▤</span>Mezclador</button>
-          <button id="return-to-arrangement" class="button button-accent" type="button" hidden disabled>↶ Volver a Arreglo</button>
-          <span class="workspace-toolbar-spacer"></span>
+          <label class="grid-snap-select"><span>REJILLA</span><select id="grid-snap" aria-label="Ajuste a rejilla"><option value="0.25">1/16</option><option value="0.5">1/8</option><option value="1">1/4</option><option value="bar">Compás</option><option value="0">Libre</option></select></label>
+          <span class="surface-toolbar-spacer"></span>
+          <button id="show-mixer" class="workspace-view-toggle mixer-panel-toggle" type="button" title="Mostrar u ocultar el mezclador (Ctrl+3)" aria-pressed="false"><span class="tab-icon">▤</span>Mezcla</button>
           <button id="toggle-browser" class="workspace-view-toggle" type="button" title="Mostrar u ocultar el navegador (Ctrl+Alt+B)" aria-label="Mostrar u ocultar navegador" aria-pressed="true">◧ Navegador</button>
-          <label class="grid-snap-select"><span>AJUSTE</span><select id="grid-snap" aria-label="Ajuste a rejilla"><option value="0.25">1/16</option><option value="0.5">1/8</option><option value="1">1/4</option><option value="bar">Compás</option><option value="0">Libre</option></select></label>
-          <button id="toggle-clip-detail" class="workspace-view-toggle" type="button" title="Mostrar u ocultar el detalle del clip (Mayús+Tab)" aria-label="Mostrar u ocultar el detalle del clip" aria-pressed="true">Clip</button>
+          <button id="toggle-clip-detail" class="workspace-view-toggle" type="button" title="Mostrar u ocultar el detalle del clip (Mayús+Tab)" aria-label="Mostrar u ocultar el detalle del clip" aria-pressed="true">Detalle</button>
+          <button id="detail-clip-tab" class="detail-tab is-selected" type="button" aria-pressed="true">Clip</button>
+          <button id="detail-device-tab" class="detail-tab" type="button" aria-pressed="false">Dispositivo</button>
           <button id="rail-settings" class="workspace-view-toggle workspace-settings-toggle" type="button" title="Abrir preferencias de audio" aria-label="Abrir preferencias de audio">⚙</button>
         </section>
 
@@ -118,10 +119,12 @@
           <div id="arrangement-legend" class="arrangement-legend"><span><i class="legend-swatch"></i>Clip MIDI</span><span>Selecciona un clip para abrir su piano roll</span></div>
         </section>
 
+        <section id="mixer-view" class="alternative-surface mixer-surface" aria-label="Mezclador del proyecto" hidden></section>
+
         <section class="lower-panel">
           <div class="lower-panel-title"><div class="panel-grip" role="separator" aria-orientation="horizontal" tabindex="0" title="Arrastra para cambiar el tamaño del detalle" aria-label="Cambiar el tamaño del detalle">⠿</div><strong id="lower-panel-title">DETALLE DE CLIP</strong><span class="lower-panel-subtitle">Editor contextual</span></div>
-          <div id="mixer-view" class="alternative-surface mixer-surface" aria-label="Mezclador del proyecto" hidden></div>
           <div id="clip-inspector" class="clip-inspector" aria-live="polite"><span>Sin clip seleccionado</span></div>
+          <div id="device-inspector" class="device-inspector" hidden></div>
           <details id="audio-settings" class="audio-settings">
             <summary class="audio-summary"><span class="audio-summary-icon">◉</span><span id="audio-settings-title">Buffers y latencia</span><span id="audio-apply-state" class="revision">Cargando…</span><span class="summary-chevron">⌄</span></summary>
             <div class="audio-settings-body">

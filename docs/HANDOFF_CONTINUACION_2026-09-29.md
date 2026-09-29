@@ -126,3 +126,44 @@ el material adjunto no bastan para una conclusión, indícalo y concreta qué
 captura/referencia oficial de Live necesitas. Devuélveme una propuesta específica
 y un wireframe legible que pueda llevar a Codex para implementarlo.
 ```
+
+## Handoff para la siguiente sesión — implementación parcial 3.1 — 2026-09-29
+
+- HEAD base de este corte: `052357de56fb390e1f7848f31799ea90033a10f3` en
+  `main`. Consultar `git log`/`git status` al retomarlo para ver el commit que
+  guarda este handoff.
+- Se implementó sólo frontend: navegador con búsqueda y listas de contenido real
+  MIDI/audio/instrumentos, distribución de transporte/herramientas, matriz
+  Session con mezcla bajo pistas y escenas al extremo derecho, detalle contextual
+  Clip/Dispositivo y ajustes CSS de la ventana. Sin cambios Rust, IPC ni motor.
+- OpenSpec `workstation-arrangement-surface-v2` sigue en 10/50. 3.1 y cada una
+  de 3.1.1–3.1.6 continúan `[ ]`; 3.1.2–3.1.5 tienen notas de avance local.
+  No avanzar otras tareas. No cerrar 3.1.6 ni 3.1 hasta presentar la UI y recibir
+  aceptación visual explícita del usuario.
+- La inspección visual no se pudo ejecutar: `grim` falló con «failed to create
+  display». No hay capturas ni QA en runtime. Al retomar, abrir la aplicación con
+  Demo MIDI y revisar Arreglo/Session, detalle/dispositivo y mezclador a
+  1920×1080 y 1280×720; registrar regresiones y feedback.
+- Validación de código: `cargo check -p estudio-daw-ui-shell`, `node --check` de
+  `main.js` y `platform-tauri.js`, validación HTML/CSS, `git diff --check` y
+  `openspec validate workstation-arrangement-surface-v2 --strict` pasaron. No
+  se ejecutaron pruebas.
+- Continuación: leer `AGENTS.md`, este archivo y
+  `openspec/changes/workstation-arrangement-surface-v2/{proposal.md,design.md,
+  specs/desktop-workstation-ui/spec.md,tasks.md}`; revisar diff/commits; seguir
+  únicamente el delta de Luna 3.1.1–3.1.6. Mantener el registro de bóveda
+  append-only. El feedback visual del usuario determina cualquier cierre.
+
+### Prompt de continuación
+
+```text
+Continúa desde el handoff «implementación parcial 3.1» de
+ docs/HANDOFF_CONTINUACION_2026-09-29.md. Revisa los commits/diff publicados y
+ ejecuta únicamente workstation-arrangement-surface-v2 3.1.1–3.1.6 según el
+ delta para Luna de design.md. La implementación frontend está hecha pero no
+ tiene aceptación visual: abre Demo MIDI y revisa Arreglo, Session,
+ Clip/Dispositivo y Mezcla a 1920×1080 y 1280×720; corrige sólo regresiones de
+ ese alcance y muéstrame el resultado. No avances otras tareas ni cierres 3.1
+ hasta que yo acepte visualmente. Preserva el historial y sigue AGENTS.md y la
+ bitácora append-only.
+```

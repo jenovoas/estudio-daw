@@ -210,3 +210,19 @@ La interfaz DEBE (MUST) tener una jerarquía de estación de trabajo con superfi
 - **CUANDO** la ventana está en sus dimensiones mínimas admitidas
 - **ENTONCES** transporte, identidad de pista, vista seleccionada y acciones esenciales de edición/lanzamiento siguen accesibles sin superponerse
 - **Y** los paneles opcionales se contraen o desplazan sin ocultar la superficie activa de pistas
+
+#### Scenario: revisar la distribución propuesta para Luna
+
+- **CUANDO** se ejecuta el rediseño de 3.1 con un proyecto cargado en áreas interiores de 1920×1080 y 1280×720 a zoom 100 %
+- **ENTONCES** transporte, posición y cambio Arreglo/Session permanecen visibles sin desplazamiento horizontal oculto ni scroll de página
+- **Y** Arreglo conserva cabeceras, regla y clips alineados, y Session presenta escenas a la derecha con mezcla alineada por pista
+- **Y** el detalle Clip/Dispositivo puede coexistir con la mezcla integrada y conserva selección/foco al cambiar de superficie
+- **Y** el navegador muestra contenido real del proyecto; una Demo MIDI permite navegar sus clips sin inventar bibliotecas ni preescucha MIDI
+- **Y** los cambios de distribución conservan las operaciones, condiciones de disponibilidad y controles de seguridad existentes
+
+#### Scenario: evaluar el cierre del rediseño
+
+- **CUANDO** se presenta el resultado de 3.1 a la persona usuaria
+- **ENTONCES** se comparan estados equivalentes antes/después en la aplicación en ejecución y se informa qué comprobaciones visuales y funcionales se realizaron
+- **Y** la tarea sigue abierta si falta la aceptación explícita de la dirección visual o parte de su alcance
+- **Y** ni una captura estática ni la aceptación estética se presentan como prueba de audio, latencia física o cierre de otras tareas funcionales

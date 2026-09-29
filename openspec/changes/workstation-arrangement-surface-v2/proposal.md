@@ -26,4 +26,11 @@ Ninguna se separa en esta propuesta.
 
 ## Alcance técnico
 
+**Prioridad de ejecución desde el 2026-09-29:** la siguiente intervención se
+limita al rediseño de frontend de 3.1, según el delta de planificación para Luna
+en `design.md` y las subtareas 3.1.1–3.1.6. No amplía el motor ni los contratos
+IPC. Las demás funciones quedan pausadas hasta aceptación explícita del usuario
+de la dirección visual. Esta precisión conserva el alcance general descrito
+abajo; no declara la interfaz implementada ni aceptada.
+
 Afecta `project-model`, `command-bus`, `application`, `ui-shell` y el motor de audio; requiere migraciones compatibles, comandos tipados, planificador de clips, procesos auxiliares de medios de audio y una matriz rastreable entre menús/opciones y operaciones. La interfaz queda abierta hasta que cada superficie y ruta anunciada esté implementada y verificada.

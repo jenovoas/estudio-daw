@@ -311,6 +311,271 @@ Los campos aditivos usan valores predeterminados de serde y migración del forma
 4. Verificar todas las rutas habilitadas de menús/controles, persistencia/migración, deshacer/rehacer, ubicación musical y comportamiento del motor de audio mediante comprobaciones deterministas. Ejecutar las comprobaciones del espacio de trabajo cuando compile el corte; reservar las comprobaciones de hardware para capacidades que requieran dispositivos reales.
 5. Revisar la interfaz en ejecución en tamaños estándar y mínimo. Registrar tareas completas exactas, evidencia, menús diferidos conocidos y límites visibles para el usuario. Ninguna tarea se completa sólo por revisar el código de interfaz.
 
+## Delta de planificación UI para Luna — 2026-09-29
+
+### Objetivo y estado de esta revisión
+
+Plan solicitado por la persona usuaria para ejecutar posteriormente con Luna.
+Base inspeccionada: `052357de56fb390e1f7848f31799ea90033a10f3`, árbol limpio al
+iniciar. Esta revisión no implementa frontend, no ejecuta la aplicación y no
+significa aceptación visual. Conserva el historial y concreta la tarea 3.1.
+Las demás funciones permanecen en pausa hasta feedback explícito del usuario.
+
+Este delta sustituye, para la próxima implementación, la decisión de hacer
+excluyentes Mezclador y detalle en el mismo panel inferior. La composición
+anterior se conserva arriba como evidencia del corte publicado. El objetivo
+ahora separa mezcla integrada en la superficie y detalle contextual inferior.
+
+La propuesta y los requisitos generales siguen vigentes. Las tablas históricas
+de capacidades anteriores no son un inventario actualizado: Session ya tiene
+manejadores de lanzamiento y el adaptador expone retorno al Arreglo. Este plan
+no pide implementar nuevamente esos comportamientos.
+
+### Evidencia de partida y límites
+
+- `index.html` coloca transporte, vistas, historial, rango, rejilla y paneles
+  en `.transport-bar`. El CSS final le aplica desplazamiento horizontal con
+  barra invisible: puede esconder acciones sin una señal clara.
+- `styles.css` acumula varias redefiniciones de `.editor` y sus estados, con
+  alturas y mínimos diferentes. Reorganizar las reglas por componente/estado;
+  no resolver el rediseño añadiendo otra capa de excepciones al final.
+- `renderSessionSurface` usa escenas a la izquierda y cabeceras con controles;
+  `renderMixerSurface` dibuja canales en otro contenedor. `updateWorkspaceLayout`
+  oculta el inspector al abrir el mezclador.
+- `renderProjectMedia` usa `snapshot.audioClips`; la Demo MIDI no puebla esa
+  lista. `snapshot.midiClips` y `snapshot.tracks` permiten navegación musical
+  real sin inventar una biblioteca instalada.
+- Revisar el cierre de `browser-project-panel`: el HTML fuente abre `section`
+  y cierra `div`. Corregir la estructura al reorganizarla y verificar el DOM
+  resultante; no asumir que el navegador lo repara con el árbol deseado.
+- El índice `estudio-daw` de codebase-memory estaba fechado el 26 de septiembre
+  y reportó `metadata_changed` en los cuatro archivos frontend. Las referencias
+  anteriores proceden de lectura directa del código vigente, no de ese grafo.
+- No hay captura nueva ni QA en ejecución en esta planificación. La percepción
+  de que la UI sigue lejos del objetivo proviene del feedback del handoff.
+  Luna debe capturar una línea base antes de modificar la aplicación.
+
+### Composición propuesta
+
+Medidas iniciales en píxeles CSS, área interior útil del WebView y zoom 100 %;
+son objetivos de Estudio DAW, no medidas atribuidas a Ableton. Si una captura
+incluye decoraciones del sistema, registrar también el tamaño interior real.
+
+```text
+ARREGLO · 1920 × 1080
+┌─────────────────────────────────────────────────────────────────────┐
+│ Menús · nombre del proyecto                                   28 px │
+├─────────────────────────────────────────────────────────────────────┤
+│ Tempo/métrica │ Stop Play Pause Rec · posición │ loop · vistas 40 px │
+├──────────────┬───────────────────────────────────────┬───────────────┤
+│ NAVEGADOR    │ Herramientas locales · overview/regla │ CABECERAS     │
+│ 280 px       ├───────────────────────────────────────┤ 232 px        │
+│ búsqueda    │ clips / waveform / notas             │ pista y mezcla│
+│ categorías  │ lienzo temporal: 1408 px              │ compacta      │
+│ resultados  │ superficie central total: 690 px      │               │
+│             ├───────────────────────────────────────┴───────────────┤
+│             │ Clip / Dispositivo · detalle: 300 px                  │
+├──────────────┴───────────────────────────────────────────────────────┤
+│ Estado y ayuda contextual                                     22 px │
+└─────────────────────────────────────────────────────────────────────┘
+
+SESSION · mismo marco
+┌──────────────┬───────────────────────────────────────┬───────────────┐
+│ NAVEGADOR    │ Pista 1 │ Pista 2 │ Pista 3 │ …         │ ESCENAS       │
+│              │ clip    │ clip    │ vacío   │           │ lanzar fila   │
+│              │ vacío   │ clip    │ clip    │           │ …             │
+│              │ parada y estado por pista              │               │
+│              ├───────────────────────────────────────┤               │
+│              │ mezcla alineada con cada columna       │ buses / Master│
+│              │ ganancia · panorama · M/S · medidor     │ reales        │
+│              ├───────────────────────────────────────┴───────────────┤
+│              │ Clip / Dispositivo, independiente del mezclador       │
+└──────────────┴───────────────────────────────────────────────────────┘
+```
+
+| Zona | 1920×1080 | 1280×720 |
+| --- | --- | --- |
+| Menú / control global / estado | 28 / 40 / 22 px | 28 / 40 / 22 px |
+| Navegador expandido | 280 px | 224 px |
+| Cabecera de pista de Arreglo | 232 px | 208 px |
+| Lienzo temporal restante | 1408 px | 848 px |
+| Superficie central con detalle abierto | 690 px | 420 px |
+| Detalle inicial | 300 px | 210 px |
+| Overview + regla + herramientas locales | hasta 64 px | hasta 56 px |
+| Altura inicial de pista de Arreglo | 64 px | 56 px |
+| Columna Session / fila de clip | 128 / 30 px | 112 / 28 px |
+| Mezcla integrada de Session | 180 px | 140 px |
+
+En 1280×720 el esquema conserva las mismas zonas: 224 px de navegador y
+1056 px de área de trabajo; dentro del Arreglo quedan 848 px de lienzo y
+208 px de cabeceras. Session reserva 112 px a escenas/Master y distribuye el
+resto en columnas de 112 px con desplazamiento horizontal local. Las pistas
+adicionales se desplazan dentro de su superficie; nunca todo el documento.
+No se reduce el zoom automáticamente para cumplir estas medidas.
+
+El navegador se puede ocultar; el detalle se redimensiona mediante el separador
+existente. Aplicar límites según espacio disponible, evitando mínimos de CSS
+que obliguen a sacar el transporte o la barra de estado de la ventana. Con
+detalle abierto deben caber al menos seis filas de 56 px en Arreglo a 1280×720;
+en Session, seis filas de clips y mezcla de 140 px. No introducir pistas ni
+clips ficticios para llenar esos espacios.
+
+### Decisiones de interacción y presentación
+
+1. **Control global estable.** Menús y nombre en una fila discreta; transporte,
+   posición, tempo/métrica, metrónomo, rango A/B y Arreglo/Session en la siguiente.
+   Tempo y métrica conservan su disponibilidad real; no convertir lecturas en
+   editores si no existe una operación conectada. Guardar/deshacer permanecen
+   accesibles por menú/atajos. Demo MIDI pasa a Proyecto y al estado inicial.
+   Rejilla/zoom temporal pertenecen a la cabecera de la superficie. Preferencias
+   y diagnóstico abren un panel/diálogo, no ocupan espacio permanente del editor.
+   En anchuras menores, usar un menú visible para acciones secundarias; Play,
+   Stop, posición y cambio de vista no pueden depender de scroll oculto.
+2. **Navegador de contenido.** Sustituir Proyecto/Crear por búsqueda y categorías
+   de contenido del proyecto: Audio, Clips MIDI e Instrumentos asignados, sólo
+   cuando tengan elementos reales. Derivar las dos primeras de los snapshots;
+   la tercera sólo de asignaciones reales de pistas, sin afirmar que el plugin
+   está cargado ni enumerar instalaciones del sistema. Un resultado enfoca su
+   pista/clip; Audio conserva la preescucha y sus restricciones actuales. Los
+   clips MIDI no reciben preescucha simulada. Crear pista queda en Crear y en un
+   botón compacto junto a las pistas. Importar abre el formulario existente en
+   un panel invocado, preservando copia/vínculo, canales, destino y cursor.
+   Un proyecto vacío ofrece Nuevo/Abrir/Demo/Crear/Importar según disponibilidad,
+   con explicación breve, sin catálogo de categorías vacías.
+3. **Arreglo como superficie musical.** Overview y regla alineados con los
+   clips; cabeceras fijas a la derecha, scroll vertical sincronizado y anchuras
+   coherentes al ocultar navegador. Nombre/color, activa/M/S, armado cuando
+   corresponda y medidor real forman el encabezado compacto. Ganancia/panorama
+   accesibles sin abrir una página; ruteo, identidad detallada y configuración
+   de instrumento pasan a un desplegable contextual. Quitar/reordenar/duplicar
+   conservan sus acciones de menú. No ocultar funciones sin dejar acceso visible.
+4. **Session integrada.** Escenas a la derecha, nombres de pista arriba,
+   botones de lanzamiento/parada distinguibles de selección y asignación.
+   Las celdas no son formularios permanentes: mostrar nombre y estado;
+   asignación, cuantización y modo se abren desde contexto/detalle de casilla.
+   Mezcla debajo de cada columna con el mismo ancho y scroll horizontal.
+   Buses/retornos existentes se muestran como canales sin casillas lanzables;
+   Master queda al extremo derecho y conserva el caso legado informativo.
+   No crear buses ni retornos nuevos por esta distribución. «Volver a Arreglo»
+   conserva el estado `sessionOverrideActive` y su acción real; cambiar de vista
+   no equivale a devolver el control musical al Arreglo.
+5. **Detalle Clip/Dispositivo.** Seleccionar un clip muestra su editor real;
+   seleccionar la pestaña Dispositivo muestra la asignación de la pista enfocada
+   y reutiliza `createTrackInstrumentControl`. No dibujar una cadena de efectos
+   o parámetros ficticios. Separar foco de pista para el detalle de la selección
+   múltiple usada por grupos. Piano roll: propiedades a la izquierda, teclado,
+   regla, notas y velocidades en el resto; audio conserva controles de región.
+   El dispositivo sin asignación ofrece únicamente acciones de carga existentes.
+6. **Mezcla y atajos.** Ctrl+3 muestra/oculta mezcla integrada sin cerrar el
+   detalle. En Session es la banda alineada bajo las casillas; en Arreglo abre
+   una banda de canales sobre el detalle, inicialmente de 160 px (120 px en
+   ventana estrecha), reducible. En ese estado adicional se permite reducir
+   las filas visibles, pero quedan al menos tres pistas. No duplicar controles
+   DOM activos de una misma banda al cambiar de vista. Tab conserva el cambio
+   Arreglo/Session; Mayús+Tab conserva mostrar/ocultar detalle; Clip/Dispositivo
+   se elige con botones visibles. Ctrl+Alt+B y los atajos de proyecto se conservan.
+   Respetar campos editables y navegación por teclado de menús/diálogos; no
+   interceptar Tab dentro de ellos. Escape cierra overlays y devuelve el foco.
+7. **Lenguaje visual.** Superficies continuas, divisores finos, sin sombras de
+   tarjetas; jerarquía por posición y contraste. Base gris neutra oscura,
+   acento cálido para selección, colores musicales del proyecto en pistas/clips.
+   Texto habitual 12–13 px, secundario no menor de 11 px al 100 %, controles
+   compactos de 24–28 px y foco visible. Iconos simples con nombre accesible;
+   los estados seleccionado/en cola/reproduciendo no dependen sólo del color.
+   Estas medidas son punto de partida a contrastar en ejecución, no aceptación.
+
+### Entregas secuenciales para Luna
+
+No ejecutar tareas pendientes ajenas a esta secuencia aunque OpenSpec Apply las
+enumere antes. Cada etapa entrega evidencia y deja una base utilizable; no hace
+falta solicitar autorización para cada decisión rutinaria dentro del alcance.
+
+| Etapa | Archivos y puntos de intervención | Resultado y comprobación de salida |
+| --- | --- | --- |
+| L1 · línea base y mapa de controles | Leer `frontend/{index.html,styles.css,main.js,platform-tauri.js}`, especialmente `elements`, `UI_ACTIONS`, `updateWorkspaceLayout`, `selectSurface` | Capturar Demo MIDI en Arreglo y Session a ambos tamaños; inventariar cada control que se mueve, su destino, ID/manejador y condición de disponibilidad. Registrar dimensiones y acceso a runtime. Si no hay control visual disponible, registrar el bloqueo de QA sin inventar capturas. |
+| L2 · marco y jerarquía | Editar `index.html`, `styles.css`; sólo enlaces/estado de layout en `main.js` | Aplicar las zonas y medidas, corregir etiquetas HTML, consolidar CSS, mover preferencias/importación y acciones secundarias. Transporte siempre visible, detalle redimensionable y ningún ID perdido o duplicado. Capturas comparables con L1. |
+| L3 · navegador y Arreglo | `renderProjectMedia`, `renderSnapshot`, `renderTimelineRuler`, `renderArrangementOverview`, enlaces de selección/edición; CSS de pistas | Navegador útil con Demo MIDI, categorías reales y selección por ID; cabeceras compactas y regla/lienzo alineados. Conservar PPQ, cursor, seek, waveform y edición reversible. Mover un clip y deshacer debe conservar su identidad y posición original. |
+| L4 · Session y mezcla integrada | `renderSessionSurface`, `renderMixerSurface`, `createTrackMixerControls`, `createTrackMeter`, `updateWorkspaceLayout`, `selectSurface` | Escenas a la derecha, mezcla alineada, canales sin casillas para buses/Master y desplazamiento sincronizado. Conservar selección, estados, cuantización, modo y retorno a Arreglo; menús sustituyen selectores permanentes. Verificar que un gesto llama una sola vez al manejador existente. |
+| L5 · detalle y continuidad | `renderClipInspector`, `createTrackInstrumentControl`, selección y atajos; CSS del panel inferior | Clip/Dispositivo contextual, mezcla y editor simultáneos, estado visual local sin mutar proyecto. Cambiar de vista/panel no pierde clip, foco, scroll, zoom ni transporte. Controles de VST/standalone mantienen las aprobaciones locales existentes. |
+| L6 · revisión completa | Documentación de resultados y archivos frontend que requieran corrección | Matriz visual/funcional siguiente, corrección de regresiones, actualización factual de README/guía/handoff y bitácora. Presentar antes/después al usuario. Mantener 3.1 abierta hasta aceptación explícita; no retomar funciones automáticamente. |
+
+Conservar el frontend actual sin migración a React, framework, bundler ni nuevo
+sistema de componentes. Se permiten helpers pequeños para reutilizar renderizado;
+no dividir todo `main.js` como trabajo previo. `platform-tauri.js` es contrato
+a conservar: no agregar IPC ni editar Rust para resolver esta UI. Si falta una
+capacidad de dominio, registrar un pendiente separado y continuar lo independiente.
+
+Al mover botones, recordar que `UI_ACTIONS` deriva ejecución/disponibilidad de
+`elements`: no dejar menús conectados a nodos eliminados ni crear botones ocultos
+como puente permanente. Reutilizar manejadores para botón, menú y atajo. Los
+snapshots pueden reconstruir DOM; preservar foco, borradores, selección y scroll
+sin duplicar listeners, temporizadores, llamadas de preview ni suscripciones.
+
+### Matriz de revisión y definición de terminado
+
+- Capturas antes/después con el mismo proyecto, ventana, zoom, posición y paneles:
+  Arreglo con clip MIDI, Session con mezcla, detalle Dispositivo y estado vacío;
+  1920×1080 y 1280×720. Añadir audio real autorizado para revisar waveform,
+  importación y detalle de audio; no presentar una captura MIDI como QA de audio.
+- Recorrer abrir/Demo → seleccionar clip → editar nota → deshacer/rehacer →
+  Session → seleccionar/asignar casilla → lanzar/parar → volver a Arreglo →
+  cambiar mezcla → guardar/reabrir una copia temporal. Separar lo observado en
+  UI de lo verificado en motor; no afirmar escucha ni latencia física por capturas.
+- Sin scroll de página ni transporte desplazable oculto; clips y controles no
+  se solapan. Nombres largos se truncan con acceso al nombre completo. Filas,
+  reglas y columnas de mezcla conservan alineación al desplazar/redimensionar.
+- Navegador y detalle se ocultan/reabren sin perder selección; mezcla no cierra
+  el piano roll. Verificar zoom de UI 80/100/150 % para accesibilidad, además de
+  las capturas de referencia al 100 %. En zoom alto se admiten paneles plegados
+  y scroll local, no controles globales inaccesibles.
+- Confirmar nombres accesibles, foco visible, teclado en menús/diálogos y que los
+  atajos no roban escritura. No introducir contenido, medidores ni estados falsos.
+- Tras editar JS: `node --check crates/ui-shell/frontend/main.js` y
+  `node --check crates/ui-shell/frontend/platform-tauri.js`; al cerrar:
+  `git diff --check` y
+  `openspec validate workstation-arrangement-surface-v2 --strict`.
+  Ejecutar Tauri para QA; la sintaxis o compilación no sustituyen la revisión
+  visual. No ejecutar suites Rust salvo instrucción del usuario; este corte
+  no modifica Rust. Verificar interacciones con herramientas disponibles y
+  registrar por separado lo que no se pudo ejecutar.
+- La aceptación funcional/visual de esta secuencia no cierra automáticamente
+  2.2, 2.3, 3.2–3.6, 4.x ni 5.x. La aceptación del usuario de la dirección visual
+  es necesaria para cerrar 3.1; si falta parte de su alcance, sigue parcial.
+
+### Prompt de ejecución para Luna
+
+```text
+Implementa sólo el delta «Delta de planificación UI para Luna — 2026-09-29»
+en design.md de workstation-arrangement-surface-v2, etapas L1–L6 y subtareas
+3.1.1–3.1.6. Lee AGENTS.md y las fuentes canónicas en su orden antes de editar.
+Comprueba git status/log; la base de planificación fue 052357d y puede haber
+avances posteriores que debes preservar. Usa los símbolos del plan como puntos
+de entrada, no números de línea fijos; verifica el código vigente.
+
+Prioridad: transformar la distribución completa, con contenido musical visible,
+Browser real, transporte estable, Arreglo amplio, Session con mezclador alineado
+y detalle Clip/Dispositivo independiente. Sigue las medidas, interacciones y
+criterios del delta. Captura primero Demo MIDI y compara los mismos estados al
+terminar. No basta cambiar colores, márgenes o tamaños de fuente.
+
+Limita la implementación al frontend y a documentación factual. Conserva los
+comandos/IPC, permisos de seguridad, motor, formato de proyecto, operaciones
+musicales y funciones ya existentes. No agregues backend, bibliotecas falsas,
+plugins simulados ni nuevas funciones audio/MIDI. No avances otras tareas de
+OpenSpec. Si falta acceso visual, registra el bloqueo de QA y continúa el trabajo
+independiente, sin declarar la revisión aprobada.
+
+Trabaja por etapas y sin confirmaciones rutinarias. Registra evidencia y límites
+en la bitácora append-only. No marques 3.1 completa sin revisión visual real y
+aceptación explícita del usuario; no hagas commit/push sin autorización vigente.
+```
+
+Referencias de esta revisión: [Session View](https://www.ableton.com/en/manual/session-view/)
+documenta pistas por columnas, escenas a la derecha y la diferencia entre selección,
+lanzamiento y retorno al arreglo; [Arrangement View](https://www.ableton.com/en/manual/arrangement-view/)
+se usa como referencia de línea temporal. Las dimensiones, etapas y composición
+propuestas aquí son decisiones de Estudio DAW. No se copian código ni activos.
+
 ## Fuentes oficiales consultadas
 
 Revisado el 2026-09-27:
