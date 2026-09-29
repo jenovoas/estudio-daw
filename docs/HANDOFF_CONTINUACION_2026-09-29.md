@@ -335,3 +335,9 @@ abiertas por falta de QA y aceptación visual.
   espacio restante después de reservar superficie musical y controles. Esto
   prueba layout CSS/DOM, no una sesión Tauri ni los gestos reales; 3.1 continúa
   abierta.
+- El mismo fixture también mostró que el marco superior aún reservaba 38 px y
+  el área de trabajo no descontaba correctamente ese marco más la barra inferior.
+  El marco pasa a 28 px, el alto del espacio de trabajo se calcula con ambos
+  bordes globales y el estado contextual en ventana baja usa 22 px. Las capturas
+  headless resultantes mantienen la barra inferior dentro del viewport 1280×720;
+  no cuentan como inspección de Tauri.

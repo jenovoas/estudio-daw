@@ -447,8 +447,8 @@ button:disabled { opacity: .4; cursor: not-allowed !important; }
 }
 
 /* Distribución de estación: controles globales, herramientas locales y lienzo. */
-.appbar { height: 38px; min-width: 0; background: #17191b; box-shadow: none; }
-.workstation { height: calc(100% - 65px); grid-template-columns: 280px minmax(0, 1fr); }
+.appbar { height: 28px; min-width: 0; background: #17191b; box-shadow: none; }
+.workstation { height: calc(100% - 50px); grid-template-columns: 280px minmax(0, 1fr); }
 .workstation.browser-collapsed { grid-template-columns: 0 minmax(0, 1fr); }
 .browser { min-width: 0; padding: 0; background: #202325; border-right-color: #111314; box-shadow: none; }
 .browser-title { height: 32px; padding: 0 12px; border-bottom-color: #34393c; }
@@ -586,7 +586,7 @@ button:disabled { opacity: .4; cursor: not-allowed !important; }
 #mixer-view .surface-heading { min-height: 24px; }
 .mixer-channel-list { min-width: max-content; grid-auto-columns: minmax(150px,180px); overflow: auto; }
 .mixer-channel { min-width: 150px; }
-.status-message { grid-row: 6; min-height: 36px; }
+.status-message { grid-row: 6; height: 22px; min-height: 22px; overflow: hidden; }
 .audio-settings { max-height: 30vh; overflow: auto; }
 .workstation.browser-collapsed { grid-template-columns: 0 minmax(0,1fr); }
 .workstation.browser-collapsed .browser { display: none; }
