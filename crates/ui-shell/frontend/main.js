@@ -746,7 +746,6 @@ function instrumentBackendLabel(backend) {
 
 function openTrackDeviceDetail(track, snapshot, { arrangement = false } = {}) {
   deviceFocusedTrackId = track.id;
-  selectedTrackIds = new Set([track.id]);
   selectedDetailTab = "device";
   clipDetailVisible = true;
   mixerPanelVisible = false;
