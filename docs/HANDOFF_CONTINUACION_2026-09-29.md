@@ -474,3 +474,9 @@ abiertas por falta de QA y aceptación visual.
 
 - Sobre `c4b096e`, el smoke headless de Firefox con `main.js` y CSS reales más adaptador Tauri simulado cubrió 760×520, 1280×720 y 1920×1080. Scroll y zoom del piano roll sobreviven a cambios Clip/Dispositivo y Arreglo/Sesión; pistas MIDI/audio mantienen alturas independientes, clips alineados y preferencias persistidas incluso en una segunda apertura del perfil.
 - Esto verifica frontend aislado, no Tauri runtime. `workstation-arrangement-surface-v2` sigue en 10/50; 3.1.3/3.1.5/3.1.6 permanecen abiertas hasta QA Tauri, matriz y aceptación visual.
+
+
+## Acceso consistente a Dispositivo — 2026-09-29
+
+- Los accesos desde la cabecera de pista y desde Navegador comparten una transición: seleccionan la pista, abren el detalle Dispositivo, restauran el panel si estaba colapsado y cierran Mezcla. El acceso desde Navegador también vuelve a Arreglo y enfoca la pista.
+- Firefox headless con frontend real y snapshot/adaptador sintético pasó la transición desde detalle colapsado + Mezcla activa a Dispositivo visible; continuaron pasando piano MIDI, carriles, categorías, filtros, búsqueda y Session. Es smoke frontend, no QA Tauri.

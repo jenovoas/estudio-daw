@@ -743,16 +743,21 @@ function instrumentBackendLabel(backend) {
   return backend || "Instrumento";
 }
 
+function openTrackDeviceDetail(track, snapshot, { arrangement = false } = {}) {
+  selectedTrackIds = new Set([track.id]);
+  selectedDetailTab = "device";
+  clipDetailVisible = true;
+  mixerPanelVisible = false;
+  syncTrackSelectionUi();
+  renderDeviceInspector(snapshot);
+  if (arrangement) selectSurface("arrangement");
+  updateWorkspaceLayout();
+}
+
 function createTrackInstrumentControl(track, compact = false) {
   if (track.virtualMaster || track.kind !== "midi") return null;
   const openDeviceDetail = () => {
-    selectedTrackIds = new Set([track.id]);
-    selectedDetailTab = "device";
-    clipDetailVisible = true;
-    mixerPanelVisible = false;
-    syncTrackSelectionUi();
-    renderDeviceInspector(lastSnapshot);
-    updateWorkspaceLayout();
+    openTrackDeviceDetail(track, lastSnapshot);
   };
   if (compact) {
     const button = document.createElement("button");
@@ -2586,12 +2591,7 @@ function renderProjectMedia(snapshot) {
     button.textContent = `${track.name} · ${instrument.backend === "vst3" ? vst3PluginLabel(instrument.plugin?.path) : instrumentBackendLabel(instrument.backend)}`;
     button.title = "Abrir el instrumento asignado a esta pista";
     button.addEventListener("click", () => {
-      selectedTrackIds = new Set([track.id]);
-      selectedDetailTab = "device";
-      syncTrackSelectionUi();
-      renderDeviceInspector(snapshot);
-      updateWorkspaceLayout();
-      selectSurface("arrangement");
+      openTrackDeviceDetail(track, snapshot, { arrangement: true });
       document.querySelector(`.track-row[data-track-id="${CSS.escape(track.id)}"]`)?.scrollIntoView({ block: "nearest" });
     });
     elements.browserInstrumentList.append(button);
