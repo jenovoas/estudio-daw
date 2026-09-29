@@ -113,6 +113,7 @@ let metronomeEnabled = false;
 let loopRange = null;
 let pendingLoopStartTick = null;
 let selectedTrackIds = new Set();
+let deviceFocusedTrackId = null;
 let trackGroupDraft = "";
 let pendingAudioPath = null;
 let editCursorTick = 0;
@@ -744,6 +745,7 @@ function instrumentBackendLabel(backend) {
 }
 
 function openTrackDeviceDetail(track, snapshot, { arrangement = false } = {}) {
+  deviceFocusedTrackId = track.id;
   selectedTrackIds = new Set([track.id]);
   selectedDetailTab = "device";
   clipDetailVisible = true;
@@ -1759,11 +1761,13 @@ function renderDeviceInspector(snapshot) {
   elements.deviceInspector.replaceChildren();
   const selectedClip = snapshot.midiClips.find((clip) => clip.id === selectedClipId)
     ?? (snapshot.audioClips ?? []).find((clip) => clip.id === selectedClipId);
-  const focusedTrack = [...selectedTrackIds]
-    .map((id) => snapshot.tracks.find((track) => track.id === id))
-    .find((track) => track && track.kind === "midi")
+  const focusedTrack = snapshot.tracks.find((track) => track.id === deviceFocusedTrackId && track.kind === "midi")
     ?? snapshot.tracks.find((track) => track.id === selectedClip?.trackId)
+    ?? [...selectedTrackIds]
+      .map((id) => snapshot.tracks.find((track) => track.id === id))
+      .find((track) => track && track.kind === "midi")
     ?? snapshot.tracks.find((track) => track.kind === "midi" && track.role !== "master");
+  deviceFocusedTrackId = focusedTrack?.id ?? null;
   if (!focusedTrack) {
     const empty = document.createElement("p");
     empty.className = "surface-empty";
