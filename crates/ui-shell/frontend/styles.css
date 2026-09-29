@@ -62,13 +62,13 @@ button:disabled { opacity: .4; cursor: not-allowed !important; }
 .button-demo:hover:not(:disabled) { background: #423629; color: #ffe0bf; }
 
 .workstation { height: calc(100% - 50px); min-height: 449px; display: grid; grid-template-columns: 280px minmax(0, 1fr); }
-.browser { min-width: 0; position: relative; display: flex; flex-direction: column; padding: 0 10px; overflow-x: hidden; overflow-y: auto; background: #25282a; border-right: 1px solid #151718; box-shadow: 1px 0 #383c3f; }
-.browser-title { height: 39px; flex: none; display: flex; align-items: center; justify-content: space-between; padding: 0 3px; border-bottom: 1px solid #3a3e41; color: #c2c6c8; font-size: 11px; font-weight: 750; letter-spacing: 1px; }
+.browser { min-width: 0; position: relative; display: flex; flex-direction: column; padding: 0; overflow-x: hidden; overflow-y: auto; background: #202325; border-right: 1px solid #111314; box-shadow: none; }
+.browser-title { height: 32px; flex: none; display: flex; align-items: center; justify-content: space-between; padding: 0 12px; border-bottom: 1px solid #34393c; color: #c2c6c8; font-size: 11px; font-weight: 750; letter-spacing: 1px; }
 .browser-chevron { color: #92989b; font-size: 14px; }
 .browser-section-label { padding: 15px 4px 7px; color: #858c90; font-size: 11px; font-weight: 750; letter-spacing: 1px; }
 .browser-section-spaced { padding-top: 22px; }
 .browser-media-tools[hidden] { display: none; }
-.browser-media-list { display: flex; flex-direction: column; gap: 4px; max-height: 164px; overflow: auto; margin: 4px 0 10px; }
+.browser-media-list { display: flex; flex: none; flex-direction: column; align-content: start; gap: 4px; max-height: 190px; overflow: auto; margin: 4px 0 10px; }
 .browser-media-empty { padding: 6px 2px; color: #848b8e; font-size: 11px; line-height: 1.4; }
 .browser-media-item { display: flex; align-items: center; gap: 5px; min-width: 0; padding: 4px; border: 1px solid #34393c; border-radius: 3px; background: #272b2d; }
 .browser-media-select { display: flex; flex: 1; min-width: 0; flex-direction: column; align-items: flex-start; gap: 3px; padding: 2px; border: 0; background: transparent; color: #d9dcdd; text-align: left; cursor: pointer; }
@@ -459,8 +459,6 @@ button:disabled { opacity: .4; cursor: not-allowed !important; }
 }
 
 /* Distribución de estación: controles globales, herramientas locales y lienzo. */
-.browser { min-width: 0; padding: 0; background: #202325; border-right-color: #111314; box-shadow: none; }
-.browser-title { height: 32px; padding: 0 12px; border-bottom-color: #34393c; }
 .browser-panel { min-width: 0; padding: 0 10px; }
 .browser-panel .browser-section-spaced { padding-top: 11px; }
 .browser-categories { display: flex; flex: none; gap: 3px; margin: 9px 0 2px; padding-bottom: 7px; overflow-x: auto; border-bottom: 1px solid #34393c; scrollbar-width: thin; }
@@ -473,11 +471,9 @@ button:disabled { opacity: .4; cursor: not-allowed !important; }
 .browser-content-list { display: flex; flex-direction: column; gap: 2px; max-height: 190px; overflow: auto; }
 .browser-content-item { min-height: 31px; overflow: hidden; padding: 5px 7px; border: 0; border-left: 2px solid #5a6266; background: #292d30; color: #e1e4e5; font-size: 11px; text-align: left; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
 .browser-content-item:hover, .browser-content-item:focus-visible { border-left-color: var(--accent); background: #383e41; }
-.browser-media-list { max-height: 190px; flex: none; align-content: start; }
 .browser-import { margin-top: 10px; border-top: 1px solid #34393c; }
 .browser-import > summary { min-height: 34px; display: flex; align-items: center; gap: 7px; color: #d4d8d9; font-size: 11px; cursor: pointer; }
 .browser-import[open] { padding-bottom: 10px; }
-.browser-import > summary { min-height: 34px; display: flex; align-items: center; gap: 7px; color: #d4d8d9; font-size: 11px; cursor: pointer; }
 .browser-create, .browser-import { flex: none; margin-top: 9px; border-top: 1px solid #34393c; }
 .browser-create > summary, .browser-import > summary { min-height: 34px; display: flex; align-items: center; gap: 8px; color: #d4d8d9; font-size: 11px; cursor: pointer; list-style: none; }
 .browser-create > summary::-webkit-details-marker, .browser-import > summary::-webkit-details-marker { display: none; }

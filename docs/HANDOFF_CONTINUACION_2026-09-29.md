@@ -371,3 +371,12 @@ abiertas por falta de QA y aceptación visual.
   página limitada al viewport. `cargo check -p estudio-daw-ui-shell`, `node
   --check`, `git diff --check` y validación OpenSpec estricta pasan. Sigue siendo
   fixture headless con plataforma simulada; no acredita runtime Tauri.
+- La apariencia activa del Browser (`.browser`, `.browser-title`), el tamaño de
+  su lista de medios y un selector duplicado del resumen de importación también
+  quedaron consolidados en una sola regla base por componente. Se repitió el
+  smoke funcional sintético de Browser: categorías Todo/MIDI/Instrumentos/Audio,
+  clip dibujado y abierto en el piano roll, selección de categorías y búsqueda
+  sin coincidencias. La captura `/tmp/estudio-daw-ui-behavior-1280.png` lleva el
+  indicador `BEHAVIOR PASS`. `cargo check -p estudio-daw-ui-shell`, sintaxis JS,
+  diff check y validación OpenSpec estricta pasan. El resultado usa snapshot y
+  plataforma simulados, no es QA Tauri.
