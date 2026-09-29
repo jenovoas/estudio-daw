@@ -500,9 +500,9 @@ function updateWorkspaceLayout() {
   elements.editor.classList.toggle("clip-detail-hidden", !clipDetailVisible);
   elements.editor.classList.toggle("mixer-panel-open", mixerPanelVisible && !sessionActive);
   elements.mixerView.hidden = !mixerPanelVisible || sessionActive;
-  elements.showMixer.disabled = sessionActive;
+  elements.showMixer.disabled = false;
   elements.showMixer.title = sessionActive
-    ? "La mezcla está alineada bajo las pistas en Session"
+    ? "La mezcla está integrada bajo las pistas en Session"
     : "Mostrar u ocultar el mezclador (Ctrl+3)";
   elements.clipInspector.hidden = selectedDetailTab !== "clip";
   elements.deviceInspector.hidden = selectedDetailTab !== "device";
@@ -1430,6 +1430,7 @@ function renderSessionSurface(snapshot) {
   }
   const grid = document.createElement("div");
   grid.className = "session-matrix";
+  grid.classList.toggle("session-mixer-visible", mixerPanelVisible);
   grid.style.setProperty("--session-track-columns", String(tracks.length));
   const corner = document.createElement("div");
   corner.className = "session-matrix-corner";
@@ -1526,6 +1527,14 @@ function renderSessionSurface(snapshot) {
       cell.style.setProperty("--track-color", track.color);
       if (track.annotation) cell.title = track.annotation;
       const slot = (snapshot.clipSlots ?? []).find((item) => item.sceneId === scene.id && item.trackId === track.id);
+      const slotEditor = document.createElement("details");
+      slotEditor.className = "session-slot-editor";
+      const slotEditSummary = document.createElement("summary");
+      slotEditSummary.textContent = "···";
+      slotEditSummary.title = "Asignar clip y ajustar lanzamiento";
+      slotEditSummary.setAttribute("aria-label", slotEditSummary.title);
+      const slotEditorBody = document.createElement("div");
+      slotEditorBody.className = "session-slot-editor-body";
       const select = document.createElement("select");
       select.setAttribute("aria-label", `Clip de ${track.name} en ${scene.name}`);
       select.title = "Asignar un clip existente a esta casilla";
@@ -1574,10 +1583,14 @@ function renderSessionSurface(snapshot) {
       launch.className = `session-launch${slot?.clipId ? " has-clip" : ""}${playing?.state === "queued" ? " is-queued" : ""}${playing?.state === "playing" ? " is-playing" : ""}`;
       const engineReady = ["playing", "paused"].includes(projectTransportState);
       if (!slot?.clipId) {
-        launch.textContent = "+";
-        launch.disabled = true;
-        launch.title = "Asigna un clip existente a esta casilla";
-        launch.addEventListener("click", () => select.focus());
+        launch.textContent = "＋ Añadir clip";
+        launch.classList.add("session-slot-empty");
+        launch.disabled = select.disabled;
+        launch.title = "Asignar un clip existente a esta casilla";
+        launch.addEventListener("click", () => {
+          slotEditor.open = true;
+          select.focus();
+        });
       } else if (playing?.state === "playing") {
         launch.textContent = "■";
         launch.disabled = !engineReady;
@@ -1591,7 +1604,16 @@ function renderSessionSurface(snapshot) {
           : "Dale a Play para lanzar el clip";
         launch.addEventListener("click", () => launchSessionSlot(scene.id, track.id));
       }
-      cell.append(launch, select, launchQuantization, launchMode);
+      const slotName = document.createElement("span");
+      slotName.className = "session-slot-name";
+      const assignedClip = slot?.clipKind === "midi"
+        ? snapshot.midiClips.find((clip) => clip.id === slot.clipId)
+        : (snapshot.audioClips ?? []).find((clip) => clip.id === slot?.clipId);
+      slotName.textContent = assignedClip?.name ?? (slot?.clipId ? "Clip no disponible" : "Casilla vacía");
+      slotName.title = slotName.textContent;
+      slotEditorBody.append(select, launchQuantization, launchMode);
+      slotEditor.append(slotEditSummary, slotEditorBody);
+      cell.append(launch, slotName, slotEditor);
       grid.append(cell);
     }
   }
@@ -3328,6 +3350,9 @@ elements.showSession.addEventListener("click", () => selectSurface("session"));
 elements.showMixer.addEventListener("click", () => {
   mixerPanelVisible = !mixerPanelVisible;
   updateWorkspaceLayout();
+  if (lastSnapshot && elements.showSession.classList.contains("is-selected")) {
+    renderSessionSurface(lastSnapshot);
+  }
 });
 elements.detailClipTab.addEventListener("click", () => {
   selectedDetailTab = "clip";

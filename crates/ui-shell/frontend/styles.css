@@ -539,11 +539,22 @@ button:disabled { opacity: .4; cursor: not-allowed !important; }
 .session-track-header > small { font-size: 11px; }
 .session-scene-header { position: sticky; right: 0; z-index: 4; display: flex; align-items: center; gap: 4px; padding: 5px; border-left: 1px solid #41474a; }
 .session-scene-header input { min-width: 0; flex: 1; font-size: 11px; }
-.session-cell { min-height: 48px; display: grid; grid-template-columns: 28px minmax(0,1fr); align-content: center; gap: 4px; padding: 5px; }
-.session-cell select { min-width: 0; max-width: 100%; font-size: 11px; }
-.session-cell .session-launch { grid-row: span 2; min-width: 26px; }
+.session-cell { min-height: 48px; display: grid; grid-template-columns: 30px minmax(0,1fr) 25px; grid-template-rows: minmax(24px,auto) 18px; align-content: center; align-items: center; gap: 2px 5px; padding: 5px 7px; }
+.session-cell .session-launch { grid-row: 1 / span 2; min-width: 28px; width: 28px; height: 28px; }
+.session-cell .session-slot-name { grid-column: 2; grid-row: 1; min-width: 0; overflow: hidden; color: #e0e4e5; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.session-slot-editor { grid-column: 3; grid-row: 1 / span 2; position: relative; justify-self: end; align-self: center; }
+.session-slot-editor > summary { width: 24px; height: 24px; display: grid; place-items: center; border: 1px solid #484f52; border-radius: 3px; color: #aeb5b7; cursor: pointer; list-style: none; }
+.session-slot-editor > summary::-webkit-details-marker { display: none; }
+.session-slot-editor[open] > summary { border-color: #c58a56; color: #ffd0a5; }
+.session-slot-editor-body { position: absolute; z-index: 8; top: 27px; right: 0; width: min(236px, 70vw); display: grid; gap: 5px; padding: 7px; border: 1px solid #596165; background: #24282a; box-shadow: 0 6px 18px #0009; }
+.session-slot-editor-body select { width: 100%; min-width: 0; max-width: 100%; min-height: 25px; font-size: 11px; }
+.session-slot-empty { grid-column: 2; grid-row: 1; width: max-content; max-width: 100%; height: 24px !important; min-width: 0 !important; border-radius: 3px !important; font-size: 11px; }
+.session-cell .session-slot-editor-body select:first-child { grid-row: 1; }
+.session-matrix:not(.session-mixer-visible) > .session-mixer-label,
+.session-matrix:not(.session-mixer-visible) > .session-mixer-cell,
+.session-matrix:not(.session-mixer-visible) > .session-mixer-extras { display: none; }
 .session-mixer-label { position: sticky; right: 0; z-index: 3; align-content: center; padding: 8px; color: #bfc6c8; font-size: 11px; font-weight: 700; }
-.session-mixer-cell { display: flex; flex-direction: column; justify-content: center; gap: 9px; min-height: 112px; padding: 8px; border-top: 2px solid var(--track-color); }
+.session-mixer-cell { display: flex; flex-direction: column; justify-content: center; gap: 7px; min-height: 140px; padding: 8px; border-top: 2px solid var(--track-color); }
 .session-mixer-cell .track-meter { height: 7px; }
 .session-mixer-cell .mixer-controls-compact { grid-template-columns: repeat(3,minmax(24px,1fr)); gap: 4px; }
 .session-mixer-cell .mixer-controls-compact .mixer-slider { display: flex; grid-column: 1 / -1; font-size: 11px; }
@@ -578,8 +589,10 @@ button:disabled { opacity: .4; cursor: not-allowed !important; }
 .clip-properties .clip-inspector-field, .clip-inspector { font-size: 11px; }
 
 #mixer-view .surface-heading { min-height: 24px; }
-.mixer-channel-list { min-width: max-content; grid-auto-columns: minmax(150px,180px); overflow: auto; }
-.mixer-channel { min-width: 150px; }
+.mixer-channel-list { min-width: 0; width: 100%; grid-auto-flow: column; grid-auto-columns: minmax(112px,1fr); overflow: auto; }
+.mixer-channel { min-width: 112px; gap: 6px; padding: 8px; border-bottom-width: 2px; background: #292d30; }
+.mixer-channel .mixer-controls:not(.mixer-controls-compact) { grid-template-rows: auto minmax(64px,1fr) auto; }
+.mixer-channel .mixer-controls:not(.mixer-controls-compact) .mixer-slider:first-of-type input { height: min(14vh,160px); }
 .status-message { height: 22px; min-height: 22px; overflow: hidden; }
 .audio-settings { max-height: 30vh; overflow: auto; }
 .statusbar { min-height: 22px; }
