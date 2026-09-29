@@ -396,3 +396,9 @@ abiertas por falta de QA y aceptación visual.
   termina en Session con el clip/editor aún disponibles; `/tmp/estudio-daw-ui-
   detail-1920.png` muestra el rango MIDI desplazable. Esto ejercita frontend real
   con snapshot/plataforma simulados, no Tauri.
+- Se amplió el smoke del piano: la rueda modifica `scrollTop` sobre las 128
+  teclas y Ctrl+rueda cambia `--piano-key-height`. Firefox mostró `BEHAVIOR PASS`
+  en 1280×720 y 1920×1080, junto con colapso/restauración del detalle y Browser/
+  Session. Capturas: `/tmp/estudio-daw-ui-roll-1280.png` y
+  `/tmp/estudio-daw-ui-detail-1920.png`. Son eventos DOM sintetizados sobre el
+  manejador frontend real; no sustituyen interacción física ni QA Tauri.
