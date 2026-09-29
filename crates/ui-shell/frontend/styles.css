@@ -318,16 +318,19 @@ button:disabled { opacity: .4; cursor: not-allowed !important; }
 .mixer-controls-compact .mixer-toggle { grid-column: auto; min-height: 19px; padding: 1px 2px; font-size: 11px; }
 .mixer-controls-compact .mixer-slider { display: none; }
 
-.lower-panel { min-height: 73px; max-height: 260px; overflow: auto; background: #292c2f; border-top: 1px solid #42474a; }
+.lower-panel { width: 100%; height: 100%; min-width: 0; min-height: 0; display: grid; grid-template-rows: 28px minmax(0,1fr) auto; overflow: hidden; background: #25292b; border-top: 1px solid #111314; }
+.lower-panel-title { grid-row: 1; min-width: 0; height: 28px; display: flex; align-items: center; flex: none; gap: 8px; padding: 0 10px; background: #202325; color: #a5abae; font-size: 11px; letter-spacing: .8px; }
+.lower-panel > #clip-inspector, .lower-panel > #device-inspector { grid-row: 2; min-width: 0; min-height: 0; }
+.lower-panel > #audio-settings { grid-row: 3; min-width: 0; width: 100%; }
+.lower-panel-subtitle { flex: 1; color: #858c90; font-size: 11px; font-weight: 450; letter-spacing: 0; }
 .clip-inspector[hidden] { display: none; }
 .workstation.browser-collapsed { grid-template-columns: 0 minmax(0, 1fr); }
 .workstation.browser-collapsed .browser { display: none; }
 .editor.has-midi-editor .clip-inspector { min-height: 0; flex: 1; overflow: hidden; display: flex; flex-direction: column; align-content: initial; padding: 0; gap: 0; }
-.lower-panel-title { height: 25px; display: flex; align-items: center; gap: 7px; padding: 0 10px; color: #a5abae; font-size: 11px; letter-spacing: .8px; }
+.lower-panel-title { height: 28px; }
 .panel-grip { width: 22px; height: 20px; display: grid; place-items: center; padding: 0; border: 0; border-radius: 3px; background: transparent; color: #8d9497; font-size: 11px; cursor: ns-resize; }
 .panel-grip:hover { background: #3b4043; color: #e0e3e4; }
 .panel-grip:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
-.lower-panel-subtitle { color: #858c90; font-size: 11px; font-weight: 450; letter-spacing: 0; }
 .clip-inspector { min-height: 38px; display: flex; flex-direction: column; align-items: stretch; gap: 0; padding: 0; border-bottom: 1px solid #3c4144; color: #aeb4b6; font-size: 11px; }
 .clip-inspector > strong { color: #f0f2f2; font-size: 11px; }
 .clip-view-title { flex: 0 0 27px; display: flex; align-items: center; gap: 12px; padding: 0 12px; background: #242729; border-bottom: 1px solid #17191a; color: #e9ebec; }
@@ -553,13 +556,7 @@ button:disabled { opacity: .4; cursor: not-allowed !important; }
 .session-empty-state { align-self: stretch; min-height: 56px; font-size: 11px; }
 
 #mixer-view { min-width: 0; min-height: 0; overflow: hidden; }
-.lower-panel { width: 100%; height: 100%; min-width: 0; min-height: 0; max-height: none; display: grid; grid-template-rows: 28px minmax(0,1fr) auto; overflow: hidden; background: #25292b; border-top: 1px solid #111314; }
-.lower-panel-title { grid-row: 1; min-width: 0; height: 28px; flex: none; gap: 8px; background: #202325; font-size: 11px; }
-.lower-panel > #clip-inspector, .lower-panel > #device-inspector { grid-row: 2; min-width: 0; min-height: 0; }
-.lower-panel > #audio-settings { grid-row: 3; min-width: 0; width: 100%; }
-.lower-panel-subtitle { font-size: 11px; }
 .lower-panel-title .detail-tab { min-height: 23px; padding: 2px 9px; font-size: 11px; }
-.lower-panel-subtitle { flex: 1; }
 .detail-tabs { display: inline-flex; align-items: center; gap: 3px; padding: 2px; border: 1px solid #191c1e; border-radius: 4px; background: #191c1e; }
 .lower-panel-title .detail-tab { min-width: 74px; }
 .session-track-header .track-instrument-trigger { flex: 1 0 100%; }

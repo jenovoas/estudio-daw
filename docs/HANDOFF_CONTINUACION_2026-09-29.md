@@ -354,3 +354,13 @@ abiertas por falta de QA y aceptación visual.
   el tirador y las teclas siguen midiendo 216→296→320 px y 583→663→687 px, y el
   documento conserva exactamente el alto de ventana. Quedan otras reglas de
   componente/estado para consolidar; no se presenta L2 ni 3.1 como completas.
+- Continuación L2: la regla base del panel inferior todavía estaba duplicada;
+  su primera versión conservaba un máximo de 260 px que la regla tardía anulaba.
+  Se integró la cuadrícula Clip/Dispositivo/Buffers en una sola regla base y se
+  retiró la duplicación. Tras actualizar el CSS real, Firefox volvió a mostrar
+  el panel limitado por el tirador en 1280×720: 216→296→320 px; rejilla con
+  scroll local 1024/127 y página de 720 px. `cargo check -p
+  estudio-daw-ui-shell`, `node --check crates/ui-shell/frontend/main.js` y
+  `git diff --check` pasan. Capturas headless en `/tmp/estudio-daw-ui-smoke-
+  controls-{1280,1920}.png`; no son Tauri runtime. El corte continúa sin QA
+  visual Tauri ni aceptación de dirección.
