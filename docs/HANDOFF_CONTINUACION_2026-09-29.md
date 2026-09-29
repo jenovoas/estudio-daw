@@ -341,3 +341,10 @@ abiertas por falta de QA y aceptación visual.
   bordes globales y el estado contextual en ventana baja usa 22 px. Las capturas
   headless resultantes mantienen la barra inferior dentro del viewport 1280×720;
   no cuentan como inspección de Tauri.
+- Se montó además un smoke temporal bajo `/tmp` con el HTML/CSS/`main.js` real,
+  adaptador de plataforma simulado y clip MIDI representativo. Se despacharon
+  PointerEvents y ArrowUp al tirador real: 1280×720 pasó de 216 a 296 y 320 px;
+  1920×1080 pasó de 583 a 663 y 687 px. Las filas 0–127 conservan overflow local
+  y `documentElement.scrollHeight` quedó en 720/1080 px. Esto sí ejercita los
+  manejadores JS de redimensionado; sigue sin ser una sesión Tauri ni verificar
+  el gesto con dispositivo físico.
