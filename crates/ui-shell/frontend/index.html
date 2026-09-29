@@ -76,6 +76,10 @@
           <span class="transport-separator"></span>
           <div class="transport-state"><span class="state-led"></span><span id="transport-state">DETENIDO</span></div>
           <span id="transport-position" class="transport-position" aria-live="off">1.1.1</span>
+          <nav class="view-tabs transport-view-tabs" role="tablist" aria-label="Vistas de composición">
+            <button id="show-arrangement" class="view-tab is-selected" title="Arreglo (Tab / Ctrl+1)" role="tab" aria-selected="true"><span class="tab-icon">▥</span>Arreglo</button>
+            <button id="show-session" class="view-tab" title="Sesión (Tab / Ctrl+2)" role="tab" aria-selected="false"><span class="tab-icon">▦</span>Sesión</button>
+          </nav>
           <span id="loop-range-readout" class="loop-range-readout">Sin rango</span>
           <span class="loop-range-controls" aria-label="Rango de repetición">
             <button id="loop-point-a" class="history-button" title="Fijar inicio del rango en el cursor">A</button>
@@ -89,10 +93,6 @@
         </section>
 
         <section class="surface-toolbar" aria-label="Herramientas de la superficie">
-          <div class="view-tabs" role="tablist" aria-label="Vistas de composición">
-            <button id="show-arrangement" class="view-tab is-selected" title="Arreglo (Tab / Ctrl+1)" role="tab" aria-selected="true"><span class="tab-icon">▥</span>Arreglo</button>
-            <button id="show-session" class="view-tab" title="Sesión (Tab / Ctrl+2)" role="tab" aria-selected="false"><span class="tab-icon">▦</span>Sesión</button>
-          </div>
           <label class="grid-snap-select"><span>REJILLA</span><select id="grid-snap" aria-label="Ajuste a rejilla"><option value="0.25">1/16</option><option value="0.5">1/8</option><option value="1">1/4</option><option value="bar">Compás</option><option value="0">Libre</option></select></label>
           <span class="surface-toolbar-spacer"></span>
           <button id="show-mixer" class="workspace-view-toggle mixer-panel-toggle" type="button" title="Mostrar u ocultar el mezclador (Ctrl+3)" aria-pressed="false"><span class="tab-icon">▤</span>Mezcla</button>

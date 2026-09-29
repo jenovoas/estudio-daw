@@ -503,7 +503,7 @@ button:disabled { opacity: .4; cursor: not-allowed !important; }
 .history-button { width: 28px; height: 28px; }
 .surface-toolbar { min-width: 0; display: flex; align-items: center; gap: 7px; overflow-x: auto; overflow-y: hidden; padding: 0 8px; border-bottom: 1px solid #121415; background: #24282a; scrollbar-width: thin; }
 .surface-toolbar-spacer { flex: 1 1 16px; }
-.view-tabs { height: 28px; flex: none; display: flex; gap: 2px; padding: 2px; border: 1px solid #202325; border-radius: 4px; background: #191c1e; }
+.transport-view-tabs { height: 28px; flex: none; display: flex; gap: 2px; padding: 2px; border: 1px solid #202325; border-radius: 4px; background: #191c1e; }
 .view-tab { min-width: 88px; border: 0; border-radius: 3px; font-size: 11px; }
 .view-tab.is-selected { background: #44494c; }
 .workspace-view-toggle, .detail-tab { min-height: 27px; flex: none; padding: 3px 8px; border: 1px solid transparent; border-radius: 3px; background: transparent; color: #c1c7c9; font-size: 11px; cursor: pointer; }
@@ -628,6 +628,8 @@ button:disabled { opacity: .4; cursor: not-allowed !important; }
   .browser-categories { grid-template-columns: minmax(0,1fr); }
   .arrangement-grid { min-width: 520px; grid-template-columns: minmax(340px,1fr) 176px; }
   .surface-toolbar-spacer { flex-basis: 0; }
+  #record, #pause, #panic, #metronome, .loop-range-readout, .loop-range-controls { display: none; }
+  .transport-view-tabs .view-tab { min-width: 62px; padding-right: 5px; padding-left: 5px; }
   .session-matrix { grid-template-columns: repeat(var(--session-track-columns,1), minmax(104px,1fr)) minmax(150px,160px); }
 }
 @media (max-height: 760px) {
