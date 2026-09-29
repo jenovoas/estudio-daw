@@ -348,3 +348,9 @@ abiertas por falta de QA y aceptación visual.
   y `documentElement.scrollHeight` quedó en 720/1080 px. Esto sí ejercita los
   manejadores JS de redimensionado; sigue sin ser una sesión Tauri ni verificar
   el gesto con dispositivo físico.
+- En L2 se centralizó la definición base de filas del grid del editor y la
+  colocación de sus superficies; se quitaron redefiniciones tardías que repetían
+  las mismas filas. Se repitió el smoke en ambos tamaños después de esa limpieza:
+  el tirador y las teclas siguen midiendo 216→296→320 px y 583→663→687 px, y el
+  documento conserva exactamente el alto de ventana. Quedan otras reglas de
+  componente/estado para consolidar; no se presenta L2 ni 3.1 como completas.
