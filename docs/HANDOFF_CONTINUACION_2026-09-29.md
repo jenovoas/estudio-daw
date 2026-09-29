@@ -380,3 +380,9 @@ abiertas por falta de QA y aceptación visual.
   indicador `BEHAVIOR PASS`. `cargo check -p estudio-daw-ui-shell`, sintaxis JS,
   diff check y validación OpenSpec estricta pasan. El resultado usa snapshot y
   plataforma simulados, no es QA Tauri.
+- Se amplió el snapshot de prueba con una escena y casilla MIDI y se verificó
+  Session a 1280×720: el frontend conserva dos identidades de pista, escena y
+  referencia `midi:clip-midi-1`; la captura `/tmp/estudio-daw-ui-session-
+  1280.png` muestra matriz y detalle MIDI simultáneos. El motor simulado figura
+  desconectado y por eso no se reclama QA de lanzamiento. El smoke de Browser y
+  Session pasó; runtime Tauri sigue pendiente.
