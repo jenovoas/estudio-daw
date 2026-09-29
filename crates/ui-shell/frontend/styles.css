@@ -93,20 +93,17 @@ button:disabled { opacity: .4; cursor: not-allowed !important; }
 .browser-action small { color: #8e9498; font-size: 11px; }
 .action-arrow { color: #7d8488; font-size: 17px; }
 
-.editor { min-width: 0; min-height: 0; display: grid; grid-template-columns: minmax(0,1fr); grid-template-rows: 42px 32px minmax(220px,1fr) 0 minmax(180px,28vh) auto; gap: 0; background: var(--bg); }
+.editor { --mixer-row-height: 0px; --detail-row-height: minmax(180px,28vh); min-width: 0; min-height: 0; display: grid; grid-template-columns: minmax(0,1fr); grid-template-rows: 42px 32px minmax(220px,1fr) var(--mixer-row-height) var(--detail-row-height) auto; gap: 0; background: var(--bg); }
 .editor > .transport-bar { grid-row: 1; }
 .editor > .surface-toolbar { grid-row: 2; }
 .editor > .arrangement { grid-row: 3; }
 .editor > #mixer-view { grid-row: 4; }
 .editor > .lower-panel { grid-row: 5; }
 .editor > .status-message { grid-row: 6; }
-.editor.mixer-panel-open { grid-template-rows: 42px 32px minmax(180px,1fr) minmax(120px,24vh) minmax(140px,24vh) auto; }
-.editor.clip-detail-hidden:not(.mixer-panel-open) { grid-template-rows: 42px 32px minmax(220px,1fr) 0 0 auto; }
-.editor.mixer-panel-open.clip-detail-hidden { grid-template-rows: 42px 32px minmax(220px,1fr) minmax(120px,24vh) 0 auto; }
-.editor.has-midi-editor:not(.mixer-panel-open) { grid-template-rows: 42px 32px minmax(220px,1fr) 0 minmax(320px,var(--detail-height,54vh)) auto; }
-.editor.has-midi-editor.mixer-panel-open { grid-template-rows: 42px 32px minmax(180px,1fr) minmax(120px,24vh) minmax(320px,var(--detail-height,24vh)) auto; }
-.editor.has-midi-editor.clip-detail-hidden:not(.mixer-panel-open) { grid-template-rows: 42px 32px minmax(220px,1fr) 0 0 auto; }
-.editor.has-midi-editor.mixer-panel-open.clip-detail-hidden { grid-template-rows: 42px 32px minmax(220px,1fr) minmax(120px,24vh) 0 auto; }
+.editor.mixer-panel-open { --mixer-row-height: clamp(120px,16vh,160px); }
+.editor.clip-detail-hidden { --detail-row-height: 0px; }
+.editor.has-midi-editor:not(.clip-detail-hidden) { --detail-row-height: minmax(210px,var(--detail-height,300px)); }
+.editor.has-midi-editor.mixer-panel-open:not(.clip-detail-hidden) { --detail-row-height: minmax(210px,var(--detail-height,300px)); }
 .transport-bar { min-width: 0; display: flex; align-items: center; gap: 9px; overflow: visible; padding: 0 10px; white-space: nowrap; background: #303437; border-bottom: 1px solid #17191b; box-shadow: inset 0 1px #41464a; }
 .transport-controls { height: 32px; display: flex; align-items: center; gap: 3px; }
 .transport-button { width: 29px; height: 28px; display: grid; place-items: center; border: 1px solid #51575b; border-radius: 3px; background: #41464a; color: #d1d4d5; font-size: 12px; cursor: pointer; }
@@ -554,7 +551,7 @@ button:disabled { opacity: .4; cursor: not-allowed !important; }
 .session-matrix:not(.session-mixer-visible) > .session-mixer-cell,
 .session-matrix:not(.session-mixer-visible) > .session-mixer-extras { display: none; }
 .session-mixer-label { position: sticky; right: 0; z-index: 3; align-content: center; padding: 8px; color: #bfc6c8; font-size: 11px; font-weight: 700; }
-.session-mixer-cell { display: flex; flex-direction: column; justify-content: center; gap: 7px; min-height: 140px; padding: 8px; border-top: 2px solid var(--track-color); }
+.session-mixer-cell { display: flex; flex-direction: column; justify-content: center; gap: 7px; min-height: clamp(140px,16.67vh,180px); padding: 8px; border-top: 2px solid var(--track-color); }
 .session-mixer-cell .track-meter { height: 7px; }
 .session-mixer-cell .mixer-controls-compact { grid-template-columns: repeat(3,minmax(24px,1fr)); gap: 4px; }
 .session-mixer-cell .mixer-controls-compact .mixer-slider { display: flex; grid-column: 1 / -1; font-size: 11px; }
@@ -589,10 +586,21 @@ button:disabled { opacity: .4; cursor: not-allowed !important; }
 .clip-properties .clip-inspector-field, .clip-inspector { font-size: 11px; }
 
 #mixer-view .surface-heading { min-height: 24px; }
-.mixer-channel-list { min-width: 0; width: 100%; grid-auto-flow: column; grid-auto-columns: minmax(112px,1fr); overflow: auto; }
-.mixer-channel { min-width: 112px; gap: 6px; padding: 8px; border-bottom-width: 2px; background: #292d30; }
-.mixer-channel .mixer-controls:not(.mixer-controls-compact) { grid-template-rows: auto minmax(64px,1fr) auto; }
-.mixer-channel .mixer-controls:not(.mixer-controls-compact) .mixer-slider:first-of-type input { height: min(14vh,160px); }
+.mixer-channel-list { min-width: 0; width: 100%; grid-auto-flow: column; grid-auto-columns: minmax(136px,1fr); overflow: auto; background: #1b1e20; }
+.mixer-channel { position: relative; min-width: 136px; display: grid; grid-template-rows: 20px 11px 5px minmax(0,1fr); gap: 3px; padding: 5px 7px 7px; border: 0; border-right: 1px solid #41474a; border-bottom: 2px solid var(--track-color,#58a6b8); background: #292d30; }
+.mixer-channel-heading { padding-right: 26px; }
+.mixer-channel-heading > strong { font-size: 11px; }
+.mixer-channel-options { position: absolute; z-index: 5; top: 3px; right: 4px; }
+.mixer-channel-options > summary { width: 22px; height: 22px; display: grid; place-items: center; border: 1px solid #4b5255; border-radius: 3px; color: #b9c0c2; cursor: pointer; list-style: none; }
+.mixer-channel-options > summary::-webkit-details-marker { display: none; }
+.mixer-channel-options[open] > summary { border-color: #c58a56; color: #ffd0a5; }
+.mixer-channel-options-body { position: absolute; top: 24px; right: 0; width: min(260px,75vw); max-height: min(60vh,320px); display: grid; gap: 6px; overflow: auto; padding: 8px; border: 1px solid #596165; background: #24282a; box-shadow: 0 6px 18px #0009; }
+.mixer-channel .mixer-controls:not(.mixer-controls-compact) { min-height: 0; display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); grid-template-rows: 18px minmax(34px,1fr) 19px; gap: 2px; align-items: center; }
+.mixer-channel .mixer-controls:not(.mixer-controls-compact) .mixer-toggle { min-height: 17px; padding: 0 2px; font-size: 10px; }
+.mixer-channel .mixer-controls:not(.mixer-controls-compact) .mixer-slider:first-of-type { grid-column: 1 / -1; align-items: center; gap: 0; }
+.mixer-channel .mixer-controls:not(.mixer-controls-compact) .mixer-slider:first-of-type input { width: 20px; height: 34px; }
+.mixer-channel .mixer-controls:not(.mixer-controls-compact) .mixer-slider:last-of-type { grid-column: 1 / -1; flex-direction: row; align-items: center; gap: 6px; }
+.mixer-channel .mixer-controls:not(.mixer-controls-compact) .mixer-slider:last-of-type input { flex: 1; width: auto; height: 12px; }
 .status-message { height: 22px; min-height: 22px; overflow: hidden; }
 .audio-settings { max-height: 30vh; overflow: auto; }
 .statusbar { min-height: 22px; }
@@ -621,17 +629,16 @@ button:disabled { opacity: .4; cursor: not-allowed !important; }
   .session-matrix { grid-template-columns: repeat(var(--session-track-columns,1), minmax(104px,1fr)) minmax(150px,160px); }
 }
 @media (max-height: 760px) {
-  .editor { grid-template-rows: 40px 30px minmax(200px,1fr) 0 minmax(156px,30vh) auto; }
-  .editor.has-midi-editor:not(.mixer-panel-open) { grid-template-rows: 40px 30px minmax(200px,1fr) 0 minmax(190px,var(--detail-height,30vh)) auto; }
-  .editor.has-midi-editor.mixer-panel-open { grid-template-rows: 40px 30px minmax(180px,1fr) minmax(120px,20vh) minmax(190px,var(--detail-height,24vh)) auto; }
-  .editor.has-midi-editor.clip-detail-hidden:not(.mixer-panel-open) { grid-template-rows: 40px 30px minmax(200px,1fr) 0 0 auto; }
-  .editor.has-midi-editor.mixer-panel-open.clip-detail-hidden { grid-template-rows: 40px 30px minmax(200px,1fr) minmax(120px,20vh) 0 auto; }
+  .editor { --detail-row-height: minmax(156px,30vh); grid-template-rows: 40px 30px minmax(200px,1fr) var(--mixer-row-height) var(--detail-row-height) auto; }
+  .editor.mixer-panel-open { --mixer-row-height: 120px; }
+  .editor.has-midi-editor:not(.clip-detail-hidden) { --detail-row-height: minmax(190px,var(--detail-height,210px)); }
+  .editor.has-midi-editor.mixer-panel-open:not(.clip-detail-hidden) { --detail-row-height: minmax(190px,var(--detail-height,210px)); }
+  .session-mixer-cell { min-height: 140px; }
   .arrangement-track-list, .arrangement-lanes { grid-auto-rows: 56px; }
   .track-row { grid-template-rows: 20px 15px 13px 2px; padding: 2px 5px; }
   .track-row-heading { min-height: 20px; }
   .track-row > .track-meter { height: 2px; }
   .track-row > .track-instrument-trigger, .track-row > .track-instrument-control { max-height: 15px; }
   .track-row .mixer-controls-compact .mixer-toggle { min-height: 14px; font-size: 11px; }
-  .session-mixer-cell { min-height: 98px; }
   .lower-panel-title { height: 25px; }
 }

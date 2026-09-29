@@ -1682,8 +1682,9 @@ function renderMixerSurface(tracks) {
   }
   const channels = document.createElement("div");
   channels.className = "mixer-channel-list";
-  const mixerTracks = tracks.some((track) => track.role === "master")
-    ? tracks
+  const masterTrack = tracks.find((track) => track.role === "master");
+  const mixerTracks = masterTrack
+    ? [...tracks.filter((track) => track.role !== "master"), masterTrack]
     : [...tracks, {
       id: "__master__",
       name: "Master",
@@ -1710,16 +1711,6 @@ function renderMixerSurface(tracks) {
     role.textContent = track.role === "master"
       ? "MASTER"
       : track.role === "bus" ? "BUS" : track.kind.toUpperCase();
-    const routing = document.createElement("small");
-    routing.className = "mixer-flow";
-    routing.textContent = trackSignalFlow(track, tracks);
-    const mix = document.createElement("span");
-    mix.className = "mixer-values";
-    mix.textContent = track.virtualMaster
-      ? "Salida estéreo combinada"
-      : track.role === "master"
-        ? `${Number(track.gainDb).toFixed(1)} dB${track.mute ? " · Silencio" : ""}${track.active ? "" : " · Inactiva"}`
-        : `${Number(track.gainDb).toFixed(1)} dB · Pan ${Number(track.pan).toFixed(2)}${track.mute ? " · Silencio" : ""}${track.solo ? " · Solo" : ""}${track.active ? "" : " · Inactiva"}`;
     if (track.groupName) role.textContent += ` · ${track.groupName}`;
     const selection = createTrackSelectionControl(track);
     const removeButton = createTrackRemovalButton(track);
@@ -1728,15 +1719,26 @@ function renderMixerSurface(tracks) {
     const inputControl = createTrackInputControl(track);
     const channelHeading = document.createElement("div");
     channelHeading.className = "mixer-channel-heading";
-    if (selection) channelHeading.append(selection);
+    const options = document.createElement("details");
+    options.className = "mixer-channel-options";
+    options.title = trackSignalFlow(track, tracks);
+    const optionsSummary = document.createElement("summary");
+    optionsSummary.textContent = "···";
+    optionsSummary.setAttribute("aria-label", `Más opciones de ${track.name}`);
+    optionsSummary.title = "Identidad, orden y ruteo de pista";
+    const optionsBody = document.createElement("div");
+    optionsBody.className = "mixer-channel-options-body";
+    if (selection) optionsBody.append(selection);
     const identity = createTrackIdentityControl(track);
-    if (identity) channelHeading.append(identity);
+    if (identity) optionsBody.append(identity);
     channelHeading.append(title);
-    if (orderControls) channelHeading.append(orderControls);
-    if (removeButton) channelHeading.append(removeButton);
-    channel.append(channelHeading, role, routing, mix);
-    if (inputControl) channel.append(inputControl);
-    if (outputControl) channel.append(outputControl);
+    if (orderControls) optionsBody.append(orderControls);
+    if (removeButton) optionsBody.append(removeButton);
+    if (inputControl) optionsBody.append(inputControl);
+    if (outputControl) optionsBody.append(outputControl);
+    options.append(optionsSummary, optionsBody);
+    channelHeading.append(options);
+    channel.append(channelHeading, role);
     const meter = createTrackMeter(track);
     if (meter) channel.append(meter);
     const controls = createTrackMixerControls(track);
@@ -3561,7 +3563,7 @@ renderApplicationMenu();
 
 function panelResizeBounds() {
   const editorHeight = elements.editor.clientHeight;
-  const minHeight = editorHeight <= 760 ? 190 : 330;
+  const minHeight = editorHeight <= 760 ? 190 : 210;
   const arrangementMinimum = editorHeight <= 760 ? 200 : 220;
   const fixedHeight = document.querySelector(".transport-bar").getBoundingClientRect().height
     + document.querySelector(".surface-toolbar").getBoundingClientRect().height
