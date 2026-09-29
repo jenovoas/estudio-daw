@@ -1520,13 +1520,21 @@ function renderSessionSurface(snapshot) {
     sceneHeader.append(launchScene, sceneName, moveUp, moveDown, remove);
     grid.append(sceneHeader);
     for (const [trackIndex, track] of tracks.entries()) {
+      const slot = (snapshot.clipSlots ?? []).find((item) => item.sceneId === scene.id && item.trackId === track.id);
+      const playing = slot?.clipId
+        ? sessionLaunches.find((item) => item.trackId === track.id && item.clipId === slot.clipId)
+        : null;
       const cell = document.createElement("div");
-      cell.className = "session-cell";
+      cell.className = [
+        "session-cell",
+        slot?.clipId ? "has-clip" : "",
+        playing?.state === "queued" ? "is-queued" : "",
+        playing?.state === "playing" ? "is-playing" : "",
+      ].filter(Boolean).join(" ");
       cell.style.gridColumn = String(trackIndex + 1);
       cell.style.gridRow = String(sceneIndex + 2);
       cell.style.setProperty("--track-color", track.color);
       if (track.annotation) cell.title = track.annotation;
-      const slot = (snapshot.clipSlots ?? []).find((item) => item.sceneId === scene.id && item.trackId === track.id);
       const slotEditor = document.createElement("details");
       slotEditor.className = "session-slot-editor";
       const slotEditSummary = document.createElement("summary");
@@ -1579,7 +1587,6 @@ function renderSessionSurface(snapshot) {
       ));
       const launch = document.createElement("button");
       launch.type = "button";
-      const playing = sessionLaunches.find((item) => item.trackId === track.id && item.clipId === slot?.clipId);
       launch.className = `session-launch${slot?.clipId ? " has-clip" : ""}${playing?.state === "queued" ? " is-queued" : ""}${playing?.state === "playing" ? " is-playing" : ""}`;
       const engineReady = ["playing", "paused"].includes(projectTransportState);
       if (!slot?.clipId) {
