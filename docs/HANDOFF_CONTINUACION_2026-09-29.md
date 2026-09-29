@@ -402,3 +402,8 @@ abiertas por falta de QA y aceptación visual.
   Session. Capturas: `/tmp/estudio-daw-ui-roll-1280.png` y
   `/tmp/estudio-daw-ui-detail-1920.png`. Son eventos DOM sintetizados sobre el
   manejador frontend real; no sustituyen interacción física ni QA Tauri.
+- El siguiente recorte CSS trasladó el estado final de `.transport-bar` y
+  `.transport-button` a sus reglas base, retirando los overrides tardíos. Se
+  repitieron compilación, sintaxis JS, diff check, OpenSpec estricta y Firefox a
+  ambos tamaños; el comportamiento del piano, el detalle y Session conserva el
+  indicador `BEHAVIOR PASS`.

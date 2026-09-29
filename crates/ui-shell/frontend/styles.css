@@ -106,9 +106,9 @@ button:disabled { opacity: .4; cursor: not-allowed !important; }
 .editor.has-midi-editor.mixer-panel-open { grid-template-rows: 42px 32px minmax(180px,1fr) minmax(120px,24vh) minmax(320px,var(--detail-height,24vh)) auto; }
 .editor.has-midi-editor.clip-detail-hidden:not(.mixer-panel-open) { grid-template-rows: 42px 32px minmax(220px,1fr) 0 0 auto; }
 .editor.has-midi-editor.mixer-panel-open.clip-detail-hidden { grid-template-rows: 42px 32px minmax(220px,1fr) minmax(120px,24vh) 0 auto; }
-.transport-bar { min-width: 0; display: flex; align-items: center; gap: 13px; padding: 0 13px; background: linear-gradient(#33373a, #2d3033); border-bottom: 1px solid #17191b; box-shadow: 0 1px #41464a inset; }
+.transport-bar { min-width: 0; display: flex; align-items: center; gap: 9px; overflow: visible; padding: 0 10px; white-space: nowrap; background: #303437; border-bottom: 1px solid #17191b; box-shadow: inset 0 1px #41464a; }
 .transport-controls { height: 32px; display: flex; align-items: center; gap: 3px; }
-.transport-button { width: 32px; height: 29px; display: grid; place-items: center; border: 1px solid #51575b; border-radius: 4px; background: #41464a; color: #d1d4d5; font-size: 12px; cursor: pointer; }
+.transport-button { width: 29px; height: 28px; display: grid; place-items: center; border: 1px solid #51575b; border-radius: 3px; background: #41464a; color: #d1d4d5; font-size: 12px; cursor: pointer; }
 .loop-range-readout { min-width: 82px; color: #a9b4ac; font-size: 11px; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .loop-range-controls { display: inline-flex; align-items: center; gap: 2px; }
 .transport-button:hover:not(:disabled) { background: #52585c; }
@@ -491,9 +491,6 @@ button:disabled { opacity: .4; cursor: not-allowed !important; }
 .browser-create-action small { color: #92999c; font-size: 11px; }
 .browser-create-action:disabled { opacity: .42; cursor: not-allowed; }
 
-.transport-bar { min-width: 0; gap: 9px; overflow: visible; padding: 0 10px; white-space: nowrap; background: #303437; box-shadow: inset 0 1px #41464a; }
-.transport-controls { gap: 3px; }
-.transport-button { width: 29px; height: 28px; border-radius: 3px; }
 .transport-position { min-width: 52px; font-size: 12px; }
 .transport-readout strong { font-size: 17px; }
 .transport-state { font-size: 11px; }
