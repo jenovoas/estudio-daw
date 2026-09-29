@@ -130,6 +130,9 @@ let selectedMidiNote = null;
 const waveformCache = new Map();
 const pianoRollScrollPositions = new Map();
 const pianoRollInitializedClips = new Set();
+const arrangementTrackHeights = new Map();
+const ARRANGEMENT_TRACK_HEIGHT_MIN = 56;
+const ARRANGEMENT_TRACK_HEIGHT_MAX = 320;
 let pianoRollRowHeight = 8;
 const vst3EditorOpenByTrack = new Map();
 let previewContext = null;
@@ -1787,6 +1790,7 @@ function renderSnapshot(snapshot) {
     selectedTrackIds = new Set();
     selectedClipId = null;
     selectedMidiNote = null;
+    arrangementTrackHeights.clear();
     pianoRollScrollPositions.clear();
     pianoRollInitializedClips.clear();
     trackGroupDraft = "";
@@ -1875,6 +1879,7 @@ function renderSnapshot(snapshot) {
 
   elements.tracks.replaceChildren();
   elements.lanes.replaceChildren();
+  applyArrangementTrackHeights(snapshot);
   const beatsPerBar = snapshot.beatsPerBar || 4;
   const clipEnds = [
     ...snapshot.midiClips.map((clip) => (Number(clip.startBeats) || 0) + (Number(clip.durationBeats) || 0)),
@@ -1938,6 +1943,7 @@ function renderSnapshot(snapshot) {
     if (meter) row.append(meter);
     const mixerControls = createTrackMixerControls(track, true);
     if (mixerControls) row.append(mixerControls);
+    row.append(createTrackHeightGrip(track, snapshot.projectId));
     elements.tracks.append(row);
 
     const lane = document.createElement("div");
@@ -2066,6 +2072,86 @@ function renderSnapshot(snapshot) {
   renderProjectMedia(snapshot);
   syncTrackSelectionUi();
   refreshActionAvailability();
+}
+
+function arrangementTrackHeightKey(projectId, trackId) {
+  return `${projectId}:${trackId}`;
+}
+
+function arrangementTrackHeight(track, projectId) {
+  const key = arrangementTrackHeightKey(projectId, track.id);
+  if (arrangementTrackHeights.has(key)) return arrangementTrackHeights.get(key);
+  let stored = null;
+  try {
+    stored = Number(localStorage.getItem(`estudio-daw.arrangement-track-height.v1:${key}`));
+  } catch {
+    // Si el WebView no ofrece almacenamiento local, la altura sigue siendo usable durante la sesión.
+  }
+  const fallback = window.matchMedia("(max-height: 760px)").matches ? 56 : 64;
+  const height = Number.isFinite(stored) && stored >= ARRANGEMENT_TRACK_HEIGHT_MIN
+    ? Math.min(ARRANGEMENT_TRACK_HEIGHT_MAX, stored)
+    : fallback;
+  arrangementTrackHeights.set(key, height);
+  return height;
+}
+
+function applyArrangementTrackHeights(snapshot) {
+  const rows = snapshot.tracks.map((track) => `${arrangementTrackHeight(track, snapshot.projectId)}px`).join(" ");
+  elements.tracks.style.gridTemplateRows = rows;
+  elements.lanes.style.gridTemplateRows = rows;
+}
+
+function setArrangementTrackHeight(track, projectId, height, grip) {
+  const next = Math.max(ARRANGEMENT_TRACK_HEIGHT_MIN, Math.min(ARRANGEMENT_TRACK_HEIGHT_MAX, Math.round(height)));
+  arrangementTrackHeights.set(arrangementTrackHeightKey(projectId, track.id), next);
+  try {
+    localStorage.setItem(`estudio-daw.arrangement-track-height.v1:${projectId}:${track.id}`, String(next));
+  } catch {
+    // La preferencia queda en memoria si el almacenamiento local está bloqueado.
+  }
+  if (lastSnapshot) applyArrangementTrackHeights(lastSnapshot);
+  grip.setAttribute("aria-valuenow", String(next));
+  grip.setAttribute("aria-valuetext", `${next} píxeles`);
+}
+
+function createTrackHeightGrip(track, projectId) {
+  const grip = document.createElement("div");
+  grip.className = "track-height-grip";
+  grip.setAttribute("role", "separator");
+  grip.setAttribute("aria-orientation", "horizontal");
+  grip.setAttribute("aria-label", `Cambiar altura de la pista ${track.name}`);
+  grip.setAttribute("aria-valuemin", String(ARRANGEMENT_TRACK_HEIGHT_MIN));
+  grip.setAttribute("aria-valuemax", String(ARRANGEMENT_TRACK_HEIGHT_MAX));
+  grip.tabIndex = 0;
+  const height = arrangementTrackHeight(track, projectId);
+  grip.setAttribute("aria-valuenow", String(height));
+  grip.setAttribute("aria-valuetext", `${height} píxeles`);
+  grip.title = "Arrastra o usa ↑/↓ para cambiar la altura de la pista";
+  grip.addEventListener("pointerdown", (event) => {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    const startY = event.clientY;
+    const startHeight = arrangementTrackHeight(track, projectId);
+    const resize = (moveEvent) => setArrangementTrackHeight(track, projectId, startHeight + moveEvent.clientY - startY, grip);
+    const finish = () => {
+      document.removeEventListener("pointermove", resize);
+      document.removeEventListener("pointerup", finish);
+      document.removeEventListener("pointercancel", finish);
+    };
+    document.addEventListener("pointermove", resize);
+    document.addEventListener("pointerup", finish);
+    document.addEventListener("pointercancel", finish);
+  });
+  grip.addEventListener("keydown", (event) => {
+    if (!["ArrowUp", "ArrowDown", "Home", "End"].includes(event.key)) return;
+    event.preventDefault();
+    const current = arrangementTrackHeight(track, projectId);
+    const next = event.key === "Home" ? ARRANGEMENT_TRACK_HEIGHT_MIN
+      : event.key === "End" ? ARRANGEMENT_TRACK_HEIGHT_MAX
+        : current + (event.key === "ArrowUp" ? -16 : 16);
+    setArrangementTrackHeight(track, projectId, next, grip);
+  });
+  return grip;
 }
 
 function renderClipInspector(snapshot) {

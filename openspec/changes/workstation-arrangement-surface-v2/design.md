@@ -448,7 +448,12 @@ clips ficticios para llenar esos espacios.
    corresponda y medidor real forman el encabezado compacto. Ganancia/panorama
    accesibles sin abrir una página; ruteo, identidad detallada y configuración
    de instrumento pasan a un desplegable contextual. Quitar/reordenar/duplicar
-   conservan sus acciones de menú. No ocultar funciones sin dejar acceso visible.
+   conservan sus acciones de menú. La altura inicial de las pistas es 64 px
+   (56 px en ventanas compactas); un separador por pista permite ajustarla con
+   ratón, flechas o Home/End dentro de 56–320 px. Cabecera y carril comparten
+   altura y los clips se adaptan. La preferencia se guarda localmente por
+   proyecto y no altera el modelo musical ni su historial. No ocultar funciones
+   sin dejar acceso visible.
 4. **Session integrada.** Escenas a la derecha, nombres de pista arriba,
    botones de lanzamiento/parada distinguibles de selección y asignación.
    Las celdas no son formularios permanentes: mostrar nombre y estado;

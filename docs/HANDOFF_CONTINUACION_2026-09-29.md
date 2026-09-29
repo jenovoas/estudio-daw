@@ -452,3 +452,19 @@ abiertas por falta de QA y aceptación visual.
   matriz Tauri runtime; 3.1.5 y 3.1 siguen abiertas.
 - Registrar SHA y publicación en la siguiente entrada de bitácora; no cerrar
   tareas de aceptación visual por esta regresión corregida.
+
+## Altura ajustable de pistas en Arreglo — 2026-09-29
+
+- La Demo mostraba un solo carril compacto y un área grande sin contenido. Se
+  añadió un separador accesible en cada cabecera de pista: arrastrar cambia la
+  altura del carril y su cabecera a la vez; flechas ajustan en pasos de 16 px y
+  Home/End aplican los límites 56–320 px. Los clips se adaptan al alto del carril.
+- La altura inicial respeta el diseño: 64 px en ventana normal y 56 px en ventana
+  compacta. El valor se guarda en `localStorage` como preferencia de interfaz por
+  proyecto y pista; no modifica el proyecto, comandos ni historial.
+- Firefox headless ejecutó `main.js`/CSS reales con snapshot MIDI+audio y
+  adaptador simulado a 760×520, 1280×720 y 1920×1080. Pasaron aserciones de
+  arrastre, flechas, límites, alineación de carril/encabezado y persistencia al
+  refrescar y reabrir el WebView. QA Tauri y cierre de 3.1 siguen pendientes.
+- Registrar SHA, verificaciones de crate y publicación en la bitácora cuando se
+  complete el corte.

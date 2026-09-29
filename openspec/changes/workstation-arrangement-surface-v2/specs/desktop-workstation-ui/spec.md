@@ -99,6 +99,16 @@ La estación DEBE (MUST) ofrecer una vista Session de clips/escenas y una vista 
 
 La selección actual de pistas DEBE permanecer coherente al alternar entre Session, Arrangement y Mezclador. La pertenencia a un grupo organizativo DEBE persistir en el proyecto y poder asignarse o quitarse mediante una operación reversible. Agrupar pistas no DEBE enlazar ni propagar activa/silencio/solo/ganancia/panorama: cada pista conserva su propio estado de mezcla.
 
+En Arrangement, la persona DEBE poder ajustar la altura de cada carril con el ratón y el teclado. El encabezado y el carril temporal DEBEN conservar la misma altura; esta preferencia local de interfaz DEBE sobrevivir a las actualizaciones del snapshot y a la reapertura del proyecto, sin modificar el modelo musical.
+
+#### Scenario: ajustar la altura de un carril de Arreglo
+
+- **DADO** un proyecto abierto con una o más pistas en Arrangement
+- **CUANDO** la persona arrastra el separador de altura de una pista o lo ajusta con las flechas
+- **ENTONCES** el encabezado y el carril de esa pista cambian juntos, sin mover los clips en el tiempo
+- **Y** la altura respeta sus límites y se conserva al refrescar o volver a abrir el proyecto
+- **Y** la operación no crea comandos ni cambios en el historial del proyecto
+
 #### Scenario: abrir un proyecto en Session
 
 - **CUANDO** un proyecto aparece en la vista creativa principal
