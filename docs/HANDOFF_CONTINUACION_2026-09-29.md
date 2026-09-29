@@ -1,5 +1,65 @@
 # Handoff de continuación — 2026-09-29
 
+> **Continuidad actualizada al final de la sesión — leer primero esta sección.**
+> Sus instrucciones sustituyen las que siguen más abajo cuando haya diferencias;
+> las notas antiguas se conservan como historial.
+
+## Estado vigente para la próxima sesión
+
+- **Repositorio:** `/home/jnovoas/proyectos/estudio-daw`, rama `main`, último
+  commit publicado `13f71ae` (`feat: add contextual track creation in
+  arrangement`), árbol limpio al guardar este handoff. Confirmar con `git
+  status` y `git log`; no restaurar ni descartar cambios ajenos.
+- **Cambio OpenSpec activo:** `workstation-arrangement-surface-v2`, flujo
+  `spec-driven`, **10/50 tareas completas**. La prioridad sigue siendo rediseñar
+  la UI de escritorio Tauri hasta acercar de forma sustancial su jerarquía y
+  flujo creativo a Ableton Live, sin copiar sus recursos ni desviar el alcance.
+- **Último corte:** la cabecera PISTAS de Arreglo ahora tiene «+ Pista» para
+  crear MIDI, audio o bus con las acciones ya existentes. El menú se cierra al
+  elegir una acción, hacer clic fuera o pulsar Escape. Se conserva la selección
+  de grupo al enfocar Dispositivo (`d2e7d39`) y el foco del dispositivo queda
+  separado de dicha selección (`8bff3c8`). No se modificaron modelo, IPC,
+  arquitectura ni motor.
+- **Validación de `13f71ae`:** `node --check
+  crates/ui-shell/frontend/main.js`, `cargo build -p
+  estudio-daw-ui-shell --bin estudio-daw`, `openspec validate
+  workstation-arrangement-surface-v2 --strict` y `git diff --check`; todo pasó.
+  Commit publicado en `origin/main`. La bitácora append-only y
+  `ESTADO_ACTUAL.md` de personalvault registran este SHA.
+- **Criterio de cierre:** 3.1 sigue abierta. No declarar aceptada la dirección
+  visual hasta que la persona usuaria la revise en Tauri. Ella indicó que más
+  adelante levantará la interfaz y tomará capturas; mientras tanto, continuar
+  implementando el plan sin interrumpirla para pedir capturas ni confirmaciones
+  rutinarias.
+
+## Instrucciones de continuidad
+
+1. Revisar `AGENTS.md`, `README.md`, este handoff, `git status`/`git log` y los
+   artefactos vigentes de `openspec/changes/workstation-arrangement-surface-v2`
+   antes de editar. Usar `openspec instructions apply --change
+   workstation-arrangement-surface-v2 --json` para retomar el flujo.
+2. **Sólo interfaz Tauri nativa.** No abrir ni validar en Firefox, navegador
+   externo o WASM; no cambiar arquitectura ni inventar cambios de backend. La
+   revisión/capturas de runtime queda para cuando la persona usuaria levante la
+   app según lo acordado. Ejecutar automáticamente build, sintaxis, OpenSpec y
+   checks de código que no interfieran con esa revisión.
+3. Continuar la secuencia visual aprobada 3.1 y su delta en `design.md`. El
+   corte inmediato implementó el acceso contextual de creación previsto junto
+   a las pistas; continuar con las discrepancias restantes de composición y
+   jerarquía descritas allí. No avanzar tareas funcionales dependientes mientras
+   3.1 siga bloqueada por el feedback visual pendiente.
+4. No volver a diseñar el plan ni pedir permiso para decisiones rutinarias ya
+   aprobadas. No solicitar al usuario pruebas que pueda hacer el agente. Hablar
+   sólo para comunicar progreso/resultados o un bloqueo real que cambie alcance.
+5. Tras cerrar el rediseño de UI, la persona usuaria revisará la app Tauri y dará
+   feedback. Entonces continuar las funciones ya aprobadas, priorizando la
+   integración real VST3/Analog Lab y dispositivos/entrada MIDI descrita en
+   OpenSpec; no afirmar paridad ni disponibilidad antes de tener evidencia.
+6. Mantener español, límites de arquitectura y trazabilidad de `AGENTS.md`.
+   Después de cada corte material, registrar SHA inicial/final, archivos,
+   pruebas, resultado y pendientes en la bitácora externa append-only; mantener
+   `ESTADO_ACTUAL.md` factual. Commit/push ya autorizados por el usuario.
+
 ## Prioridad para la próxima sesión
 
 La prioridad inmediata es continuar la secuencia visual 3.1 en frontend, buscando
