@@ -248,7 +248,9 @@ button:disabled { opacity: .4; cursor: not-allowed !important; }
 .clip-note-layer { position: absolute; inset: 0; pointer-events: none; }
 .clip-note { position: absolute; z-index: 1; height: 4px; min-width: 2px; border: 1px solid #fff2; border-radius: 2px; background: #fff1d8; box-shadow: 0 0 3px #fff7; }
 .empty-state { align-self: stretch; padding: 26px 12px; color: #9aa0a3; font-size: 11px; }
-.timeline-empty { min-height: 152px; display: flex; align-items: flex-start; justify-content: flex-start; padding: 12px; border-bottom: 1px solid #181a1c; background: #26292b; color: #848b8e; text-align: left; }
+.timeline-empty { min-height: 152px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; padding: 18px; border-bottom: 1px solid #181a1c; background: #26292b; color: #a0a7aa; text-align: center; }
+.timeline-empty-message { max-width: 320px; line-height: 1.5; }
+.timeline-empty-action { min-height: 29px; padding: 0 11px; }
 .arrangement-legend { min-height: 24px; display: flex; align-items: center; gap: 15px; padding: 0 11px; background: #202326; color: #848b8e; font-size: 11px; }
 .arrangement-legend span:first-child { display: flex; align-items: center; gap: 5px; }
 .legend-swatch { width: 9px; height: 7px; border: 1px solid #e2a36c; border-radius: 2px; background: #a76237; }

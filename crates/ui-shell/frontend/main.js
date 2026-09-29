@@ -1929,7 +1929,15 @@ function renderSnapshot(snapshot) {
     elements.tracks.append(empty);
     const emptyLane = document.createElement("div");
     emptyLane.className = "empty-state timeline-empty";
-    emptyLane.textContent = "Sin pistas en el arreglo";
+    const message = document.createElement("span");
+    message.className = "timeline-empty-message";
+    message.textContent = "Empieza con una sesión musical o añade tus propias pistas.";
+    const demoButton = document.createElement("button");
+    demoButton.type = "button";
+    demoButton.className = "button button-demo timeline-empty-action";
+    demoButton.textContent = "Cargar Demo MIDI";
+    demoButton.addEventListener("click", () => elements.demoProject.click());
+    emptyLane.append(message, demoButton);
     elements.lanes.append(emptyLane);
     renderClipInspector(snapshot);
     renderEditCursor();
