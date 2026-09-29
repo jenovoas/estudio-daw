@@ -418,3 +418,14 @@ abiertas por falta de QA y aceptación visual.
   sólo para el estado `clip-detail-hidden`; Firefox confirmó el colapso y
   mantuvo `BEHAVIOR PASS`. A 760 px de ancho el navegador apila sus categorías.
   Sigue siendo una comprobación headless, no captura Tauri.
+- **Verificación real VST3 adicional:** el probe aislado de Analog Lab V 5.12.5.6878
+  por yabridge 5.1.1 reportó clase `4172747541564953416C617650726F63`, MIDI-in,
+  salida estéreo y GUI. La prueba focal
+  `vst3_worker_returns_real_plugin_audio_outside_the_render_callback` pasó al
+  usar ese ID hexadecimal. Una ejecución previa con el nombre de clase legible
+  falló porque el host requiere 32 dígitos hexadecimales; no es un fallo del
+  plugin. No es medición de latencia ni QA de controles integrados.
+- El Tauri abierto para inspección runtime a 1842×1066 mostraba el estado inicial
+  sin proyecto; no se declara como QA de Demo, dispositivo, plugin ni audio.
+  Sigue abierto para continuar la verificación integrada cuando haya un proyecto
+  cargado desde la propia UI.
