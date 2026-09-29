@@ -167,3 +167,10 @@ Continúa desde el handoff «implementación parcial 3.1» de
  hasta que yo acepte visualmente. Preserva el historial y sigue AGENTS.md y la
  bitácora append-only.
 ```
+
+### Publicación de este handoff
+
+El corte de implementación y este handoff quedaron publicados en `2a613fa`
+(`feat: reorganize workstation UI surfaces`), en `origin/main`. El árbol de
+trabajo quedó limpio tras el push; las subtareas 3.1.1–3.1.6 y 3.1 siguen
+abiertas por falta de QA y aceptación visual.
