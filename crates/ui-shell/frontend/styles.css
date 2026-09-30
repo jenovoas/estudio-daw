@@ -222,6 +222,14 @@ button:disabled { opacity: .4; cursor: not-allowed !important; }
 .track-identity-dialog textarea { resize: vertical; }
 .track-identity-actions { display: flex; justify-content: end; gap: 8px; }
 .track-identity-actions button { padding: 7px 12px; border: 1px solid #555e62; border-radius: 4px; background: #373d40; color: #e3e7e8; cursor: pointer; }
+.shortcuts-dialog { width: min(430px, calc(100vw - 32px)); padding: 20px; border: 1px solid #555e62; border-radius: 8px; background: #292e31; color: #edf0f0; box-shadow: 0 16px 60px #000b; }
+.shortcuts-dialog::backdrop { background: #090b0dcc; }
+.shortcuts-dialog h2 { margin: 0; font-size: 15px; }
+.shortcuts-dialog p { margin: 8px 0 16px; color: #aeb7ba; font-size: 11px; line-height: 1.5; }
+.shortcuts-list { display: grid; gap: 4px; }
+.shortcut-row { display: grid; grid-template-columns: 116px minmax(0,1fr); align-items: center; gap: 10px; min-height: 28px; color: #dce1e2; font-size: 11px; }
+.shortcut-row kbd { justify-self: start; padding: 3px 6px; border: 1px solid #596165; border-radius: 3px; background: #202426; color: #ffd0a5; font: inherit; font-size: 10px; }
+.shortcuts-footer { display: flex; justify-content: end; margin-top: 18px; }
 .track-remove-button { width: 19px; height: 19px; flex: 0 0 19px; display: grid; place-items: center; border: 1px solid #654540; border-radius: 3px; padding: 0; background: #332927; color: #dca095; font-size: 14px; line-height: 1; cursor: pointer; }
 .track-remove-button:hover { border-color: #b9685d; background: #55302d; color: #ffe5df; }
 .track-order-controls { display: inline-flex; gap: 2px; margin-left: auto; }
@@ -487,6 +495,15 @@ button:disabled { opacity: .4; cursor: not-allowed !important; }
 .browser-search input { min-width: 0; height: 29px; padding: 0 8px; border: 1px solid #4a5053; border-radius: 3px; background: #191c1e; color: #eef0f0; font-size: 12px; }
 .browser-content-list { display: flex; flex-direction: column; gap: 2px; max-height: 190px; overflow: auto; }
 .browser-content-item { min-height: 31px; overflow: hidden; padding: 5px 7px; border: 0; border-left: 2px solid #5a6266; background: #292d30; color: #e1e4e5; font-size: 11px; text-align: left; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
+.browser-collections { display: flex; gap: 3px; margin: 6px 0 3px; overflow: auto; padding-bottom: 3px; }
+.browser-collection { flex: 0 0 auto; min-height: 24px; padding: 3px 7px; border: 1px solid transparent; border-radius: 12px; background: #24282a; color: #9ca5a8; font-size: 10px; cursor: pointer; }
+.browser-collection:hover, .browser-collection:focus-visible { border-color: #596064; background: #303538; color: #f1f2f2; }
+.browser-collection.is-selected { border-color: #765538; background: #403326; color: #ffd0a5; }
+.browser-content-item-row { display: flex; min-width: 0; align-items: stretch; gap: 2px; }
+.browser-content-item-row .browser-content-item { flex: 1; min-width: 0; }
+.browser-favorite { width: 28px; min-width: 28px; border: 0; border-left: 1px solid #3b4144; background: #292d30; color: #899296; font-size: 15px; cursor: pointer; }
+.browser-favorite:hover, .browser-favorite:focus-visible, .browser-favorite.is-favorite { background: #3a3028; color: #ffbd79; }
+.browser-favorite:focus-visible { outline: 1px solid #e7924a; outline-offset: -2px; }
 .browser-content-item:hover, .browser-content-item:focus-visible { border-left-color: var(--accent); background: #383e41; }
 .browser-import { margin-top: 10px; border-top: 1px solid #34393c; }
 .browser-import > summary { min-height: 34px; display: flex; align-items: center; gap: 7px; color: #d4d8d9; font-size: 11px; cursor: pointer; }

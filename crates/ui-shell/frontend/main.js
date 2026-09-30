@@ -29,6 +29,7 @@ const elements = {
   name: document.querySelector("#project-name"),
   browserMediaChannels: document.querySelector("#browser-media-channels"),
   browserCategoryList: document.querySelector("#browser-category-list"),
+  browserCollectionList: document.querySelector("#browser-collection-list"),
   browserMediaTools: document.querySelector("#browser-media-tools"),
   browserMediaList: document.querySelector("#browser-media-list"),
   browserMidiList: document.querySelector("#browser-midi-list"),
@@ -127,6 +128,11 @@ let selectedClipId = null;
 let selectedDetailTab = "clip";
 let browserVisible = true;
 let browserSelectedCategory = "all";
+let browserSelectedCollection = "all";
+const BROWSER_FAVORITES_STORAGE_KEY = "estudio-daw.browser-favorites.v1";
+const BROWSER_HISTORY_STORAGE_KEY = "estudio-daw.browser-history.v1";
+let browserFavorites = new Set();
+let browserHistory = [];
 let clipDetailVisible = true;
 let mixerPanelVisible = false;
 let selectedMidiNote = null;
@@ -181,6 +187,7 @@ const UI_ACTIONS = [
   { id: "audio.preview", label: "Preescuchar región", menu: "Contexto", contexts: ["audio"] },
   { id: "audio.remove", label: "Quitar región", menu: "Contexto", contexts: ["audio"] },
   { id: "track.moveUp", label: "Mover pista antes", menu: "Contexto", contexts: ["track"] },
+  { id: "help.shortcuts", label: "Atajos de teclado…", menu: "Ayuda", handler: () => openShortcutsDialog() },
   { id: "track.moveDown", label: "Mover pista después", menu: "Contexto", contexts: ["track"] },
   { id: "track.duplicate", label: "Duplicar pista", menu: "Contexto", contexts: ["track"] },
   { id: "track.remove", label: "Quitar pista", menu: "Contexto", contexts: ["track"] },
@@ -234,6 +241,52 @@ function executeUiAction(action, context = null) {
     if (target && !target.disabled) target.click();
   }
   closeContextMenu();
+}
+
+function openShortcutsDialog() {
+  const existing = document.querySelector(".shortcuts-dialog");
+  if (existing) {
+    existing.close();
+    existing.remove();
+  }
+  const dialog = document.createElement("dialog");
+  dialog.className = "shortcuts-dialog";
+  const heading = document.createElement("h2");
+  heading.textContent = "Atajos de teclado";
+  const description = document.createElement("p");
+  description.textContent = "Los atajos sólo actúan fuera de campos de texto y reutilizan las mismas acciones del menú.";
+  const list = document.createElement("div");
+  list.className = "shortcuts-list";
+  const shortcuts = [
+    ...UI_ACTIONS.filter((action) => action.shortcut).map((action) => [action.shortcut, action.label]),
+    ["Tab", "Alternar Arreglo / Session"],
+    ["Mayús+Tab", "Mostrar u ocultar el detalle inferior"],
+    ["Ctrl+Alt+B", "Mostrar u ocultar el navegador"],
+    ["Espacio", "Reproducir o pausar desde el transporte"],
+  ];
+  for (const [shortcut, label] of shortcuts) {
+    const row = document.createElement("div");
+    row.className = "shortcut-row";
+    const key = document.createElement("kbd");
+    key.textContent = shortcut;
+    const text = document.createElement("span");
+    text.textContent = label;
+    row.append(key, text);
+    list.append(row);
+  }
+  const footer = document.createElement("div");
+  footer.className = "shortcuts-footer";
+  const close = document.createElement("button");
+  close.type = "button";
+  close.className = "button-accent";
+  close.textContent = "Cerrar";
+  close.addEventListener("click", () => dialog.close());
+  footer.append(close);
+  dialog.append(heading, description, list, footer);
+  dialog.addEventListener("close", () => dialog.remove(), { once: true });
+  document.body.append(dialog);
+  dialog.showModal();
+  close.focus();
 }
 
 function renderApplicationMenu() {
@@ -542,9 +595,10 @@ function handleCreativeWorkspaceShortcut(event) {
     if (mixerPanelVisible) mixerPanelVisible = false;
     clipDetailVisible = !clipDetailVisible;
     updateWorkspaceLayout();
-  } else if (event.key === "Tab") {
+  } else if (event.key === " ") {
     event.preventDefault();
-    selectSurface(elements.showSession.classList.contains("is-selected") ? "arrangement" : "session");
+    const button = projectTransportState === "playing" ? elements.pause : elements.play;
+    if (!button.disabled) button.click();
   }
 }
 
@@ -2618,17 +2672,115 @@ function makeInspectorNumber(caption, value, min, max, step, onChange) {
   field.append(name, input);
   return field;
 }
+let browserStateProjectId = null;
+
+function browserItemKey(kind, id) {
+  return `${kind}:${id}`;
+}
+
+function loadBrowserCollectionState(projectId) {
+  const normalizedProjectId = String(projectId ?? "sin-proyecto");
+  if (browserStateProjectId === normalizedProjectId) return;
+  browserStateProjectId = normalizedProjectId;
+  browserFavorites = new Set();
+  browserHistory = [];
+  try {
+    const favorites = JSON.parse(localStorage.getItem(`${BROWSER_FAVORITES_STORAGE_KEY}:${normalizedProjectId}`) ?? "[]");
+    if (Array.isArray(favorites)) browserFavorites = new Set(favorites.filter((item) => typeof item === "string"));
+    const history = JSON.parse(localStorage.getItem(`${BROWSER_HISTORY_STORAGE_KEY}:${normalizedProjectId}`) ?? "[]");
+    if (Array.isArray(history)) browserHistory = history.filter((item) => typeof item === "string").slice(0, 12);
+  } catch {
+    // Las colecciones siguen disponibles en memoria si el WebView bloquea localStorage.
+  }
+}
+
+function persistBrowserCollectionState() {
+  if (!browserStateProjectId) return;
+  try {
+    localStorage.setItem(`${BROWSER_FAVORITES_STORAGE_KEY}:${browserStateProjectId}`, JSON.stringify([...browserFavorites]));
+    localStorage.setItem(`${BROWSER_HISTORY_STORAGE_KEY}:${browserStateProjectId}`, JSON.stringify(browserHistory));
+  } catch {
+    // No impedir la navegación si el almacenamiento local no está disponible.
+  }
+}
+
+function browserCollectionMatches(kind, id) {
+  const key = browserItemKey(kind, id);
+  return browserSelectedCollection === "all"
+    || browserSelectedCollection === "favorites" && browserFavorites.has(key)
+    || browserSelectedCollection === "recent" && browserHistory.includes(key);
+}
+
+function rememberBrowserItem(kind, id) {
+  const key = browserItemKey(kind, id);
+  browserHistory = [key, ...browserHistory.filter((item) => item !== key)].slice(0, 12);
+  persistBrowserCollectionState();
+}
+
+function createBrowserFavoriteButton(kind, id, label) {
+  const button = document.createElement("button");
+  const favorite = browserFavorites.has(browserItemKey(kind, id));
+  button.type = "button";
+  button.className = `browser-favorite${favorite ? " is-favorite" : ""}`;
+  button.textContent = favorite ? "★" : "☆";
+  button.title = favorite ? `Quitar ${label} de Favoritos` : `Añadir ${label} a Favoritos`;
+  button.setAttribute("aria-label", button.title);
+  button.setAttribute("aria-pressed", String(favorite));
+  button.addEventListener("click", (event) => {
+    event.stopPropagation();
+    const key = browserItemKey(kind, id);
+    if (browserFavorites.has(key)) {
+      browserFavorites.delete(key);
+      setNotice("Favorito quitado", label);
+    } else {
+      browserFavorites.add(key);
+      setNotice("Favorito guardado", label);
+    }
+    persistBrowserCollectionState();
+    if (lastSnapshot) renderProjectMedia(lastSnapshot);
+  });
+  return button;
+}
+
+function createBrowserCollectionButton(id, label, count) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = `browser-collection${browserSelectedCollection === id ? " is-selected" : ""}`;
+  button.textContent = `${label} ${count > 0 ? `· ${count}` : ""}`.trim();
+  button.setAttribute("aria-pressed", String(browserSelectedCollection === id));
+  button.setAttribute("aria-label", `${label}, ${count} elementos`);
+  button.addEventListener("click", () => {
+    browserSelectedCollection = id;
+    if (lastSnapshot) renderProjectMedia(lastSnapshot);
+  });
+  return button;
+}
+
+function appendBrowserContentRow(list, button, favorite) {
+  const row = document.createElement("div");
+  row.className = "browser-content-item-row";
+  row.append(button, favorite);
+  list.append(row);
+}
+
+function appendBrowserEmpty(list, message) {
+  const empty = document.createElement("span");
+  empty.className = "browser-media-empty";
+  empty.textContent = message;
+  list.append(empty);
+}
 
 function renderProjectMedia(snapshot) {
+  loadBrowserCollectionState(snapshot.projectId);
   elements.browserMediaList.replaceChildren();
   elements.browserMidiList.replaceChildren();
   elements.browserInstrumentList.replaceChildren();
   const contentQuery = elements.browserContentSearch.value.trim().toLocaleLowerCase();
   const midiTracks = snapshot.tracks.filter((track) => track.kind === "midi" && track.role !== "master");
-  elements.browserMidiContent.hidden = snapshot.midiClips.length === 0;
   const midiMatches = snapshot.midiClips.filter((clip) => {
     const track = midiTracks.find((item) => item.id === clip.trackId);
-    return `${clip.name} ${track?.name ?? ""}`.toLocaleLowerCase().includes(contentQuery);
+    return browserCollectionMatches("midi", clip.id)
+      && `${clip.name} ${track?.name ?? ""}`.toLocaleLowerCase().includes(contentQuery);
   });
   for (const clip of midiMatches) {
     const track = midiTracks.find((item) => item.id === clip.trackId);
@@ -2638,19 +2790,21 @@ function renderProjectMedia(snapshot) {
     button.textContent = `${clip.name} · ${track?.name ?? "Pista desconocida"}`;
     button.title = `${clip.name} · ${clip.noteCount} notas; seleccionar y enfocar en Arreglo`;
     button.addEventListener("click", () => {
+      rememberBrowserItem("midi", clip.id);
       focusClipInArrangement(clip, snapshot);
     });
-    elements.browserMidiList.append(button);
+    appendBrowserContentRow(
+      elements.browserMidiList,
+      button,
+      createBrowserFavoriteButton("midi", clip.id, clip.name),
+    );
   }
   if (!midiMatches.length) {
-    const empty = document.createElement("span");
-    empty.className = "browser-media-empty";
-    empty.textContent = snapshot.midiClips.length ? "No hay clips MIDI que coincidan." : "Sin clips MIDI.";
-    elements.browserMidiList.append(empty);
+    appendBrowserEmpty(elements.browserMidiList, snapshot.midiClips.length ? "No hay clips MIDI en esta colección o búsqueda." : "Sin clips MIDI.");
   }
   const instrumentTracks = midiTracks.filter((track) => track.instrument);
-  elements.browserInstrumentContent.hidden = instrumentTracks.length === 0;
-  const instrumentMatches = instrumentTracks.filter((item) => `${item.name} ${item.instrument?.plugin?.path ?? item.instrument?.backend ?? ""}`.toLocaleLowerCase().includes(contentQuery));
+  const instrumentMatches = instrumentTracks.filter((item) => browserCollectionMatches("instrument", item.id)
+    && `${item.name} ${item.instrument?.plugin?.path ?? item.instrument?.backend ?? ""}`.toLocaleLowerCase().includes(contentQuery));
   for (const track of instrumentMatches) {
     const button = document.createElement("button");
     button.type = "button";
@@ -2659,20 +2813,17 @@ function renderProjectMedia(snapshot) {
     button.textContent = `${track.name} · ${instrument.backend === "vst3" ? vst3PluginLabel(instrument.plugin?.path) : instrumentBackendLabel(instrument.backend)}`;
     button.title = "Abrir el instrumento asignado a esta pista";
     button.addEventListener("click", () => {
+      rememberBrowserItem("instrument", track.id);
       openTrackDeviceDetail(track, snapshot, { arrangement: true });
       document.querySelector(`.track-row[data-track-id="${CSS.escape(track.id)}"]`)?.scrollIntoView({ block: "nearest" });
     });
-    elements.browserInstrumentList.append(button);
-  }
-  if (!instrumentMatches.length && instrumentTracks.length) {
-    const empty = document.createElement("span");
-    empty.className = "browser-media-empty";
-    empty.textContent = "No hay instrumentos que coincidan con la búsqueda.";
-    elements.browserInstrumentList.append(empty);
+    appendBrowserContentRow(
+      elements.browserInstrumentList,
+      button,
+      createBrowserFavoriteButton("instrument", track.id, track.name),
+    );
   }
   const clips = snapshot.audioClips ?? [];
-  elements.browserAudioContent.hidden = clips.length === 0;
-  elements.browserMediaTools.hidden = clips.length === 0;
   const query = contentQuery;
   const channelFilter = elements.browserMediaChannels.value;
   const matching = clips.filter((clip) => {
@@ -2680,8 +2831,27 @@ function renderProjectMedia(snapshot) {
     const searchable = `${clip.name} ${clip.sourceName ?? ""} ${trackName} ${clip.sampleRateHz} ${clip.channels}`.toLocaleLowerCase();
     const channelMatch = channelFilter === "all"
       || (channelFilter === "multi" ? clip.channels > 2 : clip.channels === Number(channelFilter));
-    return channelMatch && (!query || searchable.includes(query));
+    return browserCollectionMatches("audio", clip.id) && channelMatch && (!query || searchable.includes(query));
   });
+  const totalItems = snapshot.midiClips.length + instrumentTracks.length + clips.length;
+  const favoriteCount = [
+    ...snapshot.midiClips.map((clip) => browserItemKey("midi", clip.id)),
+    ...instrumentTracks.map((track) => browserItemKey("instrument", track.id)),
+    ...clips.map((clip) => browserItemKey("audio", clip.id)),
+  ].filter((key) => browserFavorites.has(key)).length;
+  const recentCount = browserHistory.filter((key) => {
+    const separator = key.indexOf(":");
+    const kind = separator >= 0 ? key.slice(0, separator) : key;
+    const id = separator >= 0 ? key.slice(separator + 1) : "";
+    return kind === "midi" && snapshot.midiClips.some((clip) => clip.id === id)
+      || kind === "instrument" && instrumentTracks.some((track) => track.id === id)
+      || kind === "audio" && clips.some((clip) => clip.id === id);
+  }).length;
+  elements.browserCollectionList.replaceChildren(
+    createBrowserCollectionButton("all", "Todo", totalItems),
+    createBrowserCollectionButton("favorites", "Favoritos", favoriteCount),
+    createBrowserCollectionButton("recent", "Recientes", recentCount),
+  );
   const availableCategories = [
     { id: "midi", label: "Clips MIDI", count: midiMatches.length, total: snapshot.midiClips.length },
     { id: "instruments", label: "Instrumentos", count: instrumentMatches.length, total: instrumentTracks.length },
@@ -2707,7 +2877,7 @@ function renderProjectMedia(snapshot) {
     button.setAttribute("aria-label", `${category.label}, ${category.count} elementos`);
     button.addEventListener("click", () => {
       browserSelectedCategory = category.id;
-      renderProjectMedia(lastSnapshot);
+      if (lastSnapshot) renderProjectMedia(lastSnapshot);
     });
     elements.browserCategoryList.append(button);
   }
@@ -2715,13 +2885,11 @@ function renderProjectMedia(snapshot) {
   elements.browserMidiContent.hidden = snapshot.midiClips.length === 0 || !["all", "midi"].includes(browserSelectedCategory);
   elements.browserInstrumentContent.hidden = instrumentTracks.length === 0 || !["all", "instruments"].includes(browserSelectedCategory);
   elements.browserAudioContent.hidden = clips.length === 0 || !["all", "audio"].includes(browserSelectedCategory);
-  elements.browserLibraryEmpty.hidden = availableCategories.length > 0;
+  elements.browserLibraryEmpty.hidden = totalItems > 0;
+  elements.browserMediaTools.hidden = clips.length === 0;
   elements.browserMediaChannels.disabled = clips.length === 0;
   if (!matching.length) {
-    const empty = document.createElement("span");
-    empty.className = "browser-media-empty";
-    empty.textContent = clips.length ? "No hay audio que coincida con la búsqueda." : "Sin audio importado.";
-    elements.browserMediaList.append(empty);
+    appendBrowserEmpty(elements.browserMediaList, clips.length ? "No hay audio en esta colección o búsqueda." : "Sin audio importado.");
     return;
   }
   for (const clip of matching) {
@@ -2748,6 +2916,7 @@ function renderProjectMedia(snapshot) {
       previewAudio(clip.sourceId, preview);
     });
     const select = () => {
+      rememberBrowserItem("audio", clip.id);
       selectedClipId = clip.id;
       selectedDetailTab = "clip";
       selectSurface("arrangement");
@@ -2762,10 +2931,11 @@ function renderProjectMedia(snapshot) {
     };
     selectButton.addEventListener("click", select);
     selectButton.append(name, details);
-    item.append(selectButton, preview);
+    item.append(selectButton, preview, createBrowserFavoriteButton("audio", clip.id, clip.name));
     elements.browserMediaList.append(item);
   }
 }
+
 
 function bindClipSelection(block, clipId, snapshot) {
   const select = () => {

@@ -679,3 +679,16 @@ abiertas por falta de QA y aceptación visual.
   no se puede afirmar QA Tauri desde este servidor sin GUI.
 - La autenticación SSH quedó resuelta con las claves de `~/keys/ssh_bkp/`.
   `main` está publicado y alineado con `origin/main` en `3efd0d3`.
+
+## Colecciones del navegador y referencia de atajos — 2026-09-30
+
+- El navegador de proyecto añade las colecciones **Todo**, **Favoritos** y
+  **Recientes** para clips MIDI, instrumentos asignados y regiones de audio.
+  Favoritos e historial se conservan por `projectId` en `localStorage`; la
+  selección mantiene el foco contextual en Arreglo y no modifica el proyecto.
+- El menú **Ayuda** expone una referencia visible de atajos. `Espacio`
+  reproduce/pausa fuera de campos editables; también se documentan Tab,
+  Mayús+Tab y Ctrl+Alt+B junto con las acciones registradas en `UI_ACTIONS`.
+- Verificación local: sintaxis de los tres scripts frontend y `git diff
+  --check` pasan. La comprobación visual Tauri sigue pendiente; el preview
+  remoto/local no sustituye esa aceptación.
