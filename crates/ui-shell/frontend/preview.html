@@ -161,12 +161,21 @@
           <button id="redo" class="history-button" title="Rehacer (Ctrl+Y / Ctrl+Mayús+Z)" aria-label="Rehacer" disabled>↷</button>
           <span id="revision" class="revision" hidden>REV —</span>
 
-          <nav class="view-tabs transport-view-tabs" role="tablist" aria-label="Vistas de composición">
-            <button id="show-session" class="view-tab" title="Vista Sesión (Tab)" role="tab" aria-selected="false">
+          <nav class="view-tabs transport-view-tabs" role="tablist" aria-label="Fases del flujo creativo">
+            <button id="show-session" class="view-tab" title="1. Sesión / Jam (Tab)" role="tab" aria-selected="false">
               <span class="tab-icon">☷</span>Sesión
             </button>
-            <button id="show-arrangement" class="view-tab is-selected" title="Vista Arreglo (Tab)" role="tab" aria-selected="true">
+            <button id="show-arrangement" class="view-tab is-selected" title="2. Arreglo / Estructura (Tab)" role="tab" aria-selected="true">
               <span class="tab-icon">☰</span>Arreglo
+            </button>
+            <button id="show-mixer-phase" class="view-tab" title="3. Mezclador / Faders (Ctrl+3)" role="tab" aria-selected="false">
+              <span class="tab-icon">🎚</span>Mezcla
+            </button>
+            <button id="show-clip-phase" class="view-tab" title="4. Piano Roll / Notas (Shift+Tab)" role="tab" aria-selected="false">
+              <span class="tab-icon">♩</span>Piano Roll
+            </button>
+            <button id="show-device-phase" class="view-tab" title="5. Rack Dispositivos / Sonido (Shift+Tab)" role="tab" aria-selected="false">
+              <span class="tab-icon">🎛</span>Dispositivos
             </button>
           </nav>
           <button id="return-to-arrangement" class="button button-accent" type="button" hidden disabled>↶ Arreglo</button>

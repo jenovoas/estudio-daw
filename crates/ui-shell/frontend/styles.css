@@ -717,3 +717,169 @@ button:disabled { opacity: .4; cursor: not-allowed !important; }
 
 /* Ableton Device Slot Header */
 .device-chain-slot { border-top: 3px solid var(--live-green) !important; background: #242424 !important; }
+
+/* Ableton Live 12 Instrument & Effect Rack */
+.live-device-rack {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+  min-width: max-content;
+  padding: 8px 10px;
+}
+.live-device-box {
+  width: 380px;
+  background: #252525;
+  border: 1px solid #333333;
+  border-top: 3px solid var(--device-accent, #00e676);
+  border-radius: 3px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+}
+.live-fx-box {
+  width: 290px;
+  border-top-color: #00e5ff;
+}
+.live-device-header {
+  height: 26px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 8px;
+  background: #2c2c2c;
+  border-bottom: 1px solid #1a1a1a;
+}
+.live-device-power {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 8px;
+  background: #181818;
+  color: #555;
+  border: 1px solid #333;
+  cursor: pointer;
+}
+.live-device-power.is-active {
+  color: #00e676;
+  text-shadow: 0 0 6px #00e676;
+}
+.live-device-header strong {
+  font-size: 11px;
+  font-weight: 700;
+  color: #f0f0f0;
+  flex: 1;
+}
+.live-device-badge {
+  font-size: 9px;
+  font-weight: 800;
+  padding: 1px 4px;
+  background: #1a1a1a;
+  border: 1px solid #383838;
+  border-radius: 2px;
+  color: #999;
+}
+.live-device-body {
+  flex: 1;
+  display: flex;
+  align-items: stretch;
+  padding: 8px;
+  gap: 8px;
+}
+.live-device-section {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 0 6px;
+  border-right: 1px solid #202020;
+}
+.live-device-section:last-child {
+  border-right: none;
+}
+.live-sec-title {
+  font-size: 8px;
+  font-weight: 800;
+  letter-spacing: 0.8px;
+  color: #666;
+  text-transform: uppercase;
+}
+.live-knobs-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.live-macro-knob {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+.live-dial {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: #161616;
+  border: 2px solid #3e3e3e;
+  position: relative;
+  cursor: ns-resize;
+  transition: border-color 0.1s;
+}
+.live-dial:hover {
+  border-color: #ffd600;
+}
+.live-dial-notch {
+  width: 2px;
+  height: 7px;
+  background: #fff;
+  border-radius: 1px;
+  position: absolute;
+  top: 2px;
+  left: 11px;
+}
+.live-dial-val {
+  font-size: 9px;
+  font-family: ui-monospace, monospace;
+  color: #ccc;
+  font-variant-numeric: tabular-nums;
+}
+.live-dial-lbl {
+  font-size: 9px;
+  font-weight: 700;
+  color: #777;
+}
+.live-add-device-slot {
+  width: 140px;
+  background: #181818;
+  border: 1px dashed #303030;
+  border-radius: 3px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px;
+}
+.live-add-device-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  color: #777;
+  font-size: 10px;
+  font-weight: 700;
+  background: transparent;
+  cursor: pointer;
+}
+.live-add-device-btn:hover {
+  color: #fff;
+}
+.live-add-plus {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 1px solid #444;
+  display: grid;
+  place-items: center;
+  font-size: 14px;
+  background: #202020;
+}

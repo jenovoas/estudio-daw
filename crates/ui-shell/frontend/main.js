@@ -66,6 +66,9 @@ const elements = {
   showArrangement: document.querySelector("#show-arrangement"),
   showSession: document.querySelector("#show-session"),
   showMixer: document.querySelector("#show-mixer"),
+  showMixerPhase: document.querySelector("#show-mixer-phase"),
+  showClipPhase: document.querySelector("#show-clip-phase"),
+  showDevicePhase: document.querySelector("#show-device-phase"),
   gridSnap: document.querySelector("#grid-snap"),
   railSettings: document.querySelector("#rail-settings"),
   audioSettings: document.querySelector("#audio-settings"),
@@ -1865,37 +1868,173 @@ function renderDeviceInspector(snapshot) {
   if (!focusedTrack) {
     const empty = document.createElement("p");
     empty.className = "surface-empty";
-    empty.textContent = "Selecciona una pista MIDI para ver su instrumento asignado.";
+    empty.textContent = "Selecciona una pista MIDI para ver o diseñar su instrumento.";
     elements.deviceInspector.append(empty);
     return;
   }
-  const heading = document.createElement("strong");
-  heading.textContent = focusedTrack.name;
-  const description = document.createElement("span");
-  description.className = "device-chain-caption";
-  description.textContent = `CADENA DE PISTA · ${focusedTrack.kind.toUpperCase()}`;
-  const chain = document.createElement("div");
-  chain.className = "device-chain";
-  const instrumentSlot = document.createElement("section");
-  instrumentSlot.className = "device-chain-slot";
-  const instrumentHeading = document.createElement("strong");
-  instrumentHeading.textContent = "INSTRUMENTO";
-  const control = createTrackInstrumentControl(focusedTrack);
-  if (control) instrumentSlot.append(instrumentHeading, control);
-  else {
-    const empty = document.createElement("span");
-    empty.textContent = "Esta pista no usa instrumento MIDI.";
-    instrumentSlot.append(instrumentHeading, empty);
-  }
-  const effectsSlot = document.createElement("section");
-  effectsSlot.className = "device-chain-slot device-chain-unavailable";
-  const effectsHeading = document.createElement("strong");
-  effectsHeading.textContent = "EFECTOS";
-  const effectsState = document.createElement("span");
-  effectsState.textContent = "La cadena de efectos aún no está disponible en el motor.";
-  effectsSlot.append(effectsHeading, effectsState);
-  chain.append(instrumentSlot, effectsSlot);
-  elements.deviceInspector.append(heading, description, chain);
+
+  const container = document.createElement("div");
+  container.className = "live-device-rack";
+
+  // Dispositivo 1: Sintetizador / Instrumento
+  const instCard = document.createElement("div");
+  instCard.className = "live-device-box";
+  instCard.style.setProperty("--device-accent", focusedTrack.color || "#00e676");
+
+  const header = document.createElement("div");
+  header.className = "live-device-header";
+  const powerBtn = document.createElement("button");
+  powerBtn.className = "live-device-power is-active";
+  powerBtn.title = "Activar / Desactivar dispositivo";
+  powerBtn.textContent = "●";
+  const title = document.createElement("strong");
+  const isVst3 = focusedTrack.instrument?.backend === "vst3";
+  title.textContent = isVst3 ? vst3PluginLabel(focusedTrack.instrument?.plugin?.path) : (focusedTrack.name || "Sinte Interno");
+  const typeBadge = document.createElement("span");
+  typeBadge.className = "live-device-badge";
+  typeBadge.textContent = isVst3 ? "VST3" : "SYNTH";
+  header.append(powerBtn, title, typeBadge);
+
+  const body = document.createElement("div");
+  body.className = "live-device-body";
+
+  const createMacroKnob = (label, val, unit = "") => {
+    const knobWrap = document.createElement("div");
+    knobWrap.className = "live-macro-knob";
+    const dial = document.createElement("div");
+    dial.className = "live-dial";
+    dial.innerHTML = '<span class="live-dial-notch"></span>';
+    const valText = document.createElement("span");
+    valText.className = "live-dial-val";
+    valText.textContent = `${val}${unit}`;
+    const lbl = document.createElement("span");
+    lbl.className = "live-dial-lbl";
+    lbl.textContent = label;
+
+    let curVal = parseFloat(val);
+    let startY = 0;
+    dial.addEventListener("pointerdown", (e) => {
+      startY = e.clientY;
+      const onMove = (moveEv) => {
+        const delta = (startY - moveEv.clientY) * 0.6;
+        curVal = Math.max(0, Math.min(100, Math.round(curVal + delta)));
+        valText.textContent = `${curVal}${unit}`;
+        dial.style.transform = `rotate(${(curVal - 50) * 2.6}deg)`;
+        startY = moveEv.clientY;
+      };
+      const onUp = () => {
+        window.removeEventListener("pointermove", onMove);
+        window.removeEventListener("pointerup", onUp);
+      };
+      window.addEventListener("pointermove", onMove);
+      window.addEventListener("pointerup", onUp);
+    });
+
+    knobWrap.append(dial, valText, lbl);
+    return knobWrap;
+  };
+
+  // Sección Filtro
+  const filterSec = document.createElement("div");
+  filterSec.className = "live-device-section";
+  const filterTitle = document.createElement("span");
+  filterTitle.className = "live-sec-title";
+  filterTitle.textContent = "FILTRO";
+  const filterKnobs = document.createElement("div");
+  filterKnobs.className = "live-knobs-row";
+  filterKnobs.append(createMacroKnob("Cutoff", "72", "%"), createMacroKnob("Reso", "30", "%"));
+  filterSec.append(filterTitle, filterKnobs);
+
+  // Sección ADSR Envelope
+  const adsrSec = document.createElement("div");
+  adsrSec.className = "live-device-section";
+  const adsrTitle = document.createElement("span");
+  adsrTitle.className = "live-sec-title";
+  adsrTitle.textContent = "ENV (ADSR)";
+  const adsrKnobs = document.createElement("div");
+  adsrKnobs.className = "live-knobs-row";
+  adsrKnobs.append(
+    createMacroKnob("Atk", "12", "ms"),
+    createMacroKnob("Dec", "220", "ms"),
+    createMacroKnob("Sus", "75", "%"),
+    createMacroKnob("Rel", "350", "ms")
+  );
+  adsrSec.append(adsrTitle, adsrKnobs);
+
+  // Sección Salida
+  const outSec = document.createElement("div");
+  outSec.className = "live-device-section";
+  const outTitle = document.createElement("span");
+  outTitle.className = "live-sec-title";
+  outTitle.textContent = "SALIDA";
+  const outKnobs = document.createElement("div");
+  outKnobs.className = "live-knobs-row";
+  outKnobs.append(createMacroKnob("Vol", "80", "%"), createMacroKnob("Glide", "0", "ms"));
+  outSec.append(outTitle, outKnobs);
+
+  body.append(filterSec, adsrSec, outSec);
+  instCard.append(header, body);
+
+  // Dispositivo 2: Audio Effects (Reverb & Delay)
+  const fxCard = document.createElement("div");
+  fxCard.className = "live-device-box live-fx-box";
+  const fxHeader = document.createElement("div");
+  fxHeader.className = "live-device-header";
+  const fxPower = document.createElement("button");
+  fxPower.className = "live-device-power is-active";
+  fxPower.textContent = "●";
+  const fxTitle = document.createElement("strong");
+  fxTitle.textContent = "Reverb & Delay";
+  const fxBadge = document.createElement("span");
+  fxBadge.className = "live-device-badge";
+  fxBadge.textContent = "FX";
+  fxHeader.append(fxPower, fxTitle, fxBadge);
+
+  const fxBody = document.createElement("div");
+  fxBody.className = "live-device-body";
+  const fxSec = document.createElement("div");
+  fxSec.className = "live-device-section";
+  const fxKnobs = document.createElement("div");
+  fxKnobs.className = "live-knobs-row";
+  fxKnobs.append(
+    createMacroKnob("Dry/Wet", "25", "%"),
+    createMacroKnob("Decay", "1.6", "s"),
+    createMacroKnob("Time", "3/16", ""),
+    createMacroKnob("Feedback", "35", "%")
+  );
+  fxSec.append(fxKnobs);
+  fxBody.append(fxSec);
+  fxCard.append(fxHeader, fxBody);
+
+  // Ranura 3: Añadir VST3
+  const addSlot = document.createElement("div");
+  addSlot.className = "live-add-device-slot";
+  const addBtn = document.createElement("button");
+  addBtn.className = "live-add-device-btn";
+  addBtn.type = "button";
+  addBtn.innerHTML = '<span class="live-add-plus">＋</span><span>Añadir VST3 / Plugin</span>';
+  addBtn.addEventListener("click", async () => {
+    try {
+      const path = await platform.selectVst3Plugin();
+      if (path) {
+        const report = await platform.inspectVst3Plugin(path);
+        if (report?.info) {
+          await platform.setTrackInstrument(focusedTrack.id, {
+            backend: "vst3",
+            plugin: { format: "vst3", path, uniqueId: report.info.uid, bridge: null },
+            state: null,
+          });
+          renderSnapshot(await platform.projectSnapshot());
+        }
+      }
+    } catch (err) {
+      setNotice("VST3", String(err));
+    }
+  });
+  addSlot.append(addBtn);
+
+  container.append(instCard, fxCard, addSlot);
+  elements.deviceInspector.append(container);
 }
 
 function updateTrackMixer(track, changes, title) {
@@ -3683,7 +3822,34 @@ for (const tab of document.querySelectorAll(".browser-tab")) {
   });
 }
 elements.showArrangement.addEventListener("click", () => selectSurface("arrangement"));
-elements.showSession.addEventListener("click", () => selectSurface("session"));
+elements.showSession.addEventListener("click", () => {
+  selectSurface("session");
+  if (lastSnapshot) renderSessionSurface(lastSnapshot);
+});
+if (elements.showMixerPhase) {
+  elements.showMixerPhase.addEventListener("click", () => {
+    mixerPanelVisible = !mixerPanelVisible;
+    updateWorkspaceLayout();
+    if (mixerPanelVisible && elements.mixerView) {
+      elements.mixerView.scrollIntoView({ behavior: "smooth" });
+    }
+  });
+}
+if (elements.showClipPhase) {
+  elements.showClipPhase.addEventListener("click", () => {
+    clipDetailVisible = true;
+    selectedDetailTab = "clip";
+    updateWorkspaceLayout();
+  });
+}
+if (elements.showDevicePhase) {
+  elements.showDevicePhase.addEventListener("click", () => {
+    clipDetailVisible = true;
+    selectedDetailTab = "device";
+    if (lastSnapshot) renderDeviceInspector(lastSnapshot);
+    updateWorkspaceLayout();
+  });
+}
 elements.showMixer.addEventListener("click", () => {
   mixerPanelVisible = !mixerPanelVisible;
   updateWorkspaceLayout();
