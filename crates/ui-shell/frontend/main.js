@@ -1594,11 +1594,18 @@ function renderSessionSurface(snapshot) {
       launch.className = `session-launch${slot?.clipId ? " has-clip" : ""}${playing?.state === "queued" ? " is-queued" : ""}${playing?.state === "playing" ? " is-playing" : ""}`;
       const engineReady = ["playing", "paused"].includes(projectTransportState);
       if (!slot?.clipId) {
-        launch.textContent = "＋ Añadir clip";
+        const canCreateMidi = track.kind === "midi";
+        launch.textContent = canCreateMidi ? "＋ Crear clip" : "＋ Añadir clip";
         launch.classList.add("session-slot-empty");
         launch.disabled = select.disabled;
-        launch.title = "Asignar un clip existente a esta casilla";
+        launch.title = canCreateMidi
+          ? `Crear una idea MIDI vacía para ${scene.name} y abrirla en el detalle`
+          : "Asignar un clip existente a esta casilla";
         launch.addEventListener("click", () => {
+          if (canCreateMidi) {
+            void createSessionMidiClip(scene, track, snapshot, launch);
+            return;
+          }
           slotEditor.open = true;
           select.focus();
         });
@@ -3315,6 +3322,39 @@ async function addTrack(kind, button) {
   } catch (error) {
     setNotice("No se pudo crear la pista", String(error));
   } });
+}
+
+async function createSessionMidiClip(scene, track, snapshot, button) {
+  const existingClipIds = new Set(snapshot.midiClips.map((clip) => clip.id));
+  const startTick = Math.max(0, Math.round(editCursorTick * 2));
+  const durationTicks = Math.max(1, Math.round((snapshot.beatsPerBar || 4) * 960));
+  await whileBusy([button], async () => {
+    try {
+      const createdSnapshot = await platform.createMidiClip({
+        trackId: track.id,
+        startTick,
+        durationTicks,
+        name: `Nueva idea · ${scene.name}`,
+      });
+      const created = createdSnapshot?.midiClips.find((clip) => !existingClipIds.has(clip.id));
+      if (!created) throw new Error("el adaptador no devolvió el clip MIDI creado");
+      const assignedSnapshot = await platform.setClipSlot(scene.id, track.id, "midi", created.id);
+      if (!assignedSnapshot) throw new Error("la casilla no pudo asignarse al clip creado");
+      selectedClipId = created.id;
+      selectedDetailTab = "clip";
+      clipDetailVisible = true;
+      mixerPanelVisible = false;
+      renderSnapshot(assignedSnapshot);
+      renderClipInspector(assignedSnapshot);
+      updateWorkspaceLayout();
+      setNotice(
+        "Clip MIDI creado en Session",
+        "La casilla quedó asignada; abre el nombre para continuar en Arreglo o añade notas en el detalle.",
+      );
+    } catch (error) {
+      setNotice("No se pudo crear el clip MIDI en Session", String(error));
+    }
+  });
 }
 
 async function createMidiClipAtCursor(button) {

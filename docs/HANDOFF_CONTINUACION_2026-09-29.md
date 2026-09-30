@@ -663,3 +663,19 @@ abiertas por falta de QA y aceptación visual.
   `glib-2.0/gobject-2.0/gio-2.0 >= 2.70` y `gdk-3.0` en este servidor.
 - OpenSpec 3.1, 3.3, 3.5 y 3.6 siguen abiertas hasta completar revisión Tauri
   visual e interacción en una estación con GUI.
+
+## Creación directa desde casilla Session — 2026-09-30
+
+- Una casilla MIDI vacía ofrece `＋ Crear clip`; una casilla de audio conserva
+  `＋ Añadir clip` para asignar regiones existentes.
+- El gesto crea una región MIDI vacía de un compás en el cursor mediante
+  `CreateMidiClip`, la asigna a la escena mediante `SetClipSlot`, selecciona el
+  clip y abre el detalle contextual. La reproducción no se inicia; el músico
+  decide cuándo lanzar la casilla y qué notas añadir.
+- La operación reutiliza las dos APIs existentes y mantiene la identidad común
+  entre Session y Arreglo. El preview sintético implementa `createMidiClip`, por
+  lo que el gesto queda disponible para revisión visual remota.
+- Verificación pendiente de este corte: sintaxis frontend y `git diff --check`;
+  no se puede afirmar QA Tauri desde este servidor sin GUI.
+- La autenticación SSH quedó resuelta con las claves de `~/keys/ssh_bkp/`.
+  `main` está publicado y alineado con `origin/main` en `3efd0d3`.
