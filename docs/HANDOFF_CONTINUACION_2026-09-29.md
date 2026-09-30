@@ -577,3 +577,29 @@ abiertas por falta de QA y aceptación visual.
 - Pendiente: comprobar la interacción en la aplicación Tauri y registrar
   aceptación visual; este servidor sólo permite `node --check` y revisión
   estática.
+
+## Creación MIDI desde el cursor — 2026-09-30
+
+- El Arreglo incorpora `＋ Clip MIDI` cuando existe una pista MIDI. El botón y
+  el menú Crear comparten la acción `Crear clip MIDI en el cursor`.
+- La acción crea mediante `CreateMidiClip` una región vacía de un compás en el
+  cursor, con PPQ 960, identidad estable y duración derivada del tempo. La
+  operación pasa por `ProjectApplication`, es reversible y actualiza el plan
+  si el motor ya está conectado.
+- Tras crearla, la interfaz selecciona la región, abre el piano roll y deja al
+  músico añadir las notas manualmente. No se generan notas, arreglos ni
+  decisiones musicales por cuenta de una IA; la futura asistencia debe
+  proponer cambios revisables, no sustituir esta autoría.
+- El preview remoto implementa el mismo gesto sobre su snapshot sintético para
+  revisar la composición de la UI; no representa Tauri, audio ni persistencia
+  real.
+- Commit local: `03e9fb8` (`feat: create MIDI clips from arrangement cursor`).
+  El push continúa bloqueado porque este servidor no tiene credenciales SSH,
+  `gh` ni token HTTPS para `github.com`.
+- Verificación: pruebas focales de `project-model` y `command-bus`, `cargo
+  check -p estudio-daw-command-bus`, `cargo fmt --all -- --check`, sintaxis de
+  los tres scripts frontend y `git diff --check` pasan. `cargo check
+  -p estudio-daw-ui-shell` sigue bloqueado por la ausencia de
+  `glib-2.0/gobject-2.0/gio-2.0 >= 2.70` y `gdk-3.0` en este servidor.
+- OpenSpec 3.1, 3.3, 3.5 y 3.6 siguen abiertas hasta completar revisión Tauri
+  visual e interacción en una estación con GUI.
