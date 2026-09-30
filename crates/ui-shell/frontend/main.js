@@ -113,6 +113,7 @@ let metronomeEnabled = false;
 let loopRange = null;
 let pendingLoopStartTick = null;
 let selectedTrackIds = new Set();
+let deviceFocusedTrackId = null;
 let trackGroupDraft = "";
 let pendingAudioPath = null;
 let editCursorTick = 0;
@@ -744,6 +745,7 @@ function instrumentBackendLabel(backend) {
 }
 
 function openTrackDeviceDetail(track, snapshot, { arrangement = false } = {}) {
+  deviceFocusedTrackId = track.id;
   selectedTrackIds = new Set([track.id]);
   selectedDetailTab = "device";
   clipDetailVisible = true;
@@ -1611,13 +1613,23 @@ function renderSessionSurface(snapshot) {
           : "Dale a Play para lanzar el clip";
         launch.addEventListener("click", () => launchSessionSlot(scene.id, track.id));
       }
-      const slotName = document.createElement("span");
-      slotName.className = "session-slot-name";
       const assignedClip = slot?.clipKind === "midi"
         ? snapshot.midiClips.find((clip) => clip.id === slot.clipId)
         : (snapshot.audioClips ?? []).find((clip) => clip.id === slot?.clipId);
+      const slotName = assignedClip ? document.createElement("button") : document.createElement("span");
+      slotName.className = "session-slot-name";
       slotName.textContent = assignedClip?.name ?? (slot?.clipId ? "Clip no disponible" : "Casilla vacía");
-      slotName.title = slotName.textContent;
+      slotName.title = assignedClip
+        ? `Abrir ${assignedClip.name} en Arreglo`
+        : slotName.textContent;
+      if (assignedClip) {
+        slotName.type = "button";
+        slotName.setAttribute("aria-label", `Abrir ${assignedClip.name} en Arreglo`);
+        slotName.addEventListener("click", (event) => {
+          event.stopPropagation();
+          focusClipInArrangement(assignedClip, snapshot);
+        });
+      }
       slotEditorBody.append(select, launchQuantization, launchMode);
       slotEditor.append(slotEditSummary, slotEditorBody);
       cell.append(launch, slotName, slotEditor);
@@ -1759,11 +1771,13 @@ function renderDeviceInspector(snapshot) {
   elements.deviceInspector.replaceChildren();
   const selectedClip = snapshot.midiClips.find((clip) => clip.id === selectedClipId)
     ?? (snapshot.audioClips ?? []).find((clip) => clip.id === selectedClipId);
-  const focusedTrack = [...selectedTrackIds]
-    .map((id) => snapshot.tracks.find((track) => track.id === id))
-    .find((track) => track && track.kind === "midi")
+  const focusedTrack = snapshot.tracks.find((track) => track.id === deviceFocusedTrackId && track.kind === "midi")
     ?? snapshot.tracks.find((track) => track.id === selectedClip?.trackId)
+    ?? [...selectedTrackIds]
+      .map((id) => snapshot.tracks.find((track) => track.id === id))
+      .find((track) => track && track.kind === "midi")
     ?? snapshot.tracks.find((track) => track.kind === "midi" && track.role !== "master");
+  deviceFocusedTrackId = focusedTrack?.id ?? null;
   if (!focusedTrack) {
     const empty = document.createElement("p");
     empty.className = "surface-empty";
@@ -1826,6 +1840,7 @@ function renderSnapshot(snapshot) {
     selectedTrackIds = new Set();
     selectedClipId = null;
     selectedMidiNote = null;
+    deviceFocusedTrackId = null;
     arrangementTrackHeights.clear();
     pianoRollScrollPositions.clear();
     pianoRollInitializedClips.clear();
@@ -2658,7 +2673,11 @@ function renderProjectMedia(snapshot) {
     { id: "instruments", label: "Instrumentos", count: instrumentMatches.length, total: instrumentTracks.length },
     { id: "audio", label: "Audio", count: matching.length, total: clips.length },
   ].filter((category) => category.total > 0);
-  if (browserSelectedCategory !== "all" && !availableCategories.some((category) => category.id === browserSelectedCategory)) {
+  if (availableCategories.length === 0) {
+    browserSelectedCategory = "all";
+  } else if (availableCategories.length === 1) {
+    browserSelectedCategory = availableCategories[0].id;
+  } else if (browserSelectedCategory !== "all" && !availableCategories.some((category) => category.id === browserSelectedCategory)) {
     browserSelectedCategory = "all";
   }
   const visibleCategories = availableCategories.length > 1
@@ -3377,6 +3396,9 @@ elements.detailClipTab.addEventListener("click", () => {
 });
 elements.detailDeviceTab.addEventListener("click", () => {
   selectedDetailTab = "device";
+  const selectedClip = lastSnapshot?.midiClips.find((clip) => clip.id === selectedClipId);
+  const selectedClipTrack = lastSnapshot?.tracks.find((track) => track.id === selectedClip?.trackId && track.kind === "midi");
+  if (selectedClipTrack) deviceFocusedTrackId = selectedClipTrack.id;
   if (lastSnapshot) renderDeviceInspector(lastSnapshot);
   updateWorkspaceLayout();
 });

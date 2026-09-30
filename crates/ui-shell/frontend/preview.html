@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#1c1f22" />
+    <title>Estudio DAW · Vista previa</title>
+    <link rel="stylesheet" href="./styles.css" />
+    <script src="./platform-preview.js" defer></script>
+    <script src="./main.js" defer></script>
+  </head>
+  <body>
+    <header class="appbar">
+      <a class="brand" href="#" aria-label="Estudio DAW"><span class="brand-mark">E</span><span>estudio<span class="brand-light">daw</span></span></a>
+      <span class="appbar-divider"></span>
+      <nav id="application-menu" class="application-menu" aria-label="Menú principal"></nav>
+      <div class="project-identity"><strong id="project-name">Sin proyecto</strong><span id="project-path" title="">Sin proyecto abierto</span></div>
+      <div class="ui-zoom-controls" role="group" aria-label="Tamaño de la interfaz">
+        <button id="zoom-out" title="Reducir interfaz (Ctrl+-)" aria-label="Reducir tamaño de interfaz">−</button>
+        <button id="zoom-reset" title="Restablecer interfaz (Ctrl+0)" aria-label="Restablecer tamaño de interfaz"><span id="zoom-level">100%</span></button>
+        <button id="zoom-in" title="Ampliar interfaz (Ctrl++)" aria-label="Ampliar tamaño de interfaz">＋</button>
+      </div>
+      <nav class="project-actions" aria-label="Acciones de proyecto">
+        <button id="new-project" class="icon-button" title="Crear un proyecto nuevo" aria-label="Nuevo proyecto">＋</button>
+        <button id="demo-project" class="button button-demo" title="Cargar una sesión MIDI de demostración" hidden>Demo MIDI</button>
+        <button id="open-project" class="icon-button" title="Abrir un proyecto" aria-label="Abrir proyecto">↗</button>
+        <button id="save-project-as" class="icon-button" title="Guardar proyecto como" aria-label="Guardar como" disabled>⤓</button>
+        <button id="save-project" class="icon-button icon-save" title="Guardar proyecto" aria-label="Guardar" disabled>▣</button>
+      </nav>
+    </header>
+
+    <div class="workstation">
+      <aside class="browser" aria-label="Navegador del proyecto">
+        <div class="browser-title"><span>NAVEGADOR</span><span class="browser-chevron">⌄</span></div>
+        <section class="browser-panel">
+          <label class="browser-search">Buscar contenido<input id="browser-content-search" type="search" placeholder="Nombre, pista, fuente" /></label>
+          <nav id="browser-category-list" class="browser-categories" aria-label="Categorías del proyecto"></nav>
+          <p id="browser-library-empty" class="browser-empty-hint" hidden>El proyecto aún no tiene clips ni medios. Puedes crear una pista o importar audio.</p>
+          <section id="browser-midi-content" class="browser-content-section" aria-label="Clips MIDI" hidden><div class="browser-section-label browser-section-spaced">CLIPS MIDI</div><div id="browser-midi-list" class="browser-content-list" aria-live="polite"></div></section>
+          <section id="browser-instrument-content" class="browser-content-section" aria-label="Instrumentos asignados" hidden><div class="browser-section-label browser-section-spaced">INSTRUMENTOS ASIGNADOS</div><div id="browser-instrument-list" class="browser-content-list" aria-live="polite"></div></section>
+          <section id="browser-audio-content" class="browser-content-section" aria-label="Audio del proyecto" hidden><div class="browser-section-label browser-section-spaced">AUDIO DEL PROYECTO</div><div id="browser-media-tools" class="browser-media-tools" hidden><label class="media-import-field">Canales<select id="browser-media-channels" disabled><option value="all">Todos</option><option value="1">Mono</option><option value="2">Estéreo</option><option value="multi">Más de 2</option></select></label></div><div id="browser-media-list" class="browser-media-list" aria-live="polite"></div></section>
+          <details class="browser-create">
+            <summary><span>＋</span><span>Crear pista</span></summary>
+            <div class="browser-create-actions">
+              <button id="add-midi-track" class="browser-create-action" title="Añadir pista MIDI" disabled><span class="browser-create-icon midi">♫</span><span><strong>Pista MIDI</strong><small>Instrumentos y clips de notas</small></span></button>
+              <button id="add-audio-track" class="browser-create-action" title="Añadir pista de audio vacía" disabled><span class="browser-create-icon audio">∿</span><span><strong>Pista de audio</strong><small>Importar o grabar sonido</small></span></button>
+              <button id="add-bus-track" class="browser-create-action" title="Añadir bus interno" disabled><span class="browser-create-icon bus">⇢</span><span><strong>Bus interno</strong><small>Enrutar pistas del proyecto</small></span></button>
+            </div>
+          </details>
+          <details class="browser-import">
+            <summary><span class="action-glyph">♫</span><span>Importar audio</span></summary>
+            <label class="media-import-field">Pista de destino<select id="audio-import-track" disabled><option value="">Crea una pista de audio</option></select></label>
+            <label class="media-import-field">Ubicación inicial (compás; clic en regla para ajustar)<input id="audio-import-bar" type="number" min="1" step="1" value="1" disabled /></label>
+            <div id="edit-cursor-position" class="edit-cursor-position">Cursor: compás 1 · pulso 1</div>
+            <label class="media-import-field">Procedencia<select id="audio-import-mode" disabled><option value="copy">Copiar a la carpeta del proyecto</option><option value="link">Vincular archivo original</option></select></label>
+            <label class="media-import-field">Canales de origen<select id="audio-import-channels" disabled><option value="">Selecciona un archivo</option></select></label>
+            <div id="audio-import-selected" class="audio-import-selected">No hay archivo seleccionado</div>
+            <button id="browser-import-audio" class="browser-action" disabled><span class="action-glyph">♫</span><span><strong>Elegir archivo</strong><small>Revisa y preescucha antes de importar</small></span><span class="action-arrow">›</span></button>
+            <div class="audio-import-actions"><button id="audio-import-preview" disabled>▶ Escuchar</button><button id="audio-import-commit" disabled>Importar</button></div>
+          </details>
+        </section>
+      </aside>
+
+      <main class="editor">
+        <section class="transport-bar" aria-label="Transporte">
+          <div class="transport-controls">
+            <button id="stop" class="transport-button" title="Detener" aria-label="Detener" disabled>■</button>
+            <button id="play" class="transport-button transport-play" title="Reproducir" aria-label="Reproducir" disabled>▶</button>
+            <button id="record" class="transport-button transport-record" title="Grabar en las pistas armadas" aria-label="Grabar en las pistas armadas" aria-pressed="false" disabled>●</button>
+            <button id="pause" class="transport-button" title="Pausar" aria-label="Pausar" disabled>Ⅱ</button>
+            <button id="panic" class="transport-button transport-panic" title="Apagar todas las notas MIDI" aria-label="Apagar todas las notas MIDI" disabled>!</button>
+            <button id="metronome" class="transport-button transport-metronome" title="Activar metrónomo" aria-label="Activar metrónomo" aria-pressed="false" disabled>♪</button>
+          </div>
+          <span class="transport-separator"></span>
+          <div class="transport-readout"><span class="eyebrow">TEMPO</span><strong id="transport-tempo">—</strong><span class="unit">BPM</span></div>
+          <span class="transport-separator"></span>
+          <div class="transport-state"><span class="state-led"></span><span id="transport-state">DETENIDO</span></div>
+          <span id="transport-position" class="transport-position" aria-live="off">1.1.1</span>
+          <nav class="view-tabs transport-view-tabs" role="tablist" aria-label="Vistas de composición">
+            <button id="show-arrangement" class="view-tab is-selected" title="Arreglo (Tab / Ctrl+1)" role="tab" aria-selected="true"><span class="tab-icon">▥</span>Arreglo</button>
+            <button id="show-session" class="view-tab" title="Sesión (Tab / Ctrl+2)" role="tab" aria-selected="false"><span class="tab-icon">▦</span>Sesión</button>
+          </nav>
+          <span id="loop-range-readout" class="loop-range-readout">Sin rango</span>
+          <span class="loop-range-controls" aria-label="Rango de repetición"><button id="loop-point-a" class="history-button" title="Fijar inicio del rango en el cursor">A</button><button id="loop-point-b" class="history-button" title="Fijar fin del rango en el cursor">B</button><button id="loop-range-clear" class="history-button" title="Limpiar rango">×</button></span>
+          <button id="undo" class="history-button" title="Deshacer último cambio" aria-label="Deshacer" disabled>↶</button>
+          <button id="redo" class="history-button" title="Rehacer último cambio" aria-label="Rehacer" disabled>↷</button>
+          <span id="revision" class="revision" hidden>REV —</span>
+          <button id="return-to-arrangement" class="button button-accent" type="button" hidden disabled>↶ Volver a Arreglo</button>
+        </section>
+
+        <section class="surface-toolbar" aria-label="Herramientas de la superficie">
+          <label class="grid-snap-select"><span>REJILLA</span><select id="grid-snap" aria-label="Ajuste a rejilla"><option value="0.25">1/16</option><option value="0.5">1/8</option><option value="1">1/4</option><option value="bar">Compás</option><option value="0">Libre</option></select></label>
+          <span class="surface-toolbar-spacer"></span>
+          <button id="show-mixer" class="workspace-view-toggle mixer-panel-toggle" type="button" title="Mostrar u ocultar el mezclador (Ctrl+3)" aria-pressed="false"><span class="tab-icon">▤</span>Mezcla</button>
+          <button id="toggle-browser" class="workspace-view-toggle" type="button" title="Mostrar u ocultar el navegador (Ctrl+Alt+B)" aria-label="Mostrar u ocultar navegador" aria-pressed="true">◧ Navegador</button>
+          <button id="toggle-clip-detail" class="workspace-view-toggle" type="button" title="Mostrar u ocultar el detalle del clip (Mayús+Tab)" aria-label="Mostrar u ocultar el detalle del clip" aria-pressed="true">Detalle</button>
+          <button id="rail-settings" class="workspace-view-toggle workspace-settings-toggle" type="button" title="Abrir preferencias de audio" aria-label="Abrir preferencias de audio">⚙</button>
+        </section>
+
+        <section class="arrangement" aria-label="Arreglo musical">
+          <div class="arrangement-scroll"><div class="arrangement-grid"><div class="track-column-heading"><span>PISTAS</span><span class="track-create-actions-hint">Arreglo</span></div><div id="arrangement-overview" class="arrangement-overview" aria-label="Vista general del arreglo"></div><div id="timeline-ruler" class="timeline-ruler" aria-label="Regla de compases"></div><div id="track-list" class="arrangement-track-list"><div class="empty-state">Crea un proyecto o abre una sesión MIDI.</div></div><div id="arrangement-lanes" class="arrangement-lanes"><div class="empty-state timeline-empty">Pulsa «Demo MIDI» para cargar una secuencia audible.</div></div></div></div>
+          <div id="session-view" class="alternative-surface session-surface" aria-label="Pistas de Session" hidden></div>
+          <div id="arrangement-legend" class="arrangement-legend"><span><i class="legend-swatch"></i>Clip MIDI</span><span>Selecciona un clip para abrir su piano roll</span></div>
+        </section>
+
+        <section id="mixer-view" class="alternative-surface mixer-surface" aria-label="Mezclador del proyecto" hidden></section>
+
+        <section class="lower-panel">
+          <div class="lower-panel-title"><div class="panel-grip" role="separator" aria-orientation="horizontal" tabindex="0" title="Arrastra para cambiar el tamaño del detalle" aria-label="Cambiar el tamaño del detalle">⠿</div><strong id="lower-panel-title">DETALLE DE CLIP</strong><span class="lower-panel-subtitle">Editor contextual</span><div class="detail-tabs" role="tablist" aria-label="Detalle contextual"><button id="detail-clip-tab" class="detail-tab is-selected" type="button" aria-pressed="true">Clip</button><button id="detail-device-tab" class="detail-tab" type="button" aria-pressed="false">Dispositivo</button></div></div>
+          <div id="clip-inspector" class="clip-inspector" aria-live="polite"><span>Sin clip seleccionado</span></div><div id="device-inspector" class="device-inspector" hidden></div>
+          <details id="audio-settings" class="audio-settings"><summary class="audio-summary"><span class="audio-summary-icon">◉</span><span id="audio-settings-title">Buffers y latencia</span><span id="audio-apply-state" class="revision">Cargando…</span><span class="summary-chevron">⌄</span></summary><div class="audio-settings-body"><div class="audio-profile-row"><label for="audio-profile">Perfil</label><select id="audio-profile"><option value="liveRecord">Live / Grabar</option><option value="multitrackPlayback">Reproducción multipista</option></select><label for="device-period">Periodo del dispositivo</label><div class="audio-number"><input id="device-period" type="number" min="16" max="2048" step="32" /><span>frames</span></div><label for="playback-safety">Margen PCM</label><div class="audio-number"><input id="playback-safety" type="number" min="0" max="2048" step="256" /><span>frames</span></div><button id="save-audio-settings" class="button button-accent">Aplicar al próximo inicio</button></div><div class="audio-device-row"><label for="audio-output-device">Salida de audio</label><select id="audio-output-device"><option value="pipewire:default">Automática (AudioBox si está disponible)</option></select><span>Se conecta al iniciar Play; el cambio no interrumpe un stream activo.</span></div><div class="audio-readouts"><span>Frecuencia<strong id="audio-sample-rate">—</strong></span><span>Periodo solicitado<strong id="audio-requested-period">—</strong></span><span>Periodo efectivo<strong id="audio-effective-period">No disponible</strong></span><span>Búfer extra<strong id="audio-safety-duration">—</strong></span></div><p class="audio-help">Los perfiles se aplican al iniciar el siguiente stream. PipeWire puede negociar un periodo distinto; el margen PCM sólo afecta la cola de pistas SoundFont.</p><p class="audio-help audio-warning">Play reproduce clips MIDI y regiones de audio. Record graba pistas armadas como regiones. La captura MIDI live todavía se controla desde CLI.</p></div></details>
+        </section>
+
+        <section class="status-message" role="status" aria-live="polite"><span class="status-icon">i</span><div><strong id="notice-title">Estudio DAW listo</strong><span id="notice-text">Crea un proyecto o abre Demo MIDI para ver el arreglo y probar el sonido.</span></div></section>
+      </main>
+    </div>
+
+    <footer class="statusbar"><span class="connection-dot"></span><span id="engine-status">Core listo · motor de audio aún no conectado</span><span class="statusbar-spacer"></span><span class="statusbar-label">ESTUDIO DAW</span><span class="statusbar-separator">·</span><span id="project-status">SIN PROYECTO</span></footer>
+    <div id="action-context-menu" class="action-context-menu" role="menu" aria-label="Acciones contextuales" hidden></div>
+  </body>
+</html>

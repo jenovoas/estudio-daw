@@ -499,3 +499,81 @@ abiertas por falta de QA y aceptación visual.
 - La arquitectura y el destino de la interfaz siguen siendo la aplicación de escritorio Tauri. No se aprobó ni planificó migración a WebAssembly.
 - Los smokes de Firefox anteriores ejecutan el DOM/CSS/JS con un adaptador simulado; son experimentos auxiliares de handlers y no prueban WebKitGTK, integración Tauri ni la interfaz que usa la persona. No deben presentarse como QA visual/runtime ni como criterio de aceptación de 3.1.
 - Para cerrar 3.1 sigue siendo obligatoria la revisión de la aplicación Tauri con Demo MIDI y tamaños objetivo, más aceptación visual explícita. No cambiar arquitectura ni scope fuera del delta OpenSpec aprobado.
+
+## Continuación — foco contextual y categorías del Navegador — 2026-09-30
+
+- Se conservó el cambio local de foco de Dispositivo y se completó su estado:
+  cambiar de proyecto limpia la pista enfocada; abrir la pestaña Dispositivo desde
+  un clip MIDI enfoca la pista de ese clip aunque la selección múltiple usada para
+  agrupar haya cambiado. La ruta sigue usando `createTrackInstrumentControl` y no
+  agrega IPC ni contratos del motor.
+- El Navegador normaliza la categoría activa cuando sólo queda una categoría real
+  o cuando desaparece la categoría seleccionada. Así el botón visible conserva
+  `aria-pressed`/estado visual coherente con la lista que muestra; no se inventan
+  categorías ni contenido.
+- Verificación ejecutada: `node --check
+  crates/ui-shell/frontend/main.js`, `node --check
+  crates/ui-shell/frontend/platform-tauri.js` y `git diff --check` pasaron.
+- `cargo check -p estudio-daw-ui-shell` no pudo completar porque este servidor no
+  tiene `glib-2.0 >= 2.70` en `pkg-config`; `openspec validate` tampoco está
+  instalado. El servidor se usa deliberadamente sin interfaz gráfica ni
+  navegador: no se intentará ejecutar QA Tauri aquí.
+- El árbol ya contenía cambios locales en `.codebase-memory/artifact.json`,
+  `main.js` y `tasks.md`; no se sobrescribieron. OpenSpec 3.1 y 3.1.5 siguen
+  abiertas. Próximo paso en este entorno: continuar los cortes de frontend y
+  sus comprobaciones de código; la matriz Tauri y la aceptación visual quedan
+  reservadas para una estación con interfaz, sin tratar su ausencia como fallo
+  del diseño ni marcar el rediseño como aceptado sólo por sintaxis o compilación.
+
+## Preview visual remoto en desarrollo — 2026-09-30
+
+- Se preparó una ruta de revisión en `dev.pinguinoseguro.cl/estudioDaw` sobre
+  el `pinguinoseguro_web` existente, sin modificar nginx, DNS, TLS, Sentinel,
+  servicios de producción ni el repositorio `sentinel`.
+- La página Next restringe la ruta al host `dev.pinguinoseguro.cl` y responde
+  `404` en `pinguinoseguro.cl`. El iframe carga una copia estática de
+  `preview.html`, `main.js`, `styles.css` y `platform-preview.js`.
+- `platform-preview.js` es un adaptador visual aislado: usa datos sintéticos
+  MIDI/audio y estado local, no carga `platform-tauri.js`, no llama Tauri, no
+  conecta PipeWire/MIDI/filesystem/plugins y no guarda proyectos. Play,
+  Record, importación, preescucha y plugins externos informan que no están
+  disponibles.
+- Verificación: `npm ci --ignore-scripts`, `npm run build` del portal generó
+  `ƒ /estudioDaw`; la ruta local y remota devolvió `200` con el host dev,
+  `404` con el host de producción, y el HTML remoto referencia el iframe y el
+  adaptador preview. `node --check` y `git diff --check` pasaron.
+- Limitación de infraestructura preexistente: el certificado presentado para
+  `dev.pinguinoseguro.cl` tiene `CN=pinguinoseguro.cl` y no incluye el SAN
+  `dev.pinguinoseguro.cl`. La verificación HTTPS normal falla por ese mismatch;
+  no se corrigió el certificado ni se tocó configuración externa. HTTP responde
+  `200`; `curl -k` confirmó la ruta HTTPS detrás del proxy.
+- Esto habilita inspección remota del layout, no sustituye QA Tauri ni prueba
+  audio. La aceptación de 3.1 continúa abierta hasta revisar la aplicación de
+  escritorio en una estación con GUI y completar la matriz aprobada.
+
+## Corrección TLS del preview remoto — 2026-09-30
+
+- Se amplió el certificado Let's Encrypt existente de
+  `pinguinoseguro.cl` para incluir `dev.pinguinoseguro.cl`. No se cambió la
+  topología nginx, DNS, Sentinel ni los servicios de aplicación.
+- `nginx -t` pasó y nginx se recargó. La comprobación HTTPS normal ahora
+  devuelve `200` para `https://dev.pinguinoseguro.cl/estudioDaw`; el certificado
+  presenta SAN `dev.pinguinoseguro.cl` y vence el 2026-12-29.
+- La advertencia anterior de certificado queda resuelta. El preview sigue
+  siendo visual/sintético y no sustituye QA Tauri ni prueba de audio.
+
+## Continuidad de selección desde Session — 2026-09-30
+
+- Los nombres de clips asignados en las casillas de Session ahora son botones
+  accesibles. Al activarlos abren el clip en Arreglo mediante
+  `focusClipInArrangement`, conservando selección, detalle contextual y
+  desplazamiento hacia el clip sin lanzar ni detener la reproducción.
+- El control circular de lanzamiento mantiene su acción independiente; las
+  casillas vacías y las referencias de clip no disponibles conservan una
+  presentación no accionable.
+- Se ajustó el CSS para que el nombre accionable mantenga la jerarquía compacta
+  de la celda y exponga hover/foco visible. No se añadió IPC ni capacidad del
+  motor.
+- Pendiente: comprobar la interacción en la aplicación Tauri y registrar
+  aceptación visual; este servidor sólo permite `node --check` y revisión
+  estática.

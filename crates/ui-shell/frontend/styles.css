@@ -543,7 +543,9 @@ button:disabled { opacity: .4; cursor: not-allowed !important; }
 .session-cell.is-queued { box-shadow: inset 3px 0 #e6c477, inset 0 0 0 1px #e6c477; }
 .session-cell.is-playing { background: linear-gradient(135deg, color-mix(in srgb,var(--track-color) 43%,#292d30), color-mix(in srgb,var(--track-color) 23%,#292d30)); box-shadow: inset 3px 0 var(--mint), inset 0 0 0 1px color-mix(in srgb,var(--mint) 65%,transparent); }
 .session-cell .session-launch { grid-row: 1 / span 2; min-width: 28px; width: 28px; height: 28px; }
-.session-cell .session-slot-name { grid-column: 2; grid-row: 1; min-width: 0; overflow: hidden; color: #e0e4e5; font-size: 11px; font-weight: 580; text-overflow: ellipsis; white-space: nowrap; }
+.session-cell .session-slot-name { grid-column: 2; grid-row: 1; min-width: 0; overflow: hidden; border: 0; padding: 0; background: transparent; color: #e0e4e5; font: inherit; font-size: 11px; font-weight: 580; text-align: left; text-overflow: ellipsis; white-space: nowrap; }
+.session-cell .session-slot-name:is(button):hover { color: #ffd0a5; text-decoration: underline; }
+.session-cell .session-slot-name:is(button):focus-visible { outline: 1px solid #e3a369; outline-offset: 2px; }
 .session-slot-editor { grid-column: 3; grid-row: 1 / span 2; position: relative; justify-self: end; align-self: center; }
 .session-slot-editor > summary { width: 24px; height: 24px; display: grid; place-items: center; border: 1px solid #484f52; border-radius: 3px; color: #aeb5b7; cursor: pointer; list-style: none; }
 .session-slot-editor > summary::-webkit-details-marker { display: none; }
