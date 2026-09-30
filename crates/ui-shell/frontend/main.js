@@ -590,14 +590,35 @@ function handleCreativeWorkspaceShortcut(event) {
     return;
   }
   if (event.ctrlKey || event.altKey) return;
-  if (event.key === "Tab" && event.shiftKey) {
+  if (event.key === "Tab") {
     event.preventDefault();
-    if (mixerPanelVisible) mixerPanelVisible = false;
-    clipDetailVisible = !clipDetailVisible;
-    updateWorkspaceLayout();
+    if (event.shiftKey) {
+      // Shift+Tab: Alternar entre Clip View (piano roll) y Device View (rack de dispositivos)
+      if (!clipDetailVisible) {
+        clipDetailVisible = true;
+      } else {
+        selectedDetailTab = selectedDetailTab === "clip" ? "device" : "clip";
+      }
+      if (selectedDetailTab === "device" && lastSnapshot) {
+        const selectedClip = lastSnapshot?.midiClips.find((clip) => clip.id === selectedClipId);
+        const selectedClipTrack = lastSnapshot?.tracks.find((track) => track.id === selectedClip?.trackId && track.kind === "midi");
+        if (selectedClipTrack) deviceFocusedTrackId = selectedClipTrack.id;
+        renderDeviceInspector(lastSnapshot);
+      }
+      updateWorkspaceLayout();
+    } else {
+      // Tab: Alternar instantáneamente entre Vista Sesión y Vista Arreglo (Atajo maestro de Ableton)
+      const sessionActive = elements.showSession.classList.contains("is-selected");
+      if (sessionActive) {
+        elements.showArrangement.click();
+      } else {
+        elements.showSession.click();
+      }
+    }
+    return;
   } else if (event.key === " ") {
     event.preventDefault();
-    const button = projectTransportState === "playing" ? elements.pause : elements.play;
+    const button = projectTransportState === "playing" ? elements.stop : elements.play;
     if (!button.disabled) button.click();
   }
 }

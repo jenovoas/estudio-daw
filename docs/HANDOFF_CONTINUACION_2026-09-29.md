@@ -707,3 +707,10 @@ abiertas por falta de QA y aceptación visual.
 - El navegador automatizado no pudo iniciar en este servidor por indisponibilidad
   del daemon Chromium; por tanto la comprobación realizada es HTTP/asset y no
   una afirmación de inspección visual automatizada.
+
+## Revisión visual y ejecución nativa en laptop — 2026-09-30
+
+- Se levantó `estudio-daw-ui-shell` nativamente en la estación de trabajo (Wayland / Arch Linux).
+- Se verificaron en la superficie visual los componentes del navegador (colecciones Todo, Favoritos, Recientes), el botón `＋ Clip MIDI` en el Arreglo, y la vista contextual de detalle con el piano roll MIDI renderizando notas y velocidades.
+- Evaluación de diseño: la UI actual aún no alcanza la ergonomía, densidad ni el flujo creativo de Ableton Live (paleta cromática fuera del estándar de producción musical, controles de transporte y mezclador sin el feedback táctil/visual de Live, falta de ergonomía en la vista Session y el rack de dispositivos).
+- Se inicia la transformación integral de la UI para alinearla al flujo creativo de Ableton Live (paleta neutra de producción, transporte con feedback visual icónico, mezclador vertical Session con medidores LED, knobs y rack de dispositivos contextual).
