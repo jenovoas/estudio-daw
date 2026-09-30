@@ -2388,9 +2388,27 @@ function renderClipInspector(snapshot) {
     toolbar.className = "piano-roll-toolbar";
     const heading = document.createElement("strong");
     heading.textContent = "Editor MIDI";
+    const foldButton = document.createElement("button");
+    foldButton.className = "button button-fold";
+    foldButton.type = "button";
+    foldButton.textContent = "Fold";
+    foldButton.title = "Plegar teclado: mostrar solo filas con notas activas (Ableton Fold)";
+    foldButton.addEventListener("click", () => {
+      const isFolded = grid.classList.toggle("is-folded");
+      foldButton.classList.toggle("is-selected", isFolded);
+      const activeKeys = new Set(midiClip.notes.map((n) => n.key));
+      grid.querySelectorAll(".piano-roll-row").forEach((row, idx) => {
+        const key = 127 - idx;
+        if (isFolded && !activeKeys.has(key)) {
+          row.style.display = "none";
+        } else {
+          row.style.display = "";
+        }
+      });
+    });
     const instruction = document.createElement("span");
-    instruction.textContent = "Clic: añadir · arrastra: mover · Ctrl+rueda: zoom vertical · rueda: registro";
-    toolbar.append(heading, instruction);
+    instruction.textContent = "Clic: añadir · arrastra: mover · Ctrl+rueda: zoom · rueda: registro";
+    toolbar.append(heading, foldButton, instruction);
     pianoRoll.append(toolbar);
     const ruler = document.createElement("div");
     ruler.className = "piano-roll-ruler";
