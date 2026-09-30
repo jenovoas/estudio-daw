@@ -7,10 +7,11 @@
 use estudio_daw_midi_types::{MidiSource, MidiTake, RecordedMidiEvent, RecordedMidiMessage};
 use estudio_daw_project_model::{
     add_audio_clip, add_audio_clip_for_source, append_media_source, attach_media_source,
-    attach_midi_take, quantize_midi_clip, set_audio_clip_fades, set_audio_clip_gain,
-    split_midi_clip, trim_audio_clip, AudioClip, ClipReference, ClipSlot, InstrumentConfig,
-    MediaSource, Project, ProjectEvent, ProjectHistory, ProjectSnapshot, ProxyAsset, Scene, Track,
-    TrackInputRoute, TrackKind, TrackMixerState, TrackRole, TransportLoopRange,
+    attach_midi_take, create_empty_midi_clip, quantize_midi_clip, set_audio_clip_fades,
+    set_audio_clip_gain, split_midi_clip, trim_audio_clip, AudioClip, ClipReference, ClipSlot,
+    InstrumentConfig, MediaSource, Project, ProjectEvent, ProjectHistory, ProjectSnapshot,
+    ProxyAsset, Scene, Track, TrackInputRoute, TrackKind, TrackMixerState, TrackRole,
+    TransportLoopRange,
 };
 use estudio_daw_session::{Session, SessionCommand, TransportSnapshot, TransportState};
 use serde::{Deserialize, Serialize};
@@ -148,6 +149,12 @@ pub enum ProjectCommand {
     MoveAudioClip {
         clip_id: String,
         start_tick: u64,
+    },
+    CreateMidiClip {
+        track_id: String,
+        start_tick: u64,
+        duration_ticks: u64,
+        name: String,
     },
     MoveMidiClip {
         clip_id: String,
@@ -1034,6 +1041,24 @@ impl CommandRuntime {
                     project
                         .validate_persisted_contracts()
                         .map_err(|error| error.to_string())
+                })
+                .map_err(|error| CommandError::Project(error.to_string()))?,
+            ProjectCommand::CreateMidiClip {
+                track_id,
+                start_tick,
+                duration_ticks,
+                name,
+            } => self
+                .project_history
+                .transact("create MIDI clip", |project| {
+                    create_empty_midi_clip(
+                        project,
+                        &track_id,
+                        start_tick,
+                        duration_ticks,
+                        name,
+                    )
+                    .map(|_| ())
                 })
                 .map_err(|error| CommandError::Project(error.to_string()))?,
             ProjectCommand::MoveMidiClip {
@@ -2424,6 +2449,46 @@ mod tests {
         let redone = runtime.snapshot().project.project.midi_clips[0].clone();
         assert_eq!(redone.start_tick, 1_920);
         assert_eq!(redone.take.events, events);
+    }
+
+    #[test]
+    fn creates_empty_midi_clip_as_reversible_user_command() {
+        let mut runtime = CommandRuntime::new(project());
+        runtime
+            .apply(envelope(
+                "create-midi-1",
+                DomainCommand::Project(ProjectCommand::CreateMidiClip {
+                    track_id: "track-midi".into(),
+                    start_tick: 1_920,
+                    duration_ticks: 3_840,
+                    name: "Nueva idea".into(),
+                }),
+            ))
+            .unwrap();
+        let created = runtime
+            .snapshot()
+            .project
+            .project
+            .midi_clips
+            .iter()
+            .find(|clip| clip.name == "Nueva idea")
+            .cloned()
+            .unwrap();
+        assert_eq!(created.start_tick, 1_920);
+        assert!(created.take.events.is_empty());
+        runtime
+            .apply(envelope(
+                "undo-create-midi-1",
+                DomainCommand::Project(ProjectCommand::Undo),
+            ))
+            .unwrap();
+        assert!(runtime
+            .snapshot()
+            .project
+            .project
+            .midi_clips
+            .iter()
+            .all(|clip| clip.name != "Nueva idea"));
     }
 
     #[test]

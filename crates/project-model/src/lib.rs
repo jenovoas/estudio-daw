@@ -1242,6 +1242,14 @@ pub enum AttachTakeError {
 pub enum MidiEditError {
     #[error("no existe el clip MIDI '{0}'")]
     ClipNotFound(String),
+    #[error("no existe la pista '{0}'")]
+    TrackNotFound(String),
+    #[error("la pista '{0}' no es MIDI")]
+    NotMidiTrack(String),
+    #[error("la duración del clip debe ser mayor que cero")]
+    InvalidDuration,
+    #[error("el nombre del clip MIDI no puede estar vacío")]
+    InvalidName,
     #[error("la rejilla de cuantización debe ser mayor que cero")]
     InvalidGrid,
     #[error("el punto de división debe estar dentro del clip")]
@@ -1807,6 +1815,61 @@ pub fn attach_midi_take(
         start_tick: 0,
         duration_ticks,
         take,
+    });
+    Ok(id)
+}
+
+/// Crea una región MIDI vacía para que la persona pueda empezar a componer
+/// desde el cursor sin tener que cargar material de demostración.
+///
+/// La región sólo contiene estado musical portable; las notas se añaden luego
+/// mediante comandos reversibles del editor MIDI.
+pub fn create_empty_midi_clip(
+    project: &mut Project,
+    track_id: &str,
+    start_tick: u64,
+    duration_ticks: u64,
+    name: impl Into<String>,
+) -> Result<String, MidiEditError> {
+    let track = project
+        .tracks
+        .iter()
+        .find(|track| track.id == track_id)
+        .ok_or_else(|| MidiEditError::TrackNotFound(track_id.into()))?;
+    if track.kind != TrackKind::Midi {
+        return Err(MidiEditError::NotMidiTrack(track_id.into()));
+    }
+    if duration_ticks == 0 {
+        return Err(MidiEditError::InvalidDuration);
+    }
+    let name = name.into().trim().to_owned();
+    if name.is_empty() {
+        return Err(MidiEditError::InvalidName);
+    }
+    let mut suffix = project.midi_clips.len() + 1;
+    let mut id = format!("midi-clip-{suffix}");
+    while project.midi_clips.iter().any(|clip| clip.id == id) {
+        suffix = suffix.saturating_add(1);
+        id = format!("midi-clip-{suffix}");
+    }
+    let ppq = 960_u32;
+    let tempo_bpm = project.transport.tempo_bpm.round().max(1.0) as u32;
+    let duration_micros = (u128::from(duration_ticks) * 60_000_000)
+        .checked_div(u128::from(ppq) * u128::from(tempo_bpm))
+        .unwrap_or(0)
+        .min(u128::from(u64::MAX)) as u64;
+    project.midi_clips.push(MidiClip {
+        id: id.clone(),
+        name,
+        track_id: track_id.into(),
+        start_tick,
+        duration_ticks,
+        take: MidiTake {
+            ppq,
+            tempo_bpm,
+            duration_micros,
+            events: Vec::new(),
+        },
     });
     Ok(id)
 }
@@ -2827,6 +2890,25 @@ mod tests {
     }
 
     #[test]
+    fn creates_empty_midi_clip_at_cursor_with_one_bar_duration() {
+        let mut project = import_fixture().unwrap().project;
+        let id =
+            create_empty_midi_clip(&mut project, "track-midi", 1_920, 3_840, "Nueva idea").unwrap();
+        let clip = project
+            .midi_clips
+            .iter()
+            .find(|clip| clip.id == id)
+            .unwrap();
+        assert_eq!(clip.track_id, "track-midi");
+        assert_eq!(clip.start_tick, 1_920);
+        assert_eq!(clip.duration_ticks, 3_840);
+        assert_eq!(clip.name, "Nueva idea");
+        assert_eq!(clip.take.ppq, 960);
+        assert!(clip.take.events.is_empty());
+        assert_eq!(clip.take.duration_micros, 2_608_695);
+    }
+
+    #[test]
     fn rejects_take_when_project_has_no_midi_track() {
         let mut project = Project {
             schema_version: "test".into(),
@@ -2840,9 +2922,9 @@ mod tests {
                 loop_range: None,
             },
             tracks: vec![],
+            scenes: vec![],
             audio_sources: vec![],
             audio_playlists: vec![],
-            scenes: vec![],
             clip_slots: vec![],
             midi_clips: vec![],
             audio_clips: vec![],

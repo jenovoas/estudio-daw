@@ -280,7 +280,26 @@
     selectAudioFile: async () => null,
     inspectAudioFile: async () => { throw new Error("La selección de archivos no está disponible en el preview visual"); },
     importAudio: async () => { throw new Error("La importación de archivos no está disponible en el preview visual"); },
-    editAudioRegion: async () => clone(snapshot),
+    createMidiClip: async ({ trackId, startTick, durationTicks, name }) => publish((project) => {
+      const existing = new Set(project.midiClips.map((clip) => clip.id));
+      let suffix = project.midiClips.length + 1;
+      let id = `preview-midi-clip-${suffix}`;
+      while (existing.has(id)) {
+        suffix += 1;
+        id = `preview-midi-clip-${suffix}`;
+      }
+      project.midiClips.push({
+        id,
+        trackId,
+        name,
+        ppq: 960,
+        startTick,
+        startBeats: startTick / 960,
+        durationBeats: durationTicks / 960,
+        noteCount: 0,
+        notes: [],
+      });
+    }),
     quantizeMidiClip: async () => clone(snapshot),
     moveMidiClip: async () => clone(snapshot),
     duplicateMidiClip: async () => clone(snapshot),

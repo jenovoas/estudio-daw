@@ -16,6 +16,7 @@ const elements = {
   addMidiTrack: document.querySelector("#add-midi-track"),
   addAudioTrack: document.querySelector("#add-audio-track"),
   addBusTrack: document.querySelector("#add-bus-track"),
+  createMidiClip: document.querySelector("#create-midi-clip"),
   save: document.querySelector("#save-project"),
   saveAs: document.querySelector("#save-project-as"),
   zoomIn: document.querySelector("#zoom-in"),
@@ -156,8 +157,8 @@ const UI_ACTIONS = [
   { id: "edit.undo", label: "Deshacer", menu: "Edición", shortcut: "Ctrl+Z", target: "undo", requiresProject: true },
   { id: "edit.redo", label: "Rehacer", menu: "Edición", shortcut: "Ctrl+Mayús+Z", target: "redo", requiresProject: true },
   { id: "track.addMidi", label: "Añadir pista MIDI", menu: "Crear", target: "addMidiTrack", requiresProject: true },
+  { id: "clip.createMidi", label: "Crear clip MIDI en el cursor", menu: "Crear", target: "createMidiClip", requiresProject: true },
   { id: "track.addAudio", label: "Añadir pista de audio", menu: "Crear", target: "addAudioTrack", requiresProject: true },
-  { id: "track.addBus", label: "Añadir bus", menu: "Crear", target: "addBusTrack", requiresProject: true },
   { id: "scene.add", label: "Añadir escena", menu: "Sesión", requiresProject: true, handler: () => runCommand("Escena añadida", () => platform.addScene()) },
   { id: "view.arrangement", label: "Arreglo", menu: "Vista", shortcut: "Ctrl+1", target: "showArrangement" },
   { id: "view.session", label: "Sesión", menu: "Vista", shortcut: "Ctrl+2", target: "showSession" },
@@ -564,7 +565,7 @@ async function whileBusy(buttons, operation) {
 
 function setProjectEnabled(enabled) {
   hasProject = enabled;
-  for (const button of [elements.save, elements.saveAs, elements.play, elements.record, elements.pause, elements.stop, elements.addMidiTrack, elements.addAudioTrack, elements.addBusTrack]) {
+  for (const button of [elements.save, elements.saveAs, elements.play, elements.record, elements.pause, elements.stop, elements.addMidiTrack, elements.addAudioTrack, elements.addBusTrack, elements.createMidiClip]) {
     button.disabled = !enabled;
     if (!enabled) button.title = `${button.getAttribute("aria-label") ?? "Acción"}: abre o crea un proyecto primero`;
   }
@@ -1903,6 +1904,11 @@ function renderSnapshot(snapshot) {
   elements.connectionDot.classList.toggle("is-connected", snapshot.audioEngineConnected);
   elements.undo.disabled = !snapshot.canUndo;
   elements.redo.disabled = !snapshot.canRedo;
+  const midiTracksForCreation = snapshot.tracks.filter((track) => track.kind === "midi" && track.role !== "master");
+  elements.createMidiClip.disabled = midiTracksForCreation.length === 0;
+  elements.createMidiClip.title = midiTracksForCreation.length
+    ? "Crear un clip MIDI vacío de un compás en el cursor y abrir su piano roll"
+    : "Añade una pista MIDI antes de crear un clip";
   if (!document.querySelector(".track-group-toolbar")) {
     const toolbar = createTrackGroupToolbar();
     toolbar.hidden = selectedTrackIds.size < 2;
@@ -3310,9 +3316,46 @@ async function addTrack(kind, button) {
   } });
 }
 
+async function createMidiClipAtCursor(button) {
+  const snapshotBefore = lastSnapshot;
+  if (!snapshotBefore) return;
+  const midiTracks = snapshotBefore.tracks.filter((track) => track.kind === "midi" && track.role !== "master");
+  const track = [...selectedTrackIds]
+    .map((trackId) => midiTracks.find((item) => item.id === trackId))
+    .find(Boolean) ?? midiTracks[0];
+  if (!track) {
+    setNotice("No hay pista MIDI", "Añade una pista MIDI para crear material en el Arreglo.");
+    return;
+  }
+  const existingClipIds = new Set(snapshotBefore.midiClips.map((clip) => clip.id));
+  const startTick = Math.max(0, Math.round(editCursorTick * 2));
+  const durationTicks = Math.max(1, Math.round((snapshotBefore.beatsPerBar || 4) * 960));
+  await whileBusy([button], async () => {
+    try {
+      const snapshot = await platform.createMidiClip({
+        trackId: track.id,
+        startTick,
+        durationTicks,
+        name: "Nueva idea MIDI",
+      });
+      if (!snapshot) return;
+      renderSnapshot(snapshot);
+      const created = snapshot.midiClips.find((clip) => !existingClipIds.has(clip.id));
+      if (created) focusClipInArrangement(created, snapshot);
+      setNotice(
+        "Clip MIDI creado",
+        "El piano roll está listo: añade notas y conserva la decisión del arreglo bajo tu control.",
+      );
+    } catch (error) {
+      setNotice("No se pudo crear el clip MIDI", String(error));
+    }
+  });
+}
+
 elements.addMidiTrack.addEventListener("click", () => addTrack("midi", elements.addMidiTrack));
 elements.addAudioTrack.addEventListener("click", () => addTrack("audio", elements.addAudioTrack));
 elements.addBusTrack.addEventListener("click", () => addTrack("bus", elements.addBusTrack));
+elements.createMidiClip.addEventListener("click", () => createMidiClipAtCursor(elements.createMidiClip));
 elements.ruler.addEventListener("click", async (event) => {
   setEditCursorFromX(event.clientX, elements.ruler.getBoundingClientRect());
   if (projectTransportState !== "playing") return;
