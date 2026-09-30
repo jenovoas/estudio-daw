@@ -692,3 +692,18 @@ abiertas por falta de QA y aceptación visual.
 - Verificación local: sintaxis de los tres scripts frontend y `git diff
   --check` pasan. La comprobación visual Tauri sigue pendiente; el preview
   remoto/local no sustituye esa aceptación.
+
+## Preview web sincronizado — 2026-09-30
+
+- Se sincronizaron `preview.html`, `main.js`, `styles.css` y
+  `platform-preview.js` de `crates/ui-shell/frontend/` hacia
+  `pinguinoseguro_web/public/estudioDaw/`.
+- El portal se construyó con `npm run build` y publicó el cambio
+  `ca67011` en `gitlab.com/jenovoa/pinguinoseguro_web`, rama `alpine_fenix`.
+  No se tocó producción, DNS, TLS ni Sentinel.
+- `https://dev.pinguinoseguro.cl/estudioDaw` devolvió `200`; los cuatro assets
+  remotos coinciden por SHA-256 con los archivos fuente y el HTML contiene las
+  nuevas colecciones del Browser y el botón `＋ Clip MIDI`.
+- El navegador automatizado no pudo iniciar en este servidor por indisponibilidad
+  del daemon Chromium; por tanto la comprobación realizada es HTTP/asset y no
+  una afirmación de inspección visual automatizada.
