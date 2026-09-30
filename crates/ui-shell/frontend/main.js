@@ -1856,6 +1856,7 @@ function renderMixerSurface(tracks) {
 
 function renderDeviceInspector(snapshot) {
   elements.deviceInspector.replaceChildren();
+
   const selectedClip = snapshot.midiClips.find((clip) => clip.id === selectedClipId)
     ?? (snapshot.audioClips ?? []).find((clip) => clip.id === selectedClipId);
   const focusedTrack = snapshot.tracks.find((track) => track.id === deviceFocusedTrackId && track.kind === "midi")
@@ -1865,176 +1866,98 @@ function renderDeviceInspector(snapshot) {
       .find((track) => track && track.kind === "midi")
     ?? snapshot.tracks.find((track) => track.kind === "midi" && track.role !== "master");
   deviceFocusedTrackId = focusedTrack?.id ?? null;
+
   if (!focusedTrack) {
     const empty = document.createElement("p");
     empty.className = "surface-empty";
-    empty.textContent = "Selecciona una pista MIDI para ver o diseñar su instrumento.";
+    empty.textContent = "Selecciona una pista MIDI para ver su cadena de dispositivos.";
     elements.deviceInspector.append(empty);
     return;
   }
 
-  const container = document.createElement("div");
-  container.className = "live-device-rack";
-
-  // Dispositivo 1: Sintetizador / Instrumento
-  const instCard = document.createElement("div");
-  instCard.className = "live-device-box";
-  instCard.style.setProperty("--device-accent", focusedTrack.color || "#00e676");
-
-  const header = document.createElement("div");
-  header.className = "live-device-header";
-  const powerBtn = document.createElement("button");
-  powerBtn.className = "live-device-power is-active";
-  powerBtn.title = "Activar / Desactivar dispositivo";
-  powerBtn.textContent = "●";
-  const title = document.createElement("strong");
-  const isVst3 = focusedTrack.instrument?.backend === "vst3";
-  title.textContent = isVst3 ? vst3PluginLabel(focusedTrack.instrument?.plugin?.path) : (focusedTrack.name || "Sinte Interno");
-  const typeBadge = document.createElement("span");
-  typeBadge.className = "live-device-badge";
-  typeBadge.textContent = isVst3 ? "VST3" : "SYNTH";
-  header.append(powerBtn, title, typeBadge);
-
-  const body = document.createElement("div");
-  body.className = "live-device-body";
-
-  const createMacroKnob = (label, val, unit = "") => {
-    const knobWrap = document.createElement("div");
-    knobWrap.className = "live-macro-knob";
-    const dial = document.createElement("div");
-    dial.className = "live-dial";
-    dial.innerHTML = '<span class="live-dial-notch"></span>';
-    const valText = document.createElement("span");
-    valText.className = "live-dial-val";
-    valText.textContent = `${val}${unit}`;
-    const lbl = document.createElement("span");
-    lbl.className = "live-dial-lbl";
-    lbl.textContent = label;
-
-    let curVal = parseFloat(val);
-    let startY = 0;
-    dial.addEventListener("pointerdown", (e) => {
-      startY = e.clientY;
-      const onMove = (moveEv) => {
-        const delta = (startY - moveEv.clientY) * 0.6;
-        curVal = Math.max(0, Math.min(100, Math.round(curVal + delta)));
-        valText.textContent = `${curVal}${unit}`;
-        dial.style.transform = `rotate(${(curVal - 50) * 2.6}deg)`;
-        startY = moveEv.clientY;
-      };
-      const onUp = () => {
-        window.removeEventListener("pointermove", onMove);
-        window.removeEventListener("pointerup", onUp);
-      };
-      window.addEventListener("pointermove", onMove);
-      window.addEventListener("pointerup", onUp);
+  // Navegador de pistas MIDI — permite saltar sin salir del panel
+  const midiTracks = snapshot.tracks.filter((t) => t.kind === "midi" && !t.virtualMaster);
+  const trackNav = document.createElement("nav");
+  trackNav.className = "device-track-nav";
+  for (const t of midiTracks) {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "device-track-nav-btn";
+    btn.classList.toggle("is-active", t.id === focusedTrack.id);
+    btn.style.setProperty("--track-color", t.color ?? "#e88a43");
+    btn.textContent = t.name;
+    btn.title = `Ver dispositivos de "${t.name}"`;
+    btn.addEventListener("click", () => {
+      deviceFocusedTrackId = t.id;
+      renderDeviceInspector(lastSnapshot);
     });
+    trackNav.append(btn);
+  }
 
-    knobWrap.append(dial, valText, lbl);
-    return knobWrap;
-  };
+  // Rack horizontal: cajas de señal en orden
+  const rack = document.createElement("div");
+  rack.className = "device-rack";
 
-  // Sección Filtro
-  const filterSec = document.createElement("div");
-  filterSec.className = "live-device-section";
-  const filterTitle = document.createElement("span");
-  filterTitle.className = "live-sec-title";
-  filterTitle.textContent = "FILTRO";
-  const filterKnobs = document.createElement("div");
-  filterKnobs.className = "live-knobs-row";
-  filterKnobs.append(createMacroKnob("Cutoff", "72", "%"), createMacroKnob("Reso", "30", "%"));
-  filterSec.append(filterTitle, filterKnobs);
+  // —— Box 1: Instrumento ——
+  const instBox = document.createElement("div");
+  instBox.className = "device-rack-box device-rack-instrument";
+  instBox.style.setProperty("--rack-accent", focusedTrack.color ?? "#e88a43");
+  const instHeader = document.createElement("div");
+  instHeader.className = "device-rack-header";
+  const instLabel = document.createElement("span");
+  instLabel.className = "device-rack-slot-label";
+  instLabel.textContent = "INSTRUMENTO";
+  const instTrackName = document.createElement("span");
+  instTrackName.className = "device-rack-track-name";
+  instTrackName.textContent = focusedTrack.name;
+  instHeader.append(instLabel, instTrackName);
+  const instBody = document.createElement("div");
+  instBody.className = "device-rack-body";
+  const control = createTrackInstrumentControl(focusedTrack);
+  if (control) {
+    instBody.append(control);
+  } else {
+    const empty = document.createElement("span");
+    empty.className = "device-rack-empty";
+    empty.textContent = "Sin instrumento asignado.";
+    instBody.append(empty);
+  }
+  instBox.append(instHeader, instBody);
 
-  // Sección ADSR Envelope
-  const adsrSec = document.createElement("div");
-  adsrSec.className = "live-device-section";
-  const adsrTitle = document.createElement("span");
-  adsrTitle.className = "live-sec-title";
-  adsrTitle.textContent = "ENV (ADSR)";
-  const adsrKnobs = document.createElement("div");
-  adsrKnobs.className = "live-knobs-row";
-  adsrKnobs.append(
-    createMacroKnob("Atk", "12", "ms"),
-    createMacroKnob("Dec", "220", "ms"),
-    createMacroKnob("Sus", "75", "%"),
-    createMacroKnob("Rel", "350", "ms")
-  );
-  adsrSec.append(adsrTitle, adsrKnobs);
-
-  // Sección Salida
-  const outSec = document.createElement("div");
-  outSec.className = "live-device-section";
-  const outTitle = document.createElement("span");
-  outTitle.className = "live-sec-title";
-  outTitle.textContent = "SALIDA";
-  const outKnobs = document.createElement("div");
-  outKnobs.className = "live-knobs-row";
-  outKnobs.append(createMacroKnob("Vol", "80", "%"), createMacroKnob("Glide", "0", "ms"));
-  outSec.append(outTitle, outKnobs);
-
-  body.append(filterSec, adsrSec, outSec);
-  instCard.append(header, body);
-
-  // Dispositivo 2: Audio Effects (Reverb & Delay)
-  const fxCard = document.createElement("div");
-  fxCard.className = "live-device-box live-fx-box";
+  // —— Box 2: Efectos (no disponible en motor) ——
+  const fxBox = document.createElement("div");
+  fxBox.className = "device-rack-box device-rack-fx device-rack-unavailable";
   const fxHeader = document.createElement("div");
-  fxHeader.className = "live-device-header";
-  const fxPower = document.createElement("button");
-  fxPower.className = "live-device-power is-active";
-  fxPower.textContent = "●";
-  const fxTitle = document.createElement("strong");
-  fxTitle.textContent = "Reverb & Delay";
-  const fxBadge = document.createElement("span");
-  fxBadge.className = "live-device-badge";
-  fxBadge.textContent = "FX";
-  fxHeader.append(fxPower, fxTitle, fxBadge);
-
+  fxHeader.className = "device-rack-header";
+  const fxLabel = document.createElement("span");
+  fxLabel.className = "device-rack-slot-label";
+  fxLabel.textContent = "EFECTOS DE AUDIO";
+  fxHeader.append(fxLabel);
   const fxBody = document.createElement("div");
-  fxBody.className = "live-device-body";
-  const fxSec = document.createElement("div");
-  fxSec.className = "live-device-section";
-  const fxKnobs = document.createElement("div");
-  fxKnobs.className = "live-knobs-row";
-  fxKnobs.append(
-    createMacroKnob("Dry/Wet", "25", "%"),
-    createMacroKnob("Decay", "1.6", "s"),
-    createMacroKnob("Time", "3/16", ""),
-    createMacroKnob("Feedback", "35", "%")
-  );
-  fxSec.append(fxKnobs);
-  fxBody.append(fxSec);
-  fxCard.append(fxHeader, fxBody);
+  fxBody.className = "device-rack-body";
+  const fxMsg = document.createElement("p");
+  fxMsg.className = "device-rack-unavail-msg";
+  fxMsg.textContent = "La cadena de efectos aún no está expuesta en el motor. Pendiente de implementación en el backend de procesamiento de señal.";
+  fxBody.append(fxMsg);
+  fxBox.append(fxHeader, fxBody);
 
-  // Ranura 3: Añadir VST3
-  const addSlot = document.createElement("div");
-  addSlot.className = "live-add-device-slot";
-  const addBtn = document.createElement("button");
-  addBtn.className = "live-add-device-btn";
-  addBtn.type = "button";
-  addBtn.innerHTML = '<span class="live-add-plus">＋</span><span>Añadir VST3 / Plugin</span>';
-  addBtn.addEventListener("click", async () => {
-    try {
-      const path = await platform.selectVst3Plugin();
-      if (path) {
-        const report = await platform.inspectVst3Plugin(path);
-        if (report?.info) {
-          await platform.setTrackInstrument(focusedTrack.id, {
-            backend: "vst3",
-            plugin: { format: "vst3", path, uniqueId: report.info.uid, bridge: null },
-            state: null,
-          });
-          renderSnapshot(await platform.projectSnapshot());
-        }
-      }
-    } catch (err) {
-      setNotice("VST3", String(err));
-    }
-  });
-  addSlot.append(addBtn);
+  // —— Box 3: Mixer inline (ganancia, pan, ACT/M/S) ——
+  const mixBox = document.createElement("div");
+  mixBox.className = "device-rack-box device-rack-mixer";
+  const mixHeader = document.createElement("div");
+  mixHeader.className = "device-rack-header";
+  const mixLabel = document.createElement("span");
+  mixLabel.className = "device-rack-slot-label";
+  mixLabel.textContent = "MIXER";
+  mixHeader.append(mixLabel);
+  const mixBody = document.createElement("div");
+  mixBody.className = "device-rack-body";
+  const mixControls = createTrackMixerControls(focusedTrack);
+  if (mixControls) mixBody.append(mixControls);
+  mixBox.append(mixHeader, mixBody);
 
-  container.append(instCard, fxCard, addSlot);
-  elements.deviceInspector.append(container);
+  rack.append(instBox, fxBox, mixBox);
+  elements.deviceInspector.append(trackNav, rack);
 }
 
 function updateTrackMixer(track, changes, title) {

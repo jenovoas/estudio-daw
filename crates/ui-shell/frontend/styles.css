@@ -718,168 +718,84 @@ button:disabled { opacity: .4; cursor: not-allowed !important; }
 /* Ableton Device Slot Header */
 .device-chain-slot { border-top: 3px solid var(--live-green) !important; background: #242424 !important; }
 
-/* Ableton Live 12 Instrument & Effect Rack */
-.live-device-rack {
-  display: flex;
-  align-items: stretch;
-  gap: 8px;
-  min-width: max-content;
-  padding: 8px 10px;
-}
-.live-device-box {
-  width: 380px;
-  background: #252525;
-  border: 1px solid #333333;
-  border-top: 3px solid var(--device-accent, #00e676);
-  border-radius: 3px;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.4);
-}
-.live-fx-box {
-  width: 290px;
-  border-top-color: #00e5ff;
-}
-.live-device-header {
-  height: 26px;
+/* Device Rack — panel inferior de dispositivos (horizontal, cajas reales de señal) */
+.device-track-nav {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 0 8px;
-  background: #2c2c2c;
-  border-bottom: 1px solid #1a1a1a;
+  gap: 4px;
+  flex-wrap: wrap;
+  padding: 0 0 8px 0;
+  border-bottom: 1px solid #2a2a2a;
+  margin-bottom: 8px;
 }
-.live-device-power {
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
-  display: grid;
-  place-items: center;
-  font-size: 8px;
-  background: #181818;
-  color: #555;
-  border: 1px solid #333;
-  cursor: pointer;
-}
-.live-device-power.is-active {
-  color: #00e676;
-  text-shadow: 0 0 6px #00e676;
-}
-.live-device-header strong {
+.device-track-nav-btn {
+  padding: 2px 8px;
   font-size: 11px;
   font-weight: 700;
-  color: #f0f0f0;
-  flex: 1;
-}
-.live-device-badge {
-  font-size: 9px;
-  font-weight: 800;
-  padding: 1px 4px;
-  background: #1a1a1a;
-  border: 1px solid #383838;
+  color: #8f9699;
+  background: #1e1e1e;
+  border: 1px solid #2e2e2e;
+  border-left: 3px solid var(--track-color, #555);
   border-radius: 2px;
-  color: #999;
+  cursor: pointer;
 }
-.live-device-body {
-  flex: 1;
+.device-track-nav-btn:hover { color: #fff; background: #272727; }
+.device-track-nav-btn.is-active {
+  color: #f2f3f3;
+  background: #2a2a2a;
+  border-left-color: var(--track-color, #e88a43);
+}
+.device-rack {
   display: flex;
   align-items: stretch;
-  padding: 8px;
-  gap: 8px;
+  gap: 4px;
+  width: 100%;
+  overflow-x: auto;
 }
-.live-device-section {
+.device-rack-box {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  padding: 0 6px;
-  border-right: 1px solid #202020;
+  border: 1px solid #333;
+  border-top: 3px solid #555;
+  border-radius: 3px;
+  background: #1c1c1c;
+  min-width: 0;
+  flex-shrink: 0;
 }
-.live-device-section:last-child {
-  border-right: none;
+.device-rack-instrument { flex: 2 1 340px; border-top-color: var(--rack-accent, #e88a43); }
+.device-rack-fx         { flex: 2 1 260px; border-top-color: #3e4447; }
+.device-rack-mixer      { flex: 1 1 200px; border-top-color: #3a5a6a; }
+.device-rack-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 8px;
+  background: #232323;
+  border-bottom: 1px solid #1a1a1a;
 }
-.live-sec-title {
-  font-size: 8px;
+.device-rack-slot-label {
+  font-size: 9px;
   font-weight: 800;
-  letter-spacing: 0.8px;
+  letter-spacing: 1px;
   color: #666;
   text-transform: uppercase;
 }
-.live-knobs-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.live-macro-knob {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 2px;
-}
-.live-dial {
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-  background: #161616;
-  border: 2px solid #3e3e3e;
-  position: relative;
-  cursor: ns-resize;
-  transition: border-color 0.1s;
-}
-.live-dial:hover {
-  border-color: #ffd600;
-}
-.live-dial-notch {
-  width: 2px;
-  height: 7px;
-  background: #fff;
-  border-radius: 1px;
-  position: absolute;
-  top: 2px;
-  left: 11px;
-}
-.live-dial-val {
-  font-size: 9px;
-  font-family: ui-monospace, monospace;
-  color: #ccc;
-  font-variant-numeric: tabular-nums;
-}
-.live-dial-lbl {
-  font-size: 9px;
-  font-weight: 700;
-  color: #777;
-}
-.live-add-device-slot {
-  width: 140px;
-  background: #181818;
-  border: 1px dashed #303030;
-  border-radius: 3px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 12px;
-}
-.live-add-device-btn {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 6px;
-  color: #777;
+.device-rack-track-name {
   font-size: 10px;
   font-weight: 700;
-  background: transparent;
-  cursor: pointer;
+  color: #b0b5b8;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-.live-add-device-btn:hover {
-  color: #fff;
+.device-rack-body {
+  padding: 10px;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
-.live-add-plus {
-  width: 24px;
-  height: 24px;
-  border-radius: 50%;
-  border: 1px solid #444;
-  display: grid;
-  place-items: center;
-  font-size: 14px;
-  background: #202020;
-}
+.device-rack-instrument .device-rack-body .track-instrument-control { width: 100%; }
+.device-rack-unavail-msg { color: #555; font-size: 11px; line-height: 1.5; }
+.device-rack-empty { color: #666; font-size: 11px; }
