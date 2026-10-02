@@ -72,6 +72,7 @@ window.estudioPlatform = {
   duplicateMidiClip: (clipId) => invoke("duplicate_midi_clip", { clipId }),
   splitMidiClip: (clipId, splitTick) => invoke("split_midi_clip", { clipId, splitTick }),
   addMidiNote: ({ clipId, startTick, durationTicks, key, velocity }) => invoke("add_midi_note", { clipId, startTick, durationTicks, key, velocity }),
+  updateMidiNote: (note) => invoke("update_midi_note", note),
   removeMidiNote: (note) => invoke("remove_midi_note", note),
   audioWaveform: (sourceId) => invoke("audio_waveform", { sourceId }),
   audioPreview: (sourceId) => invoke("audio_preview", { sourceId }),

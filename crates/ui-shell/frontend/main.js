@@ -12,7 +12,7 @@ const elements = {
   importMode: document.querySelector("#audio-import-mode"),
   importChannels: document.querySelector("#audio-import-channels"),
   newProject: document.querySelector("#new-project"),
-  demoProject: document.querySelector("#demo-project"),
+  emptyDemoProject: document.querySelector("#empty-demo-project"),
   addMidiTrack: document.querySelector("#add-midi-track"),
   addAudioTrack: document.querySelector("#add-audio-track"),
   addBusTrack: document.querySelector("#add-bus-track"),
@@ -62,16 +62,19 @@ const elements = {
   toggleClipDetail: document.querySelector("#toggle-clip-detail"),
   lowerPanelTitle: document.querySelector("#lower-panel-title"),
   returnToArrangement: document.querySelector("#return-to-arrangement"),
-  arrangementLegend: document.querySelector("#arrangement-legend"),
   showArrangement: document.querySelector("#show-arrangement"),
   showSession: document.querySelector("#show-session"),
   showMixer: document.querySelector("#show-mixer"),
-  showMixerPhase: document.querySelector("#show-mixer-phase"),
-  showClipPhase: document.querySelector("#show-clip-phase"),
-  showDevicePhase: document.querySelector("#show-device-phase"),
   gridSnap: document.querySelector("#grid-snap"),
   railSettings: document.querySelector("#rail-settings"),
   audioSettings: document.querySelector("#audio-settings"),
+  audioSettingsClose: document.querySelector("#audio-settings-close"),
+  transportSignature: document.querySelector("#transport-signature"),
+  transportClock: document.querySelector("#transport-clock"),
+  transportError: document.querySelector("#transport-error"),
+  transportErrorText: document.querySelector("#transport-error-text"),
+  transportErrorDismiss: document.querySelector("#transport-error-dismiss"),
+  masterPeak: document.querySelector("#master-peak"),
   clipInspector: document.querySelector("#clip-inspector"),
   editor: document.querySelector(".editor"),
   revision: document.querySelector("#revision"),
@@ -143,7 +146,9 @@ const waveformCache = new Map();
 const pianoRollScrollPositions = new Map();
 const pianoRollInitializedClips = new Set();
 const arrangementTrackHeights = new Map();
-const ARRANGEMENT_TRACK_HEIGHT_MIN = 56;
+const ARRANGEMENT_TRACK_HEIGHT_MIN = 40;
+/** Por debajo de esta altura la cabecera de pista muestra sólo la fila 1 (F2). */
+const ARRANGEMENT_TRACK_SECOND_ROW_MIN = 56;
 const ARRANGEMENT_TRACK_HEIGHT_MAX = 320;
 let pianoRollRowHeight = 8;
 const vst3EditorOpenByTrack = new Map();
@@ -160,7 +165,7 @@ let uiZoom = 1;
 const UI_ACTIONS = [
   { id: "project.new", label: "Nuevo proyecto", menu: "Proyecto", target: "newProject" },
   { id: "project.open", label: "Abrir proyecto…", menu: "Proyecto", target: "open" },
-  { id: "project.demo", label: "Cargar Demo MIDI", menu: "Proyecto", target: "demoProject" },
+  { id: "project.demo", label: "Cargar Demo MIDI", menu: "Proyecto", handler: () => loadDemoProject() },
   { id: "project.importAudio", label: "Importar audio…", menu: "Proyecto", target: "importAudio", requiresProject: true },
   { id: "project.save", label: "Guardar", menu: "Proyecto", shortcut: "Ctrl+S", target: "save", requiresProject: true },
   { id: "project.saveAs", label: "Guardar como…", menu: "Proyecto", shortcut: "Ctrl+Mayús+S", target: "saveAs", requiresProject: true },
@@ -194,6 +199,8 @@ const UI_ACTIONS = [
   { id: "track.moveDown", label: "Mover pista después", menu: "Contexto", contexts: ["track"] },
   { id: "track.duplicate", label: "Duplicar pista", menu: "Contexto", contexts: ["track"] },
   { id: "track.remove", label: "Quitar pista", menu: "Contexto", contexts: ["track"] },
+  { id: "track.toggleMute", label: "Silenciar o reactivar pista", menu: "Contexto", contexts: ["track"] },
+  { id: "track.identity", label: "Color, marca y nota…", menu: "Contexto", contexts: ["track"] },
 ];
 
 function actionTarget(action) {
@@ -230,15 +237,21 @@ function executeUiAction(action, context = null) {
       const splitTick = absoluteTick - clip.startTick;
       void runCommand("Clip MIDI dividido", () => platform.splitMidiClip(clip.id, splitTick));
     }
-  } else if (action.id === "track.moveUp") {
-    context?.track?.querySelector('[data-track-order="up"]:not(:disabled)')?.click();
-  } else if (action.id === "track.moveDown") {
-    context?.track?.querySelector('[data-track-order="down"]:not(:disabled)')?.click();
+  } else if (action.id === "track.moveUp" || action.id === "track.moveDown") {
+    const track = contextTrack(context);
+    if (track) moveTrackBy(track, action.id === "track.moveUp" ? -1 : 1);
+  } else if (action.id === "track.toggleMute") {
+    const track = contextTrack(context);
+    if (track) void updateTrackMixer(track, { mute: !track.mute }, track.mute ? "Pista reactivada" : "Pista silenciada");
+  } else if (action.id === "track.identity") {
+    const track = contextTrack(context);
+    if (track) editTrackIdentity(track);
   } else if (action.id === "track.duplicate") {
     const trackId = context?.track?.dataset.trackId;
     if (trackId) void runCommand("Pista duplicada", () => platform.duplicateTrack(trackId));
   } else if (action.id === "track.remove") {
-    context?.track?.querySelector(".track-remove-button")?.click();
+    const track = contextTrack(context);
+    if (track && track.role !== "master" && !track.virtualMaster) void removeTrackFromProject(track, context.track);
   } else {
     const target = actionTarget(action);
     if (target && !target.disabled) target.click();
@@ -363,7 +376,7 @@ function closeContextMenu() {
 
 function showContextMenu(event) {
   const clip = event.target.closest(".audio-clip, .midi-clip");
-  const track = event.target.closest("[data-track-id]");
+  const track = event.target.closest("[data-track-id]:not(.track-meter)");
   const context = { clip, track };
   const kind = clip?.classList.contains("audio-clip") ? "audio" : clip?.classList.contains("midi-clip") ? "midi" : track ? "track" : null;
   if (!kind) return;
@@ -378,10 +391,13 @@ function showContextMenu(event) {
     if (action.id === "audio.preview") return Boolean(clip?.querySelector(".audio-preview-button:not(:disabled)"));
     if (action.id === "audio.remove") return Boolean(clip?.querySelector(".audio-region-remove:not(:disabled)"));
     if (action.id === "midi.quantize") return Boolean(clip?.dataset.ppq && elements.gridSnap.value !== "0");
-    if (action.id === "track.moveUp") return Boolean(track?.querySelector('[data-track-order="up"]:not(:disabled)'));
-    if (action.id === "track.moveDown") return Boolean(track?.querySelector('[data-track-order="down"]:not(:disabled)'));
-    if (action.id === "track.duplicate") return Boolean(track?.querySelector(".track-remove-button"));
-    if (action.id === "track.remove") return Boolean(track?.querySelector(".track-remove-button:not(:disabled)"));
+    if (action.id.startsWith("track.")) {
+      const data = contextTrack(context);
+      if (!data || data.virtualMaster) return false;
+      if (action.id === "track.moveUp") return trackMoveDestination(data, lastSnapshot.tracks, -1) !== null;
+      if (action.id === "track.moveDown") return trackMoveDestination(data, lastSnapshot.tracks, 1) !== null;
+      if (action.id === "track.duplicate" || action.id === "track.remove") return data.role !== "master";
+    }
     return true;
   });
   if (!actions.length) return;
@@ -480,6 +496,24 @@ function setNotice(title, text) {
   elements.noticeIcon.textContent = ({ error: "!", warning: "⚠", success: "✓", info: "i" })[tone];
 }
 
+/** Muestra un fallo de transporte junto a los botones que lo provocaron (además de la línea de estado). */
+function showTransportError(title, error) {
+  const text = `${title}: ${String(error)}`;
+  setNotice(title, String(error));
+  if (!elements.transportError) return;
+  // En la barra sólo el título (cabe junto al transporte); el detalle va en el tooltip y en la línea de estado.
+  elements.transportErrorText.textContent = title;
+  elements.transportError.title = text;
+  elements.transportError.hidden = false;
+  elements.transportError.closest(".control-bar")?.classList.add("has-transport-error");
+}
+
+function clearTransportError() {
+  if (!elements.transportError) return;
+  elements.transportError.hidden = true;
+  elements.transportError.closest(".control-bar")?.classList.remove("has-transport-error");
+}
+
 function updateUiZoomControls() {
   const percent = Math.round(uiZoom * 100);
   elements.zoomLevel.textContent = `${percent}%`;
@@ -565,7 +599,7 @@ function updateWorkspaceLayout() {
     : "Mostrar u ocultar el mezclador (Ctrl+3)";
   elements.clipInspector.hidden = selectedDetailTab !== "clip";
   elements.deviceInspector.hidden = selectedDetailTab !== "device";
-  elements.lowerPanelTitle.textContent = selectedDetailTab === "device" ? "DISPOSITIVO" : "DETALLE DE CLIP";
+  elements.lowerPanelTitle.textContent = selectedDetailTab === "device" ? "Cadena de dispositivos" : "Detalle de clip";
   elements.detailClipTab.classList.toggle("is-selected", selectedDetailTab === "clip");
   elements.detailDeviceTab.classList.toggle("is-selected", selectedDetailTab === "device");
   elements.detailClipTab.setAttribute("aria-selected", String(selectedDetailTab === "clip"));
@@ -574,16 +608,6 @@ function updateWorkspaceLayout() {
   elements.detailDeviceTab.setAttribute("aria-pressed", String(selectedDetailTab === "device"));
   elements.detailClipTab.tabIndex = selectedDetailTab === "clip" ? 0 : -1;
   elements.detailDeviceTab.tabIndex = selectedDetailTab === "device" ? 0 : -1;
-  const phaseStates = [
-    [elements.showMixerPhase, mixerPanelVisible],
-    [elements.showClipPhase, clipDetailVisible && selectedDetailTab === "clip"],
-    [elements.showDevicePhase, clipDetailVisible && selectedDetailTab === "device"],
-  ];
-  for (const [button, active] of phaseStates) {
-    if (!button) continue;
-    button.classList.toggle("is-selected", active);
-    button.setAttribute("aria-selected", String(active));
-  }
   elements.showMixer.setAttribute("aria-pressed", String(mixerPanelVisible));
   elements.toggleBrowser.setAttribute("aria-pressed", String(browserVisible));
   elements.toggleBrowser.title = browserVisible
@@ -661,7 +685,11 @@ function setProjectEnabled(enabled) {
   hasProject = enabled;
   for (const button of [elements.save, elements.saveAs, elements.play, elements.record, elements.pause, elements.stop, elements.addMidiTrack, elements.addAudioTrack, elements.addBusTrack, elements.createMidiClip, ...elements.arrangementCreateTrackButtons]) {
     button.disabled = !enabled;
-    if (!enabled) button.title = `${button.getAttribute("aria-label") ?? "Acción"}: abre o crea un proyecto primero`;
+    // Conservar el título original para restaurarlo al abrir un proyecto (antes quedaba el aviso pegado).
+    if (button.dataset.defaultTitle === undefined) button.dataset.defaultTitle = button.title;
+    button.title = enabled
+      ? button.dataset.defaultTitle
+      : `${button.getAttribute("aria-label") ?? "Acción"}: abre o crea un proyecto primero`;
   }
   for (const button of [elements.loopPointA, elements.loopPointB, elements.loopRangeClear]) {
     button.disabled = !enabled;
@@ -683,7 +711,7 @@ function selectSurface(surface) {
   };
   elements.arrangementView.hidden = surface !== "arrangement";
   elements.sessionView.hidden = surface !== "session";
-  elements.arrangementLegend.hidden = surface !== "arrangement";
+  elements.editor.dataset.surface = surface;
   for (const [name, button] of Object.entries(selected)) {
     const active = name === surface;
     button.classList.toggle("is-selected", active);
@@ -816,6 +844,8 @@ function createTrackInputControl(track) {
   const arm = document.createElement("button");
   arm.type = "button";
   arm.className = `mixer-toggle${track.recordArmed ? " is-selected" : ""}`;
+  arm.dataset.mixer = "arm";
+  arm.dataset.bind = "track.recordArmed";
   arm.textContent = track.recordArmed ? "REC ARM" : "ARMAR REC";
   arm.setAttribute("aria-pressed", String(track.recordArmed));
   arm.setAttribute("aria-label", `${track.recordArmed ? "Desarmar" : "Armar"} grabación ${track.name}`);
@@ -1157,6 +1187,8 @@ function createTrackMixerControls(track, compact = false) {
     const button = document.createElement("button");
     button.type = "button";
     button.className = "mixer-toggle";
+    button.dataset.mixer = property;
+    button.dataset.bind = `track.${property}`;
     button.textContent = label;
     button.title = `${label}: ${track.name}`;
     button.setAttribute("aria-label", `${label} ${track.name}`);
@@ -1199,9 +1231,11 @@ function createTrackMeter(track) {
   meter.setAttribute("aria-valuemax", "100");
   meter.setAttribute("aria-valuenow", "0");
   meter.setAttribute("aria-label", `Nivel de ${track.name}`);
+  const rms = document.createElement("span");
+  rms.className = "track-meter-rms";
   const fill = document.createElement("span");
   fill.className = "track-meter-fill";
-  meter.append(fill);
+  meter.append(rms, fill);
   return meter;
 }
 
@@ -1210,6 +1244,11 @@ function syncTrackSelectionUi() {
     checkbox.checked = selectedTrackIds.has(checkbox.dataset.trackSelect);
     checkbox.closest(".track-row, .session-track-header, .mixer-channel")
       ?.classList.toggle("is-track-selected", checkbox.checked);
+  }
+  for (const row of document.querySelectorAll(".track-row.track-head[data-track-id]")) {
+    const selected = selectedTrackIds.has(row.dataset.trackId);
+    row.classList.toggle("is-track-selected", selected);
+    row.setAttribute("aria-selected", String(selected));
   }
   for (const lane of document.querySelectorAll(".timeline-lane[data-track-id]")) {
     lane.classList.toggle("is-track-selected", selectedTrackIds.has(lane.dataset.trackId));
@@ -1330,6 +1369,32 @@ function createTrackRemovalButton(track) {
   return button;
 }
 
+/** Pista del snapshot correspondiente al elemento del menú contextual (cabecera, carril, tira…). */
+function contextTrack(context) {
+  const trackId = context?.track?.dataset.trackId;
+  return trackId ? lastSnapshot?.tracks.find((track) => track.id === trackId) ?? null : null;
+}
+
+/** Destino válido de `moveTrack` (índice en el snapshot) o null; nunca cruza el Master. */
+function trackMoveDestination(track, tracks, offset) {
+  if (!tracks || track.virtualMaster || track.role === "master") return null;
+  const index = tracks.findIndex((candidate) => candidate.id === track.id);
+  const masterIndex = tracks.findIndex((candidate) => candidate.role === "master");
+  const destination = index + offset;
+  if (index < 0 || destination < 0 || destination >= tracks.length) return null;
+  const reordered = tracks.filter((candidate) => candidate.id !== track.id);
+  reordered.splice(Math.max(0, Math.min(destination, reordered.length)), 0, track);
+  const nextMasterIndex = reordered.findIndex((candidate) => candidate.role === "master");
+  const crossesMaster = masterIndex >= 0 && (index < masterIndex) !== (destination < nextMasterIndex);
+  return crossesMaster ? null : destination;
+}
+
+function moveTrackBy(track, offset) {
+  const destination = trackMoveDestination(track, lastSnapshot?.tracks, offset);
+  if (destination === null) return Promise.resolve(false);
+  return runCommand("Orden de pistas actualizado", () => platform.moveTrack(track.id, destination));
+}
+
 function createTrackOrderControls(track, tracks) {
   if (track.virtualMaster || track.role === "master") return null;
   const index = tracks.findIndex((candidate) => candidate.id === track.id);
@@ -1412,15 +1477,40 @@ async function updateSelectedTrackGroup(groupName) {
   );
 }
 
+const METER_FLOOR_DB = -60;
+
+/** Convierte una amplitud lineal (0–1) a porcentaje de la escala dB del medidor. */
+function meterPercent(linear) {
+  if (!(linear > 0)) return 0;
+  const db = 20 * Math.log10(linear);
+  return Math.max(0, Math.min(100, (db - METER_FLOOR_DB) / -METER_FLOOR_DB * 100));
+}
+
+function formatMeterDb(linear) {
+  if (!(linear > 1e-6)) return "−∞";
+  const db = 20 * Math.log10(linear);
+  return `${db >= 0 ? "+" : "−"}${Math.abs(db).toFixed(1)}`;
+}
+
 function updateTrackMeters(meters) {
+  const masterReading = meters?.__master__;
+  if (elements.masterPeak) {
+    const masterPeak = Math.max(0, Number(masterReading?.peak) || 0);
+    elements.masterPeak.textContent = formatMeterDb(masterPeak);
+    elements.masterPeak.classList.toggle("is-clipping", masterPeak >= 1);
+  }
   for (const meter of document.querySelectorAll(".track-meter")) {
-    const reading = meters[meter.dataset.trackId];
+    const reading = meters?.[meter.dataset.trackId];
     const peak = Math.max(0, Number(reading?.peak) || 0);
     const rms = Math.max(0, Number(reading?.rms) || 0);
-    const level = Math.min(100, peak * 100);
+    const level = meterPercent(peak);
     meter.style.setProperty("--meter-level", `${level}%`);
+    meter.style.setProperty("--meter-rms", `${meterPercent(rms)}%`);
+    meter.classList.toggle("is-clipping", peak >= 1);
     meter.setAttribute("aria-valuenow", level.toFixed(0));
-    meter.title = `Pico ${(20 * Math.log10(Math.max(peak, 1e-6))).toFixed(1)} dBFS · RMS ${(20 * Math.log10(Math.max(rms, 1e-6))).toFixed(1)} dBFS`;
+    const failed = reading?.failed === true;
+    meter.classList.toggle("is-failed", failed);
+    meter.title = `${failed ? "El instrumento de esta pista falló y está en silencio · " : ""}Pico ${(20 * Math.log10(Math.max(peak, 1e-6))).toFixed(1)} dBFS · RMS ${(20 * Math.log10(Math.max(rms, 1e-6))).toFixed(1)} dBFS`;
   }
 }
 
@@ -2213,7 +2303,10 @@ function renderSnapshot(snapshot) {
   elements.loopRangeReadout.textContent = loopRange
     ? `A ${formatBarBeat(loopRange.startTick)} · B ${formatBarBeat(loopRange.endTick)}`
     : pendingLoopStartTick === null ? "Sin rango" : `A ${formatBarBeat(pendingLoopStartTick)} · fija B`;
-  if (projectTransportState === "stopped") renderTransportPosition(0);
+  if (projectTransportState === "stopped") {
+    renderTransportPosition(0);
+    updateTrackMeters({});
+  }
   elements.save.disabled = !snapshot.projectPath;
   elements.save.title = snapshot.projectPath ? "Guardar proyecto" : "Guarda como para elegir una ubicación";
   elements.path.textContent = snapshot.projectPath ?? "Proyecto sin ruta";
@@ -2221,8 +2314,7 @@ function renderSnapshot(snapshot) {
   const projectLabel = snapshot.projectPath?.split(/[\\/]/).at(-1) ?? snapshot.projectId;
   elements.name.textContent = projectLabel;
   elements.transportTempo.textContent = Number(snapshot.tempoBpm).toFixed(1);
-  elements.transport.textContent = snapshot.transportState.toUpperCase();
-  document.querySelector(".transport-bar").dataset.state = snapshot.transportState.toLowerCase();
+  renderTransportState(snapshot);
   elements.revision.textContent = `REV ${snapshot.projectRevision}`;
   elements.projectStatus.textContent = snapshot.projectPath ? "PROYECTO ABIERTO" : "PROYECTO SIN GUARDAR";
   const armedTracks = snapshot.tracks.filter((track) => track.recordArmed && track.inputRoute);
@@ -2301,9 +2393,10 @@ function renderSnapshot(snapshot) {
     message.textContent = "Empieza con una sesión musical o añade tus propias pistas.";
     const demoButton = document.createElement("button");
     demoButton.type = "button";
-    demoButton.className = "button button-demo timeline-empty-action";
+    demoButton.className = "button timeline-empty-action";
+    demoButton.dataset.bind = "project.demo";
     demoButton.textContent = "Cargar Demo MIDI";
-    demoButton.addEventListener("click", () => elements.demoProject.click());
+    demoButton.addEventListener("click", () => loadDemoProject(demoButton));
     emptyLane.append(message, demoButton);
     elements.lanes.append(emptyLane);
     renderClipInspector(snapshot);
@@ -2313,46 +2406,18 @@ function renderSnapshot(snapshot) {
     return;
   }
 
-  for (const track of snapshot.tracks) {
-    const row = document.createElement("div");
-    row.className = `track-row${selectedTrackIds.has(track.id) ? " is-track-selected" : ""}`;
-    row.dataset.trackId = track.id;
-    row.style.setProperty("--track-color", track.color);
-    const icon = document.createElement("span");
-    icon.className = `track-icon ${track.kind}`;
-    icon.textContent = track.marker || (track.role === "master" ? "M" : track.role === "bus" ? "B" : track.kind === "audio" ? "◖" : "♫");
-    icon.title = track.annotation || track.name;
-    const label = document.createElement("span");
-    label.textContent = track.name;
-    const details = document.createElement("span");
-    details.className = "track-meta";
-    const mixState = [track.mute ? "MUTE" : null, track.solo ? "SOLO" : null, !track.active ? "OFF" : null].filter(Boolean).join(" · ");
-    details.textContent = `${track.role === "master" ? "MASTER" : track.role === "bus" ? "BUS" : track.kind === "audio" ? "AUDIO" : "MIDI"}${track.kind === "midi" ? ` · ${track.noteCount} notas` : track.role === "audio" ? ` · ${track.outputChannels} ch` : ""}${track.groupName ? ` · GRUPO ${track.groupName}` : ""}${mixState ? ` · ${mixState}` : ""}`;
-    const name = document.createElement("div");
-    name.className = "track-name";
-    name.append(createTrackSelectionControl(track), icon, label);
-    const headingRow = document.createElement("div");
-    headingRow.className = "track-row-heading";
-    const identity = createTrackIdentityControl(track);
-    if (identity) headingRow.append(identity);
-    headingRow.append(name);
-    const removeButton = createTrackRemovalButton(track);
-    const orderControls = createTrackOrderControls(track, snapshot.tracks);
-    if (orderControls) headingRow.append(orderControls);
-    if (removeButton) headingRow.append(removeButton);
-    row.append(headingRow, details);
-    const instrumentControl = createTrackInstrumentControl(track, true);
-    if (instrumentControl) row.append(instrumentControl);
-    const meter = createTrackMeter(track);
-    if (meter) row.append(meter);
-    const mixerControls = createTrackMixerControls(track, true);
-    if (mixerControls) row.append(mixerControls);
-    row.append(createTrackHeightGrip(track, snapshot.projectId));
+  const orderedTracks = arrangementTrackOrder(snapshot.tracks);
+  let trackNumber = 0;
+  for (const track of orderedTracks) {
+    const isMasterRow = Boolean(track.role === "master" || track.virtualMaster);
+    if (!isMasterRow) trackNumber += 1;
+    const row = createArrangementTrackHeader(track, isMasterRow ? null : trackNumber, snapshot);
     elements.tracks.append(row);
 
     const lane = document.createElement("div");
     lane.className = `timeline-lane${selectedTrackIds.has(track.id) ? " is-track-selected" : ""}`;
     lane.dataset.trackId = track.id;
+    if (isMasterRow) lane.classList.add("is-master-lane");
     lane.setAttribute("aria-label", `Pista ${track.name} en Arrangement`);
     lane.style.setProperty("--track-color", track.color);
     lane.addEventListener("click", (event) => {
@@ -2493,14 +2558,10 @@ function arrangementTrackHeight(track, projectId) {
   } catch {
     // Si el WebView no ofrece almacenamiento local, la altura sigue siendo usable durante la sesión.
   }
-  const visibleHeight = elements.arrangementView?.clientHeight ?? 0;
-  const trackCount = Math.max(1, lastSnapshot?.tracks.length ?? 1);
-  const viewportFallback = window.matchMedia("(max-height: 760px)").matches ? 56 : 64;
-  const estimatedCanvas = Math.floor(Math.max(0, window.innerHeight - 408) / trackCount);
-  const canvasFallback = visibleHeight > 0
-    ? Math.floor(visibleHeight / trackCount)
-    : estimatedCanvas;
-  const fallback = Math.max(viewportFallback, Math.min(160, canvasFallback));
+  // F2: altura inicial fija (64 px, 56 px en pantallas bajas; Master 40 px) en vez de repartir el lienzo.
+  const fallback = track.role === "master" || track.virtualMaster
+    ? ARRANGEMENT_TRACK_HEIGHT_MIN
+    : window.matchMedia("(max-height: 760px)").matches ? 56 : 64;
   const height = Number.isFinite(stored) && stored >= ARRANGEMENT_TRACK_HEIGHT_MIN
     ? Math.min(ARRANGEMENT_TRACK_HEIGHT_MAX, stored)
     : fallback;
@@ -2508,10 +2569,230 @@ function arrangementTrackHeight(track, projectId) {
   return height;
 }
 
+/** Orden visual del arreglo: pistas en su orden y el Master siempre al final (fijo abajo). */
+function arrangementTrackOrder(tracks) {
+  const isMaster = (track) => track.role === "master" || track.virtualMaster;
+  return [...tracks.filter((track) => !isMaster(track)), ...tracks.filter(isMaster)];
+}
+
 function applyArrangementTrackHeights(snapshot) {
-  const rows = snapshot.tracks.map((track) => `${arrangementTrackHeight(track, snapshot.projectId)}px`).join(" ");
+  const ordered = arrangementTrackOrder(snapshot.tracks);
+  const heights = ordered.map((track) => arrangementTrackHeight(track, snapshot.projectId));
+  const hasMaster = ordered.some((track) => track.role === "master" || track.virtualMaster);
+  const sized = heights.map((height) => `${height}px`);
+  // Una fila elástica antes del Master lo deja pegado al borde inferior aunque haya pocas pistas.
+  if (hasMaster) sized.splice(sized.length - 1, 0, "minmax(0, 1fr)");
+  const rows = sized.join(" ");
   elements.tracks.style.gridTemplateRows = rows;
   elements.lanes.style.gridTemplateRows = rows;
+  ordered.forEach((track, index) => {
+    const compact = heights[index] < ARRANGEMENT_TRACK_SECOND_ROW_MIN;
+    const selector = `.track-row[data-track-id="${CSS.escape(track.id)}"]`;
+    elements.tracks.querySelector(selector)?.classList.toggle("is-compact", compact);
+  });
+}
+
+function formatTrackGain(value) {
+  const number = Number(value) || 0;
+  const text = Math.abs(number).toFixed(1);
+  return number > 0 ? `+${text}` : number < 0 ? `−${text}` : "0.0";
+}
+
+function formatTrackPan(value) {
+  const pan = Math.round((Number(value) || 0) * 100);
+  return pan === 0 ? "C" : pan < 0 ? `L${-pan}` : `R${pan}`;
+}
+
+/** Botón de estado de la cabecera ligado a una propiedad real del mezclador (setTrackMixer). */
+function createTrackHeadToggle(track, property, label, title) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = `track-head-btn mixer-toggle${track[property] ? " is-selected" : ""}`;
+  button.dataset.mixer = property;
+  button.dataset.bind = `track.${property}`;
+  button.textContent = label;
+  button.title = title;
+  button.setAttribute("aria-label", title);
+  button.setAttribute("aria-pressed", String(Boolean(track[property])));
+  button.addEventListener("click", () => updateTrackMixer(track, { [property]: !track[property] }, `${title} actualizado`));
+  return button;
+}
+
+/** ● armar: real en pistas de audio con entrada; en MIDI es una indicación deshabilitada (sin backend). */
+function createTrackHeadArm(track) {
+  if (track.role === "audio") {
+    const existing = track.inputRoute?.deviceKey;
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = `track-head-btn mixer-toggle${track.recordArmed ? " is-selected" : ""}`;
+    button.dataset.mixer = "arm";
+    button.dataset.bind = "track.recordArmed";
+    button.textContent = "●";
+    button.setAttribute("aria-pressed", String(Boolean(track.recordArmed)));
+    button.disabled = !existing || projectTransportState !== "stopped";
+    button.title = !existing
+      ? "Armar: asigna una entrada física en la tira de mezcla"
+      : projectTransportState !== "stopped"
+        ? "Armar: detén el transporte para cambiarlo"
+        : track.recordArmed ? "Desarmar grabación" : "Armar grabación (se graba con ● del transporte)";
+    button.setAttribute("aria-label", `${track.recordArmed ? "Desarmar" : "Armar"} grabación de ${track.name}`);
+    button.addEventListener("click", () => runCommand(
+      track.recordArmed ? "Pista desarmada" : "Pista armada para grabación",
+      () => platform.setTrackRecordArm(track.id, !track.recordArmed),
+    ));
+    return button;
+  }
+  if (track.kind === "midi" && track.role !== "bus") {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "track-head-btn mixer-toggle is-unavailable";
+    button.dataset.mixer = "arm";
+    button.dataset.requires = "backend";
+    button.textContent = "●";
+    button.disabled = true;
+    button.title = "Armar MIDI requiere backend";
+    button.setAttribute("aria-label", `Armar ${track.name}: armar MIDI requiere backend`);
+    return button;
+  }
+  const spacer = document.createElement("span");
+  spacer.className = "track-head-btn-spacer";
+  spacer.setAttribute("aria-hidden", "true");
+  return spacer;
+}
+
+function createTrackHeadGain(track) {
+  const field = document.createElement("label");
+  field.className = "track-head-gain";
+  const input = document.createElement("input");
+  input.type = "range";
+  input.min = "-60";
+  input.max = "12";
+  input.step = "0.5";
+  input.value = String(Number(track.gainDb) || 0);
+  input.dataset.bind = "track.gainDb";
+  input.setAttribute("aria-label", `Volumen de ${track.name} en dB`);
+  const readout = document.createElement("span");
+  readout.className = "track-head-gain-value";
+  const sync = () => {
+    const value = Number(input.value);
+    readout.textContent = formatTrackGain(value);
+    field.title = `Volumen ${formatTrackGain(value)} dB · arrastra o usa ←/→`;
+    field.style.setProperty("--gain-fill", `${(value + 60) / 72 * 100}%`);
+  };
+  sync();
+  input.addEventListener("input", sync);
+  input.addEventListener("change", () => updateTrackMixer(track, { gainDb: Number(input.value) }, "Volumen actualizado"));
+  field.append(input, readout);
+  return field;
+}
+
+/** Cabecera compacta F2: fila 1 nombre/activar/solo/armar/volumen, medidor vertical y fila 2 opcional. */
+function createArrangementTrackHeader(track, number, snapshot) {
+  const isMaster = Boolean(track.role === "master" || track.virtualMaster);
+  const row = document.createElement("div");
+  row.className = "track-row track-head";
+  row.classList.toggle("is-master", isMaster);
+  row.classList.toggle("is-muted", Boolean(track.mute));
+  row.classList.toggle("is-inactive", track.active === false);
+  row.classList.toggle("is-track-selected", selectedTrackIds.has(track.id));
+  row.dataset.trackId = track.id;
+  row.style.setProperty("--track-color", track.color);
+  row.tabIndex = 0;
+  row.setAttribute("aria-label", `Pista ${track.name}${track.mute ? ", silenciada" : ""}`);
+  row.setAttribute("aria-selected", String(selectedTrackIds.has(track.id)));
+
+  const strip = document.createElement("span");
+  strip.className = "track-head-strip";
+  strip.setAttribute("aria-hidden", "true");
+
+  const main = document.createElement("div");
+  main.className = "track-head-main";
+  const line1 = document.createElement("div");
+  line1.className = "track-head-line";
+  const name = document.createElement("span");
+  name.className = "track-head-name";
+  name.dataset.bind = "track.name";
+  name.textContent = `${track.marker ? `${track.marker} ` : ""}${track.name}`;
+  const kindLabel = isMaster ? "Master" : track.role === "bus" ? "Bus" : track.kind === "audio" ? "Audio" : "MIDI";
+  name.title = [track.name, kindLabel, track.mute ? "silenciada (M en la tira o menú contextual)" : null, track.annotation, isMaster ? null : "Doble clic: color, marca y nota"].filter(Boolean).join(" · ");
+  if (!track.virtualMaster) name.addEventListener("dblclick", () => editTrackIdentity(track));
+  line1.append(name);
+  if (!track.virtualMaster) {
+    const active = createTrackHeadToggle(track, "active", number === null ? "ON" : String(number), `Activar ${track.name}`);
+    active.classList.add("track-head-active");
+    line1.append(active);
+    if (isMaster) {
+      const spacerA = document.createElement("span");
+      spacerA.className = "track-head-btn-spacer";
+      const spacerB = spacerA.cloneNode();
+      line1.append(spacerA, spacerB);
+    } else {
+      line1.append(createTrackHeadToggle(track, "solo", "S", `Solo ${track.name}`), createTrackHeadArm(track));
+    }
+    line1.append(createTrackHeadGain(track));
+  }
+  main.append(line1);
+
+  const line2 = document.createElement("div");
+  line2.className = "track-head-line track-head-line2";
+  const instrument = createTrackInstrumentControl(track, true);
+  if (instrument) {
+    instrument.classList.add("track-head-chip");
+    instrument.textContent = instrument.textContent.replace(/ · Dispositivo$/, "");
+    instrument.title = `${instrument.textContent} · abrir en Dispositivo`;
+    line2.append(instrument);
+  } else {
+    const info = document.createElement("span");
+    info.className = "track-head-chip is-readonly";
+    info.textContent = isMaster ? "Salida principal" : track.role === "bus" ? "Bus interno"
+      : track.inputRoute?.deviceKey ? `Entrada ${track.inputRoute.channels?.map((channel) => channel + 1).join("+") ?? ""}` : "Sin entrada";
+    info.title = track.role === "audio" ? "La entrada se asigna en la tira de mezcla" : info.textContent;
+    line2.append(info);
+  }
+  if (!isMaster) {
+    const pan = document.createElement("span");
+    pan.className = "track-head-readout";
+    pan.dataset.bind = "track.pan";
+    pan.textContent = `Pan ${formatTrackPan(track.pan)}`;
+    pan.title = "Panorama · se edita en la tira de mezcla";
+    const output = document.createElement("span");
+    output.className = "track-head-readout track-head-output";
+    output.dataset.bind = "track.outputTrackId";
+    const target = snapshot.tracks.find((candidate) => candidate.id === track.outputTrackId);
+    output.textContent = `→ ${target?.name ?? "Master"}`;
+    output.title = "Salida · se cambia en la tira de mezcla";
+    line2.append(pan, output);
+  }
+  main.append(line2);
+
+  const meter = createTrackMeter(track);
+  meter.classList.add("track-meter-vertical");
+  row.append(strip, main, meter, createTrackHeightGrip(track, snapshot.projectId));
+  row.classList.toggle("is-compact", arrangementTrackHeight(track, snapshot.projectId) < ARRANGEMENT_TRACK_SECOND_ROW_MIN);
+
+  // Clic en la cabecera = seleccionar; Ctrl/⌘+clic = selección múltiple.
+  row.addEventListener("click", (event) => {
+    if (event.target.closest("button, input, label, select, .track-height-grip")) return;
+    if (event.ctrlKey || event.metaKey) {
+      if (selectedTrackIds.has(track.id)) selectedTrackIds.delete(track.id);
+      else selectedTrackIds.add(track.id);
+    } else {
+      selectedTrackIds.clear();
+      selectedTrackIds.add(track.id);
+    }
+    syncTrackSelectionUi();
+  });
+  row.addEventListener("keydown", (event) => {
+    if (event.target !== row) return;
+    if (event.altKey && (event.key === "ArrowUp" || event.key === "ArrowDown")) {
+      event.preventDefault();
+      void moveTrackBy(track, event.key === "ArrowUp" ? -1 : 1);
+    } else if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      row.click();
+    }
+  });
+  return row;
 }
 
 function setArrangementTrackHeight(track, projectId, height, grip) {
@@ -3674,7 +3955,12 @@ function renderTimelineRuler(beatsPerBar) {
   zoomIn.disabled = arrangementVisibleBars <= 4;
   zoomIn.addEventListener("click", () => setArrangementZoom(Math.max(4, Math.floor(arrangementVisibleBars / 2))));
   controls.append(zoomOut, readout, zoomIn);
-  elements.ruler.append(controls);
+  // F2: el zoom vive en la barra local junto a la vista general, para que la regla mida igual que los carriles.
+  controls.setAttribute("role", "group");
+  controls.setAttribute("aria-label", "Zoom horizontal del arreglo");
+  document.querySelector(".surface-toolbar .timeline-ruler-controls")?.remove();
+  if (elements.overview?.parentElement) elements.overview.before(controls);
+  else elements.ruler.append(controls);
   for (let offset = 0; offset < arrangementVisibleBars; offset += 1) {
     const tick = document.createElement("span");
     tick.className = "bar-tick";
@@ -3702,7 +3988,7 @@ function setArrangementZoom(bars) {
 function renderArrangementOverview(snapshot, beatsPerBar) {
   const overview = elements.overview;
   overview.replaceChildren();
-  for (const track of snapshot.tracks) {
+  for (const track of arrangementTrackOrder(snapshot.tracks).filter((item) => item.role !== "master" && !item.virtualMaster)) {
     const row = document.createElement("div");
     row.className = "overview-track";
     row.style.setProperty("--track-color", track.color);
@@ -3749,13 +4035,14 @@ function renderArrangementOverview(snapshot, beatsPerBar) {
   viewport.addEventListener("pointerup", () => { if (drag) { drag = null; renderSnapshot(lastSnapshot); } });
   viewport.addEventListener("pointercancel", () => { drag = null; renderSnapshot(lastSnapshot); });
   overview.append(viewport);
-  overview.addEventListener("pointerdown", (event) => {
+  overview.hidden = snapshot.tracks.length === 0;
+  overview.onpointerdown = (event) => {
     if (event.target === viewport || event.button !== 0) return;
     const bounds = overview.getBoundingClientRect();
     const bar = Math.max(1, Math.min(arrangementTotalBars, Math.floor((event.clientX - bounds.left) / bounds.width * arrangementTotalBars) + 1));
     arrangementStartBar = Math.max(1, Math.min(arrangementTotalBars - arrangementVisibleBars + 1, bar - Math.floor(arrangementVisibleBars / 2)));
     renderSnapshot(lastSnapshot);
-  });
+  };
 }
 
 function renderTransportPosition(ticks) {
@@ -3770,7 +4057,47 @@ function renderTransportPosition(ticks) {
   const beatPosition = (transportPositionTick % ticksPerBar) / 960;
   const beat = Math.floor(beatPosition) + 1;
   const subdivision = Math.floor((beatPosition % 1) * 4) + 1;
-  elements.transportPosition.textContent = `${bar}.${beat}.${subdivision}`;
+  elements.transportPosition.textContent = `${bar} . ${beat} . ${subdivision}`;
+  if (elements.transportClock) elements.transportClock.textContent = formatTransportClock(transportPositionTick);
+}
+
+const TRANSPORT_STATE_LABELS = {
+  stopped: "Detenido",
+  playing: "Reproduciendo",
+  paused: "En pausa",
+  recording: "Grabando",
+};
+
+/** Refleja el estado del transporte como atributo (lo pintan los botones), sin texto en inglés. */
+function renderTransportState(snapshot) {
+  const raw = String(snapshot.transportState ?? "stopped").toLowerCase();
+  const state = audioRecording && raw === "playing" ? "recording" : raw;
+  const bar = document.querySelector(".control-bar");
+  if (bar) {
+    bar.dataset.transport = state;
+    bar.dataset.state = raw;
+  }
+  elements.transport.textContent = TRANSPORT_STATE_LABELS[state] ?? state;
+  elements.play.classList.toggle("is-active", raw === "playing");
+  elements.pause.classList.toggle("is-active", raw === "paused");
+  elements.play.setAttribute("aria-pressed", String(raw === "playing"));
+  elements.pause.setAttribute("aria-pressed", String(raw === "paused"));
+  const beatsPerBar = Number(snapshot.beatsPerBar) || 4;
+  if (elements.transportSignature) {
+    // El snapshot sólo expone la duración del compás en negras, no numerador/denominador.
+    const quarters = Number.isInteger(beatsPerBar) ? String(beatsPerBar) : beatsPerBar.toLocaleString("es-CL", { maximumFractionDigits: 2 });
+    elements.transportSignature.textContent = beatsPerBar === 4 ? "4/4" : `${quarters} ♩`;
+    elements.transportSignature.title = `Compás de ${quarters} negras · editar la métrica requiere backend`;
+  }
+}
+
+/** Tiempo transcurrido calculado con el tempo del proyecto (960 ticks por negra). */
+function formatTransportClock(ticks) {
+  const tempo = Number(lastSnapshot?.tempoBpm) || 120;
+  const seconds = Math.max(0, (Number(ticks) || 0) / 960 * 60 / tempo);
+  const minutes = Math.floor(seconds / 60);
+  const rest = seconds - minutes * 60;
+  return `${minutes}:${rest.toFixed(1).padStart(4, "0")}`;
 }
 
 function formatBarBeat(ticks) {
@@ -3992,30 +4319,6 @@ elements.showSession.addEventListener("click", () => {
   selectSurface("session");
   if (lastSnapshot) renderSessionSurface(lastSnapshot);
 });
-if (elements.showMixerPhase) {
-  elements.showMixerPhase.addEventListener("click", () => {
-    mixerPanelVisible = !mixerPanelVisible;
-    updateWorkspaceLayout();
-    if (mixerPanelVisible && elements.mixerView) {
-      elements.mixerView.scrollIntoView({ behavior: "smooth" });
-    }
-  });
-}
-if (elements.showClipPhase) {
-  elements.showClipPhase.addEventListener("click", () => {
-    clipDetailVisible = true;
-    selectedDetailTab = "clip";
-    updateWorkspaceLayout();
-  });
-}
-if (elements.showDevicePhase) {
-  elements.showDevicePhase.addEventListener("click", () => {
-    clipDetailVisible = true;
-    selectedDetailTab = "device";
-    if (lastSnapshot) renderDeviceInspector(lastSnapshot);
-    updateWorkspaceLayout();
-  });
-}
 elements.showMixer.addEventListener("click", () => {
   mixerPanelVisible = !mixerPanelVisible;
   updateWorkspaceLayout();
@@ -4051,12 +4354,9 @@ for (const [index, tab] of [elements.detailClipTab, elements.detailDeviceTab].en
   });
 }
 const mainViewTabs = [
-  elements.showSession,
   elements.showArrangement,
-  elements.showMixerPhase,
-  elements.showClipPhase,
-  elements.showDevicePhase,
-].filter(Boolean);
+  elements.showSession,
+];
 for (const [index, tab] of mainViewTabs.entries()) {
   tab.addEventListener("keydown", (event) => {
     if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
@@ -4090,9 +4390,14 @@ elements.gridSnap.addEventListener("change", () => {
   setNotice("Ajuste actualizado", `El movimiento y recorte de regiones de audio usarán ${label}.`);
 });
 elements.railSettings.addEventListener("click", () => {
-  elements.audioSettings.open = true;
-  elements.audioSettings.scrollIntoView({ block: "nearest" });
-  elements.audioSettings.querySelector("summary").focus();
+  if (elements.audioSettings.open) return;
+  elements.audioSettings.showModal();
+  elements.audioProfile.focus();
+});
+elements.audioSettingsClose.addEventListener("click", () => elements.audioSettings.close());
+elements.audioSettings.addEventListener("click", (event) => {
+  // Clic en el fondo (fuera del cuadro) cierra el diálogo.
+  if (event.target === elements.audioSettings) elements.audioSettings.close();
 });
 
 elements.newProject.addEventListener("click", async () => {
@@ -4105,8 +4410,8 @@ elements.newProject.addEventListener("click", async () => {
   } });
 });
 
-elements.demoProject.addEventListener("click", async () => {
-  await whileBusy([elements.demoProject], async () => { try {
+async function loadDemoProject(trigger = null) {
+  await whileBusy(trigger ? [trigger] : [], async () => { try {
     const snapshot = await platform.demoMidiProject();
     renderSnapshot(snapshot);
     const firstMidiClip = snapshot.midiClips[0];
@@ -4117,7 +4422,8 @@ elements.demoProject.addEventListener("click", async () => {
   } catch (error) {
     setNotice("No se pudo preparar la demo MIDI", String(error));
   } });
-});
+}
+elements.emptyDemoProject?.addEventListener("click", () => loadDemoProject(elements.emptyDemoProject));
 
 elements.save.addEventListener("click", () => runCommand("Proyecto guardado", () => platform.saveProject()));
 elements.saveAs.addEventListener("click", () => runCommand("Copia del proyecto guardada", () => platform.saveProjectAs()));
@@ -4129,6 +4435,7 @@ elements.play.addEventListener("click", async () => {
     const snapshot = await platform.setTransport("play", startAtCursor ? editCursorTick * 2 : null);
     renderSnapshot(snapshot);
     renderTransportPosition(await platform.transportPosition());
+    clearTransportError();
     const hasContent = snapshot.midiClipCount > 0 || snapshot.audioClipCount > 0;
     setNotice(hasContent ? "Transporte en Play" : "Sesión vacía", hasContent
       ? startAtCursor
@@ -4136,7 +4443,7 @@ elements.play.addEventListener("click", async () => {
         : `Transporte reanudado en ${elements.transportPosition.textContent}.`
       : "No hay regiones MIDI ni de audio en este proyecto.");
   } catch (error) {
-    setNotice("No se pudo iniciar la reproducción", String(error));
+    showTransportError("No se pudo iniciar la reproducción", error);
   } });
 });
 elements.record.addEventListener("click", async () => {
@@ -4150,17 +4457,26 @@ elements.record.addEventListener("click", async () => {
       setNotice("Grabación en curso", "Se capturan las pistas armadas. Usa Detener para finalizar y crear las regiones de audio.");
     } catch (error) {
       audioRecording = false;
-      setNotice("No se pudo iniciar la grabación", String(error));
+      showTransportError("No se pudo iniciar la grabación", error);
     }
   });
 });
-elements.pause.addEventListener("click", () => runCommand("Transporte pausado", () => platform.setTransport("pause")));
+elements.pause.addEventListener("click", async () => {
+  try {
+    renderSnapshot(await platform.setTransport("pause"));
+    clearTransportError();
+    setNotice("Transporte pausado", `Posición conservada en ${elements.transportPosition.textContent}.`);
+  } catch (error) {
+    showTransportError("No se pudo pausar", error);
+  }
+});
 elements.stop.addEventListener("click", async () => {
   const priorAudioCount = Number(lastSnapshot?.audioClipCount) || 0;
   try {
     const snapshot = await platform.setTransport("stop");
     audioRecording = false;
     renderSnapshot(snapshot);
+    clearTransportError();
     const created = Math.max(0, snapshot.audioClipCount - priorAudioCount);
     setNotice("Transporte detenido", created
       ? `Se añadieron ${created} región${created === 1 ? "" : "es"} de audio grabada${created === 1 ? "" : "s"} al proyecto.`
@@ -4173,7 +4489,7 @@ elements.stop.addEventListener("click", async () => {
     } catch (_) {
       // Preserve the original transport error if refreshing the UI also fails.
     }
-    setNotice(wasRecording ? "Grabación finalizada con incidencia" : "No se pudo detener el transporte", String(error));
+    showTransportError(wasRecording ? "Grabación finalizada con incidencia" : "No se pudo detener el transporte", error);
   }
 });
 elements.panic.addEventListener("click", () => runCommand("Notas MIDI apagadas", () => platform.setTransport("panic")));
@@ -4188,9 +4504,10 @@ elements.metronome.addEventListener("click", async () => {
     elements.metronome.classList.toggle("is-selected", enabled);
     setNotice(enabled ? "Metrónomo activado" : "Metrónomo desactivado", "El clic sigue el tempo y la métrica del proyecto.");
   } catch (error) {
-    setNotice("No se pudo cambiar el metrónomo", String(error));
+    showTransportError("No se pudo cambiar el metrónomo", error);
   }
 });
+elements.transportErrorDismiss?.addEventListener("click", clearTransportError);
 elements.undo.addEventListener("click", () => runCommand("Undo aplicado", () => platform.historyAction("undo")));
 elements.redo.addEventListener("click", () => runCommand("Redo aplicado", () => platform.historyAction("redo")));
 
@@ -4210,7 +4527,7 @@ setInterval(async () => {
   } catch (error) {
     if (!transportLoopErrorReported) {
       transportLoopErrorReported = true;
-      setNotice("Falló la repetición A/B", String(error));
+      showTransportError("Falló la repetición A/B", error);
     }
   } finally {
     transportPositionPollPending = false;
@@ -4277,9 +4594,7 @@ function panelResizeBounds() {
   const editorHeight = elements.editor.clientHeight;
   const minHeight = editorHeight <= 760 ? 190 : 210;
   const arrangementMinimum = editorHeight <= 760 ? 200 : 220;
-  const fixedHeight = document.querySelector(".transport-bar").getBoundingClientRect().height
-    + document.querySelector(".surface-toolbar").getBoundingClientRect().height
-    + elements.notice.getBoundingClientRect().height
+  const fixedHeight = document.querySelector(".surface-toolbar").getBoundingClientRect().height
     + (elements.editor.classList.contains("mixer-panel-open") ? elements.mixerView.getBoundingClientRect().height : 0);
   return { minHeight, maxHeight: Math.max(minHeight, editorHeight - fixedHeight - arrangementMinimum) };
 }

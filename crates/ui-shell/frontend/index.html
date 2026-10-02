@@ -3,43 +3,99 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#181818" />
-    <title>Estudio DAW · Ableton Suite Edition</title>
+    <meta name="theme-color" content="#141516" />
+    <title>Estudio DAW</title>
     <link rel="stylesheet" href="./styles.css" />
     <script src="./platform-tauri.js" defer></script>
     <script src="./main.js" defer></script>
   </head>
   <body>
+    <!-- Fila 1 · menú (28 px): identidad, menú de aplicación, proyecto y preferencias de la interfaz. -->
     <header class="appbar">
       <a class="brand" href="#" aria-label="Estudio DAW">
-        <span class="brand-mark">E</span>
+        <span class="brand-mark" aria-hidden="true">E</span>
         <span>estudio<span class="brand-light">daw</span></span>
       </a>
-      <span class="appbar-divider"></span>
       <nav id="application-menu" class="application-menu" aria-label="Menú principal"></nav>
       <div class="project-identity">
         <strong id="project-name">Sin proyecto</strong>
         <span id="project-path" title="">Sin proyecto abierto</span>
       </div>
-      <div class="ui-zoom-controls" role="group" aria-label="Tamaño de la interfaz">
-        <button id="zoom-out" title="Reducir interfaz (Ctrl+-)" aria-label="Reducir tamaño de interfaz">−</button>
-        <button id="zoom-reset" title="Restablecer interfaz (Ctrl+0)" aria-label="Restablecer tamaño de interfaz"><span id="zoom-level">100%</span></button>
-        <button id="zoom-in" title="Ampliar interfaz (Ctrl++)" aria-label="Ampliar tamaño de interfaz">＋</button>
-      </div>
       <nav class="project-actions" aria-label="Acciones de proyecto">
-        <button id="new-project" class="icon-button" title="Crear un proyecto nuevo (Ctrl+N)" aria-label="Nuevo proyecto">＋</button>
-        <button id="demo-project" class="button button-demo" title="Cargar sesión MIDI de demostración">Demo MIDI</button>
-        <button id="open-project" class="icon-button" title="Abrir un proyecto (Ctrl+O)" aria-label="Abrir proyecto">↗</button>
-        <button id="save-project-as" class="icon-button" title="Guardar proyecto como (Ctrl+Mayús+S)" aria-label="Guardar como" disabled>⤓</button>
-        <button id="save-project" class="icon-button icon-save" title="Guardar proyecto (Ctrl+S)" aria-label="Guardar" disabled>▣</button>
+        <button id="new-project" class="icon-button" data-bind="project.new" title="Crear un proyecto nuevo" aria-label="Nuevo proyecto">＋</button>
+        <button id="open-project" class="icon-button" data-bind="project.open" title="Abrir un proyecto" aria-label="Abrir proyecto">↗</button>
+        <button id="save-project-as" class="icon-button" data-bind="project.saveAs" title="Guardar proyecto como (Ctrl+Mayús+S)" aria-label="Guardar como" disabled>⤓</button>
+        <button id="save-project" class="icon-button" data-bind="project.save" title="Guardar proyecto (Ctrl+S)" aria-label="Guardar" disabled>▣</button>
       </nav>
+      <div class="ui-zoom-controls" role="group" aria-label="Tamaño de la interfaz">
+        <button id="zoom-out" data-bind="ui.zoomOut" title="Reducir interfaz (Ctrl+-)" aria-label="Reducir tamaño de interfaz">−</button>
+        <button id="zoom-reset" data-bind="ui.zoomReset" title="Restablecer interfaz (Ctrl+0)" aria-label="Restablecer tamaño de interfaz"><span id="zoom-level">100%</span></button>
+        <button id="zoom-in" data-bind="ui.zoomIn" title="Ampliar interfaz (Ctrl++)" aria-label="Ampliar tamaño de interfaz">＋</button>
+      </div>
+      <button id="rail-settings" class="icon-button appbar-settings" data-bind="view.audioSettings" type="button" title="Preferencias de audio: buffers, latencia y salida" aria-label="Preferencias de audio" aria-haspopup="dialog"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 5.2a2.8 2.8 0 1 0 0 5.6 2.8 2.8 0 0 0 0-5.6Zm5.6 3.6.1-.8-.1-.8 1.4-1.1-1.4-2.4-1.7.6a5 5 0 0 0-1.4-.8L10.2 1.8H7.4L7.1 3.5a5 5 0 0 0-1.4.8L4 3.7 2.6 6.1 4 7.2 3.9 8l.1.8-1.4 1.1L4 12.3l1.7-.6c.4.3.9.6 1.4.8l.3 1.7h2.8l.3-1.7c.5-.2 1-.5 1.4-.8l1.7.6 1.4-2.4Z" fill="none" stroke="currentColor" stroke-width="1.1" stroke-linejoin="round"/></svg></button>
     </header>
+
+    <!-- Fila 2 · barra de control (40 px, ancho completo): tempo · transporte · posición · A/B · vista · historia · Master · paneles. -->
+    <section class="control-bar transport-bar" aria-label="Transporte y control global" data-transport="stopped">
+      <div class="cb-group cb-tempo">
+        <span class="cb-lcd cb-readonly" title="Tempo del proyecto · editarlo requiere backend (aún no existe un comando para cambiar el tempo)">
+          <strong id="transport-tempo">—</strong><small>BPM</small>
+        </span>
+        <span id="transport-signature" class="cb-lcd cb-readonly cb-signature" title="Métrica del proyecto · editarla requiere backend">4/4</span>
+        <button id="metronome" class="cb-btn transport-metronome" data-bind="transport.metronome" type="button" title="Activar metrónomo" aria-label="Metrónomo" aria-pressed="false" disabled><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 1.8h4l3 12.4H3z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><path d="M8 11.2 11.6 4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg></button>
+      </div>
+      <span class="cb-sep" aria-hidden="true"></span>
+      <div class="cb-group transport-controls" role="group" aria-label="Transporte">
+        <button id="stop" class="cb-btn transport-button transport-stop" data-bind="transport.stop" title="Detener (Espacio)" aria-label="Detener" disabled><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="3.5" y="3.5" width="9" height="9" rx="1"/></svg></button>
+        <button id="play" class="cb-btn transport-button transport-play" data-bind="transport.play" title="Reproducir (Espacio)" aria-label="Reproducir" disabled><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 2.8v10.4L13 8z"/></svg></button>
+        <button id="pause" class="cb-btn transport-button transport-pause" data-bind="transport.pause" title="Pausar" aria-label="Pausar" disabled><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="3.8" y="3" width="3" height="10" rx=".6"/><rect x="9.2" y="3" width="3" height="10" rx=".6"/></svg></button>
+        <button id="record" class="cb-btn transport-button transport-record" data-bind="transport.record" title="Grabar" aria-label="Grabar" aria-pressed="false" disabled><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="4.6"/></svg></button>
+      </div>
+      <div class="cb-lcd cb-position" title="Posición del transporte: compás . tiempo . semicorchea · tiempo transcurrido">
+        <span id="transport-position" aria-live="off">1 . 1 . 1</span>
+        <small id="transport-clock">0:00.0</small>
+      </div>
+      <span id="transport-state" class="visually-hidden" aria-live="polite">Detenido</span>
+      <div class="cb-group loop-range-controls" role="group" aria-label="Rango A/B">
+        <button id="loop-point-a" class="cb-btn cb-text-btn" data-bind="transport.loopA" title="Fijar inicio A del rango en el cursor" aria-label="Fijar inicio A">A</button>
+        <span id="loop-range-readout" class="loop-range-readout">Sin rango</span>
+        <button id="loop-point-b" class="cb-btn cb-text-btn" data-bind="transport.loopB" title="Fijar fin B del rango en el cursor" aria-label="Fijar fin B">B</button>
+        <button id="loop-range-clear" class="cb-btn cb-text-btn" data-bind="transport.loopClear" title="Limpiar rango A/B" aria-label="Limpiar rango A/B">×</button>
+      </div>
+      <div id="transport-error" class="cb-inline-error" role="alert" hidden>
+        <span class="cb-inline-error-icon" aria-hidden="true">!</span>
+        <span id="transport-error-text"></span>
+        <button id="transport-error-dismiss" class="cb-inline-error-close" data-bind="ui.dismissTransportError" type="button" title="Descartar aviso" aria-label="Descartar aviso">×</button>
+      </div>
+      <span class="cb-spacer"></span>
+      <nav class="view-tabs cb-views" role="tablist" aria-label="Vista principal">
+        <button id="show-arrangement" class="view-tab is-selected" data-bind="view.arrangement" title="Arreglo (Ctrl+1 · Tab alterna)" role="tab" aria-selected="true">Arreglo</button>
+        <button id="show-session" class="view-tab" data-bind="view.session" title="Session (Ctrl+2 · Tab alterna)" role="tab" aria-selected="false">Session</button>
+      </nav>
+      <span class="cb-spacer"></span>
+      <div class="cb-group" role="group" aria-label="Historial y pánico">
+        <button id="undo" class="cb-btn" data-bind="edit.undo" title="Deshacer (Ctrl+Z)" aria-label="Deshacer" disabled><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M5.5 4 2.5 7l3 3" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M3 7h6.5a3.5 3.5 0 0 1 0 7H7" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button>
+        <button id="redo" class="cb-btn" data-bind="edit.redo" title="Rehacer (Ctrl+Mayús+Z)" aria-label="Rehacer" disabled><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M10.5 4l3 3-3 3" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M13 7H6.5a3.5 3.5 0 0 0 0 7H9" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button>
+        <button id="panic" class="cb-btn cb-text-btn transport-panic" data-bind="transport.panic" title="Apagar todas las notas MIDI (pánico)" aria-label="Pánico MIDI" disabled>!</button>
+      </div>
+      <span class="cb-sep" aria-hidden="true"></span>
+      <div class="cb-master" title="Salida Master · pico y RMS en dBFS">
+        <span class="cb-master-label">Master</span>
+        <div class="track-meter cb-master-meter" data-track-id="__master__" role="meter" aria-label="Nivel de Master" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span class="track-meter-rms"></span><span class="track-meter-fill"></span></div>
+        <output id="master-peak" class="cb-master-value" aria-label="Pico Master">−∞</output>
+      </div>
+      <span class="cb-sep" aria-hidden="true"></span>
+      <div class="cb-group cb-panels" role="group" aria-label="Paneles">
+        <button id="toggle-browser" class="cb-btn workspace-view-toggle" data-bind="view.browser" type="button" title="Mostrar/ocultar navegador (Ctrl+Alt+B)" aria-label="Navegador" aria-pressed="true"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="1.8" y="2.5" width="12.4" height="11" rx="1.2" fill="none" stroke="currentColor" stroke-width="1.3"/><rect x="2.4" y="3.1" width="3.8" height="9.8" fill="currentColor"/></svg></button>
+        <button id="show-mixer" class="cb-btn workspace-view-toggle" data-bind="view.mixer" type="button" title="Mostrar/ocultar mezclador (Ctrl+3)" aria-label="Mezclador" aria-pressed="false"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 2v12M8 2v12M12 2v12" stroke="currentColor" stroke-width="1.2" opacity=".55"/><rect x="2.4" y="8.5" width="3.2" height="2.2" rx=".5"/><rect x="6.4" y="4.5" width="3.2" height="2.2" rx=".5"/><rect x="10.4" y="10" width="3.2" height="2.2" rx=".5"/></svg></button>
+        <button id="toggle-clip-detail" class="cb-btn workspace-view-toggle" data-bind="view.detail" type="button" title="Mostrar/ocultar detalle (Mayús+Tab)" aria-label="Detalle" aria-pressed="true"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="1.8" y="2.5" width="12.4" height="11" rx="1.2" fill="none" stroke="currentColor" stroke-width="1.3"/><rect x="2.4" y="8.6" width="11.2" height="4.3" fill="currentColor"/></svg></button>
+      </div>
+    </section>
 
     <div class="workstation">
       <aside class="browser" aria-label="Navegador del proyecto">
         <div class="browser-title">
-          <span>NAVEGADOR</span>
-          <span class="browser-chevron">⌄</span>
+          <span>Navegador</span>
         </div>
         <section class="browser-panel">
           <label class="browser-search">
@@ -120,72 +176,11 @@
       </aside>
 
       <main class="editor">
-        <!-- Ableton Live 12 Master Transport Bar -->
-        <section class="transport-bar" aria-label="Transporte">
-          <div class="live-tempo-section">
-            <button id="tap-tempo" class="live-btn live-tap-btn" type="button" title="Tap Tempo">TAP</button>
-            <div class="live-lcd-box" title="Tempo (BPM)">
-              <strong id="transport-tempo">120.00</strong>
-            </div>
-            <div class="live-sig-box" title="Métrica">4/4</div>
-            <button id="metronome" class="transport-metronome" title="Metrónomo (C)" aria-label="Metrónomo">● •</button>
-          </div>
-
-          <span class="transport-separator"></span>
-
-          <div id="transport-position" class="transport-position" title="Posición en compases.pulsos.semicorcheas" aria-live="off">1.1.1</div>
-
-          <div class="transport-controls">
-            <button id="play" class="transport-button transport-play" title="Reproducir (Espacio)" aria-label="Reproducir" disabled>▶</button>
-            <button id="stop" class="transport-button" title="Detener (Espacio)" aria-label="Detener" disabled>■</button>
-            <button id="record" class="transport-button transport-record" title="Grabar (F9)" aria-label="Grabar" aria-pressed="false" disabled>●</button>
-            <button id="pause" class="transport-button" title="Pausar" aria-label="Pausar" disabled hidden>Ⅱ</button>
-            <button id="panic" class="transport-button transport-panic" title="Apagar notas MIDI (Pánico)" aria-label="Pánico" disabled>!</button>
-          </div>
-
-          <div class="transport-state">
-            <span class="state-led"></span>
-            <span id="transport-state">DETENIDO</span>
-          </div>
-
-          <span class="transport-separator"></span>
-
-          <div class="loop-range-controls" aria-label="Bucle y Repetición">
-            <button id="loop-point-a" class="history-button" title="Activar/Fijar inicio del bucle (Ctrl+L)">⇄</button>
-            <span id="loop-range-readout" class="loop-range-readout">Sin rango</span>
-            <button id="loop-point-b" class="history-button" title="Fijar fin del bucle">B</button>
-            <button id="loop-range-clear" class="history-button" title="Limpiar bucle">×</button>
-          </div>
-
-          <button id="undo" class="history-button" title="Deshacer (Ctrl+Z)" aria-label="Deshacer" disabled>↶</button>
-          <button id="redo" class="history-button" title="Rehacer (Ctrl+Y / Ctrl+Mayús+Z)" aria-label="Rehacer" disabled>↷</button>
-          <span id="revision" class="revision" hidden>REV —</span>
-
-          <nav class="view-tabs transport-view-tabs" role="tablist" aria-label="Fases del flujo creativo">
-            <button id="show-session" class="view-tab" title="1. Sesión / Jam (Tab)" role="tab" aria-selected="false">
-              <span class="tab-icon">☷</span>Sesión
-            </button>
-            <button id="show-arrangement" class="view-tab is-selected" title="2. Arreglo / Estructura (Tab)" role="tab" aria-selected="true">
-              <span class="tab-icon">☰</span>Arreglo
-            </button>
-            <button id="show-mixer-phase" class="view-tab" title="3. Mezclador / Faders (Ctrl+3)" role="tab" aria-selected="false">
-              <span class="tab-icon">🎚</span>Mezcla
-            </button>
-            <button id="show-clip-phase" class="view-tab" title="4. Piano Roll / Notas (Shift+Tab)" role="tab" aria-selected="false">
-              <span class="tab-icon">♩</span>Piano Roll
-            </button>
-            <button id="show-device-phase" class="view-tab" title="5. Rack Dispositivos / Sonido (Shift+Tab)" role="tab" aria-selected="false">
-              <span class="tab-icon">🎛</span>Dispositivos
-            </button>
-          </nav>
-          <button id="return-to-arrangement" class="button button-accent" type="button" hidden disabled>↶ Arreglo</button>
-        </section>
-
-        <!-- Secondary Surface Toolbar -->
+        <!-- Barra local de la superficie (28 px): herramientas que sólo afectan al lienzo visible. -->
         <section class="surface-toolbar" aria-label="Herramientas de la superficie">
           <label class="grid-snap-select">
-            <span>REJILLA</span>
-            <select id="grid-snap" aria-label="Ajuste a rejilla">
+            <span>Rejilla</span>
+            <select id="grid-snap" data-bind="arrangement.gridSnap" aria-label="Ajuste a rejilla">
               <option value="0.25">1/16</option>
               <option value="0.5">1/8</option>
               <option value="1">1/4</option>
@@ -193,116 +188,108 @@
               <option value="0">Libre</option>
             </select>
           </label>
-          <button id="create-midi-clip" class="button button-accent creative-create-clip" type="button" title="Crear un clip MIDI vacío en el cursor (Ctrl+Mayús+M)" disabled>＋ Clip MIDI</button>
+          <button id="create-midi-clip" class="button creative-create-clip" data-bind="clip.createMidi" type="button" title="Crear un clip MIDI vacío en el cursor" disabled>＋ Clip MIDI</button>
+          <span class="surface-toolbar-hint">Doble clic en una pista MIDI vacía crea un clip</span>
           <span class="surface-toolbar-spacer"></span>
-          <button id="show-mixer" class="workspace-view-toggle mixer-panel-toggle" type="button" title="Mezclador flotante (Ctrl+3)" aria-pressed="false"><span class="tab-icon">🎚</span>Mezclador</button>
-          <button id="toggle-browser" class="workspace-view-toggle" type="button" title="Mostrar/ocultar navegador (Ctrl+Alt+B)" aria-label="Navegador" aria-pressed="true">◧ Navegador</button>
-          <button id="toggle-clip-detail" class="workspace-view-toggle" type="button" title="Mostrar/ocultar detalle (Mayús+Tab)" aria-label="Detalle" aria-pressed="true">Detalle</button>
-          <button id="rail-settings" class="workspace-view-toggle workspace-settings-toggle" type="button" title="Audio & Buffers" aria-label="Preferencias de audio">⚙</button>
+          <div id="arrangement-overview" class="arrangement-overview" role="group" aria-label="Vista general del arreglo" hidden></div>
+          <button id="return-to-arrangement" class="button" data-bind="session.returnToArrangement" type="button" hidden disabled>↶ Volver al Arreglo</button>
         </section>
 
-        <!-- Central Work Area: Arrangement View -->
         <section class="arrangement" aria-label="Arreglo musical">
           <div class="arrangement-scroll">
             <div class="arrangement-grid">
               <div class="track-column-heading">
-                <span>PISTAS</span>
+                <span>Pistas</span>
                 <details class="arrangement-create-menu">
                   <summary title="Crear pista">＋ Pista</summary>
                   <div class="arrangement-create-menu-items">
-                    <button class="arrangement-create-track" type="button" data-track-kind="midi">♫ Pista MIDI</button>
-                    <button class="arrangement-create-track" type="button" data-track-kind="audio">∿ Pista de audio</button>
-                    <button class="arrangement-create-track" type="button" data-track-kind="bus">⇢ Bus interno</button>
+                    <button class="arrangement-create-track" type="button" data-track-kind="midi" data-bind="track.addMidi">♫ Pista MIDI</button>
+                    <button class="arrangement-create-track" type="button" data-track-kind="audio" data-bind="track.addAudio">∿ Pista de audio</button>
+                    <button class="arrangement-create-track" type="button" data-track-kind="bus" data-bind="track.addBus">⇢ Bus interno</button>
                   </div>
                 </details>
               </div>
-              <div id="arrangement-overview" class="arrangement-overview" aria-label="Vista general del arreglo"></div>
               <div id="timeline-ruler" class="timeline-ruler" aria-label="Regla de compases"></div>
               <div id="track-list" class="arrangement-track-list">
-                <div class="empty-state">Crea un proyecto o abre una sesión MIDI.</div>
+                <div class="empty-state">Crea un proyecto o abre una sesión.</div>
               </div>
               <div id="arrangement-lanes" class="arrangement-lanes">
-                <div class="empty-state timeline-empty">Pulsa «Demo MIDI» para cargar una secuencia audible.</div>
+                <div class="empty-state timeline-empty">
+                  <span class="timeline-empty-message">Sin proyecto abierto. Usa el menú Proyecto o carga la demo para escuchar una secuencia.</span>
+                  <button id="empty-demo-project" class="button timeline-empty-action" data-bind="project.demo" type="button">Cargar Demo MIDI</button>
+                </div>
               </div>
             </div>
           </div>
-          <!-- Session View Matrix -->
           <div id="session-view" class="alternative-surface session-surface" aria-label="Pistas de Session" hidden></div>
-          <div id="arrangement-legend" class="arrangement-legend">
-            <span><i class="legend-swatch"></i>Clip MIDI</span>
-            <span>Haz doble clic en una casilla vacía para crear un clip MIDI</span>
-          </div>
         </section>
 
-        <!-- Detached Mixer View (optional panel) -->
         <section id="mixer-view" class="alternative-surface mixer-surface" aria-label="Mezclador del proyecto" hidden></section>
 
-        <!-- Bottom Detail View: Piano Roll (Clip) OR Device Rack (Device) -->
         <section class="lower-panel">
           <div class="lower-panel-title">
             <div class="panel-grip" role="separator" aria-orientation="horizontal" tabindex="0" title="Arrastra para redimensionar el detalle inferior" aria-label="Redimensionar">⠿</div>
-            <strong id="lower-panel-title">DETALLE DE CLIP</strong>
-            <span class="lower-panel-subtitle">Editor contextual</span>
             <div class="detail-tabs" role="tablist" aria-label="Detalle contextual">
-              <button id="detail-clip-tab" class="detail-tab is-selected" type="button" role="tab" aria-selected="true" aria-pressed="true" aria-controls="clip-inspector">♩ Clip</button>
-              <button id="detail-device-tab" class="detail-tab" type="button" role="tab" aria-selected="false" aria-pressed="false" aria-controls="device-inspector">🎛 Dispositivo</button>
+              <button id="detail-clip-tab" class="detail-tab is-selected" data-bind="detail.clip" type="button" role="tab" aria-selected="true" aria-pressed="true" aria-controls="clip-inspector">Clip</button>
+              <button id="detail-device-tab" class="detail-tab" data-bind="detail.device" type="button" role="tab" aria-selected="false" aria-pressed="false" aria-controls="device-inspector">Dispositivo</button>
             </div>
+            <strong id="lower-panel-title" class="lower-panel-heading">Detalle de clip</strong>
           </div>
           <div id="clip-inspector" class="clip-inspector" role="tabpanel" aria-labelledby="detail-clip-tab" aria-live="polite"><span>Sin clip seleccionado</span></div>
           <div id="device-inspector" class="device-inspector" role="tabpanel" aria-labelledby="detail-device-tab" hidden></div>
-          <details id="audio-settings" class="audio-settings">
-            <summary class="audio-summary">
-              <span class="audio-summary-icon">◉</span>
-              <span id="audio-settings-title">Buffers y latencia</span>
-              <span id="audio-apply-state" class="revision">Cargando…</span>
-              <span class="summary-chevron">⌄</span>
-            </summary>
-            <div class="audio-settings-body">
-              <div class="audio-profile-row">
-                <label for="audio-profile">Perfil</label>
-                <select id="audio-profile">
-                  <option value="liveRecord">Live / Grabar</option>
-                  <option value="multitrackPlayback">Reproducción multipista</option>
-                </select>
-                <label for="device-period">Periodo</label>
-                <div class="audio-number"><input id="device-period" type="number" min="16" max="2048" step="32" /><span>frames</span></div>
-                <label for="playback-safety">Margen PCM</label>
-                <div class="audio-number"><input id="playback-safety" type="number" min="0" max="2048" step="256" /><span>frames</span></div>
-                <button id="save-audio-settings" class="button button-accent">Aplicar al inicio</button>
-              </div>
-              <div class="audio-device-row">
-                <label for="audio-output-device">Salida de audio</label>
-                <select id="audio-output-device"><option value="pipewire:default">Automática (PipeWire / AudioBox)</option></select>
-              </div>
-              <div class="audio-readouts">
-                <span>Frecuencia: <strong id="audio-sample-rate">—</strong></span>
-                <span>Periodo: <strong id="audio-requested-period">—</strong></span>
-                <span>Efectivo: <strong id="audio-effective-period">No disponible</strong></span>
-                <span>Búfer extra: <strong id="audio-safety-duration">—</strong></span>
-              </div>
-            </div>
-          </details>
-        </section>
-
-        <!-- Status & Context Info -->
-        <section class="status-message" role="status" aria-live="polite">
-          <span class="status-icon">i</span>
-          <div>
-            <strong id="notice-title">Estudio DAW listo</strong>
-            <span id="notice-text">Presiona Tab para alternar entre Sesión y Arreglo. Pulsa Demo MIDI para comenzar.</span>
-          </div>
         </section>
       </main>
     </div>
 
+    <!-- Fila 4 · línea de estado única (22 px): motor · último mensaje · revisión · proyecto. -->
     <footer class="statusbar">
-      <span class="connection-dot"></span>
-      <span id="engine-status">Core listo · motor de audio conectado</span>
-      <span class="statusbar-spacer"></span>
-      <span class="statusbar-label">ESTUDIO DAW · LIVE 12 EDITION</span>
-      <span class="statusbar-separator">·</span>
+      <span class="connection-dot" aria-hidden="true"></span>
+      <span id="engine-status">Core listo · sin proyecto abierto</span>
+      <span class="statusbar-separator" aria-hidden="true"></span>
+      <section class="status-message" role="status" aria-live="polite">
+        <span class="status-icon" aria-hidden="true">i</span>
+        <strong id="notice-title">Estudio DAW listo</strong>
+        <span id="notice-text">Tab alterna Arreglo y Session. Proyecto ▸ Cargar Demo MIDI para empezar.</span>
+      </section>
+      <span id="revision" class="revision">REV —</span>
+      <span class="statusbar-separator" aria-hidden="true"></span>
       <span id="project-status">SIN PROYECTO</span>
     </footer>
+
+    <!-- Preferencias de audio: diálogo abierto con ⚙ (antes era una franja fija dentro del panel inferior). -->
+    <dialog id="audio-settings" class="audio-settings-dialog" aria-labelledby="audio-settings-title">
+      <header class="audio-settings-header">
+        <strong id="audio-settings-title">Buffers y latencia</strong>
+        <span id="audio-apply-state" class="revision">Cargando…</span>
+        <button id="audio-settings-close" class="icon-button" data-bind="ui.closeAudioSettings" type="button" title="Cerrar (Esc)" aria-label="Cerrar preferencias de audio">×</button>
+      </header>
+      <div class="audio-settings-body">
+        <div class="audio-profile-row">
+          <label for="audio-profile">Perfil</label>
+          <select id="audio-profile" data-bind="audio.profile">
+            <option value="liveRecord">Live / Grabar</option>
+            <option value="multitrackPlayback">Reproducción multipista</option>
+          </select>
+          <label for="device-period">Periodo</label>
+          <div class="audio-number"><input id="device-period" data-bind="audio.devicePeriodFrames" type="number" min="16" max="2048" step="32" /><span>frames</span></div>
+          <label for="playback-safety">Margen PCM</label>
+          <div class="audio-number"><input id="playback-safety" data-bind="audio.playbackSafetyFrames" type="number" min="0" max="2048" step="256" /><span>frames</span></div>
+        </div>
+        <div class="audio-device-row">
+          <label for="audio-output-device">Salida de audio</label>
+          <select id="audio-output-device" data-bind="audio.backendDeviceKey"><option value="pipewire:default">Automática (PipeWire / AudioBox)</option></select>
+        </div>
+        <div class="audio-readouts">
+          <span>Frecuencia <strong id="audio-sample-rate">—</strong></span>
+          <span>Periodo <strong id="audio-requested-period">—</strong></span>
+          <span>Efectivo <strong id="audio-effective-period">No disponible</strong></span>
+          <span>Búfer extra <strong id="audio-safety-duration">—</strong></span>
+        </div>
+        <div class="audio-settings-footer">
+          <button id="save-audio-settings" class="button button-primary" data-bind="audio.save" type="button">Aplicar al inicio</button>
+        </div>
+      </div>
+    </dialog>
     <div id="action-context-menu" class="action-context-menu" role="menu" aria-label="Acciones contextuales" hidden></div>
   </body>
 </html>
