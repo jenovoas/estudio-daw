@@ -472,6 +472,28 @@ mod tests {
     }
 
     #[test]
+    fn equalizer_bypass_preserves_signal_while_enabled_band_changes_it() {
+        let mut bypassed = EqualizerNode::new(48_000.0, 2).unwrap();
+        bypassed
+            .add_band(EqBandConfig::bell(1_000.0, 12.0, 1.0).with_enabled(false))
+            .unwrap();
+        let mut active = EqualizerNode::new(48_000.0, 2).unwrap();
+        active
+            .add_band(EqBandConfig::bell(1_000.0, 12.0, 1.0))
+            .unwrap();
+        let input = [1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
+        let mut bypassed_block = input;
+        let mut active_block = input;
+        bypassed.process(&mut bypassed_block).unwrap();
+        active.process(&mut active_block).unwrap();
+        assert_eq!(bypassed_block, input);
+        assert!(active_block
+            .iter()
+            .zip(input)
+            .any(|(actual, expected)| (actual - expected).abs() > 1e-6));
+    }
+
+    #[test]
     fn processes_preallocated_audio_block() {
         let mut builder = RenderPlanBuilder::new();
         builder.add_node(GainNode::new(0.5));

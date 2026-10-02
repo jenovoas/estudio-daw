@@ -240,12 +240,14 @@
       project.tracks.splice(index, 1);
       project.midiClips = project.midiClips.filter((clip) => clip.trackId !== trackId);
       project.audioClips = project.audioClips.filter((clip) => clip.trackId !== trackId);
-      project.clipSlots = project.clipSlots.filter((slot) => slot.trackId !== trackId);
     }),
     setTrackMixer: async (trackId, mixer) => publish((project) => Object.assign(trackById(project, trackId) || {}, mixer)),
+    setTrackEq: async (trackId, bands) => publish((project) => {
+      const track = trackById(project, trackId);
+      if (track) track.eqBands = clone(bands).slice(0, 8);
+    }),
     setTrackIdentity: async (trackId, identity) => publish((project) => Object.assign(trackById(project, trackId) || {}, identity)),
     setTrackOutput: async (trackId, outputTrackId) => publish((project) => { const track = trackById(project, trackId); if (track) track.outputTrackId = outputTrackId; }),
-    setTrackInputRoute: async (trackId, inputRoute) => publish((project) => { const track = trackById(project, trackId); if (track) track.inputRoute = inputRoute; }),
     setTrackRecordArm: async (trackId, armed) => publish((project) => { const track = trackById(project, trackId); if (track) track.recordArmed = armed; }),
     setTracksGroup: async (trackIds, groupName) => publish((project) => project.tracks.forEach((track) => { if (trackIds.includes(track.id)) track.groupName = groupName || null; })),
     addScene: async () => publish((project) => project.scenes.push({ id: `preview-scene-${Date.now()}`, name: `Escena ${project.scenes.length + 1}` })),

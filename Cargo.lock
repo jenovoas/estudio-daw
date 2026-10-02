@@ -1241,6 +1241,7 @@ dependencies = [
 name = "estudio-daw-dsp"
 version = "0.1.0"
 dependencies = [
+ "serde",
  "thiserror 2.0.21",
 ]
 
@@ -1280,6 +1281,7 @@ dependencies = [
 name = "estudio-daw-project-model"
 version = "0.1.0"
 dependencies = [
+ "estudio-daw-dsp",
  "estudio-daw-midi-types",
  "pretty_assertions",
  "quick-xml 0.37.5",

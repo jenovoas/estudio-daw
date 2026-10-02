@@ -6,4 +6,5 @@ license.workspace = true
 description = "Bloques DSP seguros para tiempo real de Estudio DAW"
 
 [dependencies]
+serde = { version = "1", features = ["derive"] }
 thiserror = "2"

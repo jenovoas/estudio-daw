@@ -5,10 +5,12 @@
 //! callback. `process_interleaved()` sólo recorre buffers y estados ya
 //! preasignados.
 
+use serde::{Deserialize, Serialize};
 use std::f32::consts::PI;
 use thiserror::Error;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum EqFilterType {
     Bell,
     LowShelf,
@@ -18,7 +20,8 @@ pub enum EqFilterType {
     Notch,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct EqBandConfig {
     pub filter_type: EqFilterType,
     pub frequency_hz: f32,

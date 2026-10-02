@@ -529,6 +529,7 @@ mod tests {
                 annotation: String::new(),
                 group_name: None,
                 mixer: estudio_daw_project_model::TrackMixerState::default(),
+                eq_bands: Vec::new(),
                 notes: Vec::new(),
                 audio_channels: Some(2),
                 media_source: None,

@@ -6,8 +6,8 @@
 use crossbeam_queue::ArrayQueue;
 use estudio_daw_application::{AudioProfileSettings, TransportClock};
 use estudio_daw_audio_engine::{
-    render_plan_exchange, AudioNode, AudioNodeError, RenderPlanBuilder, RenderPlanControl,
-    SampleRingBuffer,
+    render_plan_exchange, AudioNode, AudioNodeError, EqualizerNode, RenderPlanBuilder,
+    RenderPlanControl, SampleRingBuffer,
 };
 use estudio_daw_audio_platform::{
     run_pipewire_input_until, run_pipewire_output_until, PipeWireStreamConfig, WavCaptureRecorder,
@@ -450,6 +450,7 @@ impl AudioNode for AudioClipMixerNode {
 
 struct RoutedTrackSignal {
     sources: Vec<Box<dyn AudioNode>>,
+    eq: Option<EqualizerNode>,
     scratch: Vec<f32>,
     input_ring: Option<Arc<SampleRingBuffer>>,
     input_channels: Option<Vec<u16>>,
@@ -498,6 +499,7 @@ impl ProjectRoutingNode {
         session_audio_slots: &mut HashMap<String, Arc<SessionAudioSlot>>,
         global_sources: Vec<Box<dyn AudioNode>>,
         max_samples: usize,
+        sample_rate: u32,
         route_audibility: &[bool],
         output_indices: Vec<Option<usize>>,
         order: Vec<usize>,
@@ -520,6 +522,17 @@ impl ProjectRoutingNode {
                     max_samples,
                 )));
             }
+            let eq = if track.eq_bands.is_empty() {
+                None
+            } else {
+                let mut node = EqualizerNode::new(sample_rate as f32, 2)
+                    .map_err(|error| format!("EQ inválido en '{}': {error}", track.name))?;
+                for band in track.eq_bands.iter().copied() {
+                    node.add_band(band)
+                        .map_err(|error| format!("EQ inválido en '{}': {error}", track.name))?;
+                }
+                Some(node)
+            };
             let audible = route_audibility.get(index).copied().unwrap_or(false);
             let enabled = if track.role == TrackRole::Master {
                 track.mixer.active && !track.mixer.mute
@@ -529,6 +542,7 @@ impl ProjectRoutingNode {
             let (gain_left, gain_right) = track_gain_pan(track);
             tracks.push(RoutedTrackSignal {
                 sources,
+                eq,
                 scratch: vec![0.0; max_samples],
                 input_ring: input_rings.remove(&track.id),
                 input_channels: compile_input_channel_indices(track),
@@ -586,6 +600,9 @@ impl AudioNode for ProjectRoutingNode {
                 {
                     *mixed += *sample;
                 }
+            }
+            if let Some(eq) = &mut track.eq {
+                eq.process(&mut track.scratch[..sample_count])?;
             }
         }
         for source in &mut self.global_sources {
@@ -3644,6 +3661,7 @@ fn build_project_playback_with_end(
         session_audio_slots,
         global_sources,
         max_samples,
+        sample_rate,
         &route_audibility,
         output_indices,
         route_order,
@@ -4355,6 +4373,7 @@ mod tests {
             annotation: String::new(),
             group_name: None,
             mixer: TrackMixerState::default(),
+            eq_bands: Vec::new(),
             notes: Vec::new(),
             audio_channels: None,
             media_source: None,
@@ -4393,6 +4412,32 @@ mod tests {
             }),
         });
         assert_eq!(compile_input_channel_indices(&track), Some(vec![1, 1]));
+    }
+
+    #[test]
+    fn audio_clip_mixer_applies_clip_bounds_and_fades() {
+        let ring = Arc::new(SampleRingBuffer::new(8));
+        assert_eq!(ring.push(&[1.0; 8]), 8);
+        let stream = AudioClipStream {
+            ring,
+            start_frame: 0,
+            duration_frames: 4,
+            clip_offset_frames: 0,
+            fade_in_frames: 2,
+            fade_out_frames: 2,
+            gain_left: 1.0,
+            gain_right: 1.0,
+        };
+        let mut node = AudioClipMixerNode::new(vec![stream], None, 8);
+        let mut block = [0.0_f32; 8];
+        node.process(&mut block).unwrap();
+        let expected = [0.0, 0.0, 0.5, 0.5, 0.5, 0.5, 0.0, 0.0];
+        for (actual, expected) in block.iter().zip(expected) {
+            assert!(
+                (actual - expected).abs() < 1e-6,
+                "actual={actual}, expected={expected}"
+            );
+        }
     }
 
     #[test]

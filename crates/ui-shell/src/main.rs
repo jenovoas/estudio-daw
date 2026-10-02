@@ -13,9 +13,10 @@ use estudio_daw_application::{
 };
 use estudio_daw_midi_engine::{MidiSource, MidiTake, RecordedMidiEvent, RecordedMidiMessage};
 use estudio_daw_project_model::{
-    ClipLaunchMode, ClipLaunchQuantization, ClipReference, ClipSlot, ImportProvenance,
-    InstrumentConfig, MidiClip, Project, Scene, TimeSignature, Track, TrackChannelConfig,
-    TrackInputRoute, TrackKind, TrackMixerState, TrackRole, Transport, TransportLoopRange,
+    ClipLaunchMode, ClipLaunchQuantization, ClipReference, ClipSlot, EqBandConfig,
+    ImportProvenance, InstrumentConfig, MidiClip, Project, Scene, TimeSignature, Track,
+    TrackChannelConfig, TrackInputRoute, TrackKind, TrackMixerState, TrackRole, Transport,
+    TransportLoopRange,
 };
 use estudio_daw_runtime_diagnostics::audio_devices;
 use serde::Serialize;
@@ -60,6 +61,7 @@ struct TrackSummary {
     output_channels: u32,
     output_track_id: Option<String>,
     group_name: Option<String>,
+    eq_bands: Vec<EqBandConfig>,
     active: bool,
     mute: bool,
     solo: bool,
@@ -305,6 +307,7 @@ fn summarize(application: &ProjectApplication, audio_engine_connected: bool) -> 
             output_channels: track.channel_config.output_channels,
             output_track_id: track.output_track_id.clone(),
             group_name: track.group_name.clone(),
+            eq_bands: track.eq_bands.clone(),
             active: track.mixer.active,
             mute: track.mixer.mute,
             solo: track.mixer.solo,
@@ -918,6 +921,7 @@ fn add_track(kind: String, state: State<'_, DesktopState>) -> Result<UiSnapshot,
         annotation: String::new(),
         group_name: None,
         mixer: TrackMixerState::default(),
+        eq_bands: Vec::new(),
         notes: Vec::new(),
         audio_channels: if role == TrackRole::Audio {
             Some(2)
@@ -1328,6 +1332,7 @@ fn new_project_model() -> Project {
             annotation: String::new(),
             group_name: None,
             mixer: TrackMixerState::default(),
+            eq_bands: Vec::new(),
             notes: Vec::new(),
             audio_channels: None,
             media_source: None,
@@ -2158,6 +2163,38 @@ fn set_track_mixer(
     }
     Ok(summarize(application, connected))
 }
+#[tauri::command]
+fn set_track_eq(
+    track_id: String,
+    bands: Vec<EqBandConfig>,
+    state: State<'_, DesktopState>,
+) -> Result<UiSnapshot, String> {
+    let mut application = state
+        .application
+        .lock()
+        .map_err(|_| "el estado de la aplicación quedó bloqueado".to_owned())?;
+    let application = application
+        .as_mut()
+        .ok_or_else(|| "primero abre un proyecto".to_owned())?;
+    application
+        .execute_project(ProjectCommand::SetTrackEq { track_id, bands })
+        .map_err(|error| error.to_string())?;
+    let project = application.snapshot().project.project;
+    let mut audio = state
+        .audio
+        .lock()
+        .map_err(|_| "el estado del motor de audio quedó bloqueado".to_owned())?;
+    let connected = audio.is_connected();
+    if connected {
+        let settings = load_audio_runtime_settings().map_err(|error| error.to_string())?;
+        audio
+            .refresh_project(&project, settings.active())
+            .map_err(|error| {
+                format!("el EQ quedó guardado, pero no se pudo actualizar el audio: {error}")
+            })?;
+    }
+    Ok(summarize(application, connected))
+}
 
 #[tauri::command]
 fn set_track_identity(
@@ -2667,6 +2704,7 @@ fn main() {
             save_project_as,
             set_transport,
             set_track_mixer,
+            set_track_eq,
             set_track_identity,
             set_track_instrument,
             inspect_vst3_plugin,

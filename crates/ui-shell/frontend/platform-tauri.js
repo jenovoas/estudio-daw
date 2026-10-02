@@ -100,6 +100,7 @@ window.estudioPlatform = {
   setTransport: (command, positionTicks = null) => invoke("set_transport", { command, positionTicks }),
   projectSnapshot: () => invoke("project_snapshot"),
   setTrackMixer: (trackId, mixer) => invoke("set_track_mixer", { trackId, ...mixer }),
+  setTrackEq: (trackId, bands) => invoke("set_track_eq", { trackId, bands }),
   setTrackIdentity: (trackId, identity) => invoke("set_track_identity", { trackId, ...identity }),
   setTrackOutput: (trackId, outputTrackId) => invoke("set_track_output", { trackId, outputTrackId }),
   setTrackInputRoute: (trackId, inputRoute) => invoke("set_track_input_route", { trackId, inputRoute }),

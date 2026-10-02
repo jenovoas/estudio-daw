@@ -568,8 +568,22 @@ function updateWorkspaceLayout() {
   elements.lowerPanelTitle.textContent = selectedDetailTab === "device" ? "DISPOSITIVO" : "DETALLE DE CLIP";
   elements.detailClipTab.classList.toggle("is-selected", selectedDetailTab === "clip");
   elements.detailDeviceTab.classList.toggle("is-selected", selectedDetailTab === "device");
+  elements.detailClipTab.setAttribute("aria-selected", String(selectedDetailTab === "clip"));
+  elements.detailDeviceTab.setAttribute("aria-selected", String(selectedDetailTab === "device"));
   elements.detailClipTab.setAttribute("aria-pressed", String(selectedDetailTab === "clip"));
   elements.detailDeviceTab.setAttribute("aria-pressed", String(selectedDetailTab === "device"));
+  elements.detailClipTab.tabIndex = selectedDetailTab === "clip" ? 0 : -1;
+  elements.detailDeviceTab.tabIndex = selectedDetailTab === "device" ? 0 : -1;
+  const phaseStates = [
+    [elements.showMixerPhase, mixerPanelVisible],
+    [elements.showClipPhase, clipDetailVisible && selectedDetailTab === "clip"],
+    [elements.showDevicePhase, clipDetailVisible && selectedDetailTab === "device"],
+  ];
+  for (const [button, active] of phaseStates) {
+    if (!button) continue;
+    button.classList.toggle("is-selected", active);
+    button.setAttribute("aria-selected", String(active));
+  }
   elements.showMixer.setAttribute("aria-pressed", String(mixerPanelVisible));
   elements.toggleBrowser.setAttribute("aria-pressed", String(browserVisible));
   elements.toggleBrowser.title = browserVisible
@@ -603,8 +617,9 @@ function handleCreativeWorkspaceShortcut(event) {
         selectedDetailTab = selectedDetailTab === "clip" ? "device" : "clip";
       }
       if (selectedDetailTab === "device" && lastSnapshot) {
-        const selectedClip = lastSnapshot?.midiClips.find((clip) => clip.id === selectedClipId);
-        const selectedClipTrack = lastSnapshot?.tracks.find((track) => track.id === selectedClip?.trackId && track.kind === "midi");
+        const selectedClip = lastSnapshot?.midiClips.find((clip) => clip.id === selectedClipId)
+          ?? (lastSnapshot?.audioClips ?? []).find((clip) => clip.id === selectedClipId);
+        const selectedClipTrack = lastSnapshot?.tracks.find((track) => track.id === selectedClip?.trackId && track.role !== "master");
         if (selectedClipTrack) deviceFocusedTrackId = selectedClipTrack.id;
         renderDeviceInspector(lastSnapshot);
       }
@@ -678,6 +693,7 @@ function selectSurface(surface) {
 }
 
 function focusClipInArrangement(clip, snapshot) {
+  const browserFocused = document.activeElement?.closest(".browser") !== null;
   selectedClipId = clip.id;
   selectedDetailTab = "clip";
   clipDetailVisible = true;
@@ -685,7 +701,11 @@ function focusClipInArrangement(clip, snapshot) {
   selectSurface("arrangement");
   renderClipInspector(snapshot);
   updateWorkspaceLayout();
-  elements.lanes.querySelectorAll(".is-inspected").forEach((item) => item.classList.remove("is-inspected"));
+  renderProjectMedia(snapshot);
+  if (browserFocused) {
+    const kind = (snapshot.audioClips ?? []).some((item) => item.id === clip.id) ? "audio" : "midi";
+    document.querySelector(`[data-browser-item-key="${CSS.escape(browserItemKey(kind, clip.id))}"]`)?.focus();
+  }
   const target = elements.lanes.querySelector(`[data-clip-id="${CSS.escape(clip.id)}"]`);
   target?.classList.add("is-inspected");
   target?.scrollIntoView({ block: "nearest", inline: "nearest" });
@@ -1188,8 +1208,11 @@ function createTrackMeter(track) {
 function syncTrackSelectionUi() {
   for (const checkbox of document.querySelectorAll("[data-track-select]")) {
     checkbox.checked = selectedTrackIds.has(checkbox.dataset.trackSelect);
-    checkbox.closest(".track-row, .session-track-card, .mixer-channel")
+    checkbox.closest(".track-row, .session-track-header, .mixer-channel")
       ?.classList.toggle("is-track-selected", checkbox.checked);
+  }
+  for (const lane of document.querySelectorAll(".timeline-lane[data-track-id]")) {
+    lane.classList.toggle("is-track-selected", selectedTrackIds.has(lane.dataset.trackId));
   }
   const count = document.querySelector(".track-group-selection-count");
   if (count) count.textContent = `${selectedTrackIds.size} seleccionadas`;
@@ -1424,6 +1447,10 @@ function sessionQuantizeLabel(override = "global") {
   return `en la rejilla global (${elements.gridSnap.selectedOptions[0]?.textContent ?? "compás"})`;
 }
 
+function focusSessionSceneLaunch(sceneId) {
+  document.querySelector(`[data-session-scene-id="${CSS.escape(sceneId)}"] .session-launch-scene`)?.focus();
+}
+
 async function launchSessionSlot(sceneId, trackId, respectClipQuantization = true) {
   try {
     const launch = await platform.launchSessionSlot(sceneId, trackId, sessionQuantizeTicks(), respectClipQuantization);
@@ -1457,17 +1484,21 @@ async function launchSessionScene(sceneId, snapshot) {
     sessionLaunches = sessionLaunches.filter((item) => !trackIds.has(item.trackId)).concat(launches);
     setNotice("Escena en cola", `Los clips se lanzan juntos según la rejilla global (${sessionQuantizeLabel()}) y respetan su modo; las casillas vacías conservan su clip actual.`);
     renderSnapshot(snapshot);
+    focusSessionSceneLaunch(sceneId);
   } catch (error) {
     setNotice("No se pudo lanzar la escena", String(error));
   }
 }
 
-async function stopSessionTrack(trackId) {
+async function stopSessionTrack(trackId, focusSceneId = null) {
   try {
     await platform.stopSessionTrack(trackId);
     sessionLaunches = sessionLaunches.filter((item) => item.trackId !== trackId);
     setNotice("Pista detenida", "Las notas de esa pista se apagaron.");
-    if (lastSnapshot) renderSnapshot(lastSnapshot);
+    if (lastSnapshot) {
+      renderSnapshot(lastSnapshot);
+      if (focusSceneId) focusSessionSceneLaunch(focusSceneId);
+    }
   } catch (error) {
     setNotice("No se pudo detener la pista", String(error));
   }
@@ -1494,7 +1525,10 @@ function renderSessionSurface(snapshot) {
   const title = document.createElement("strong");
   title.textContent = "SESSION";
   const hint = document.createElement("span");
-  hint.textContent = "Lanza MIDI y audio a la rejilla; el clip se repite hasta ■";
+  hint.textContent = ["playing", "paused"].includes(projectTransportState)
+    ? `Lanza MIDI y audio a la rejilla; cuantización ${sessionQuantizeLabel()}`
+    : "Pulsa Play para habilitar el lanzamiento de clips y escenas";
+  hint.setAttribute("aria-live", "polite");
   const addScene = document.createElement("button");
   addScene.className = "button button-accent session-add-scene";
   addScene.type = "button";
@@ -1512,8 +1546,6 @@ function renderSessionSurface(snapshot) {
   }
   const grid = document.createElement("div");
   grid.className = "session-matrix";
-  grid.classList.toggle("session-mixer-visible", mixerPanelVisible);
-  grid.style.setProperty("--session-track-columns", String(tracks.length));
   const corner = document.createElement("div");
   corner.className = "session-matrix-corner";
   corner.textContent = "PISTAS";
@@ -1548,6 +1580,7 @@ function renderSessionSurface(snapshot) {
   for (const [sceneIndex, scene] of (snapshot.scenes ?? []).entries()) {
     const sceneHeader = document.createElement("div");
     sceneHeader.className = "session-scene-header";
+    sceneHeader.dataset.sessionSceneId = scene.id;
     sceneHeader.style.gridColumn = String(tracks.length + 1);
     sceneHeader.style.gridRow = String(sceneIndex + 2);
     const sceneName = document.createElement("input");
@@ -1587,19 +1620,52 @@ function renderSessionSurface(snapshot) {
     moveDown.addEventListener("click", () => runCommand("Orden de escenas actualizado", () => platform.moveScene(scene.id, sceneIndex + 1)));
     const launchScene = document.createElement("button");
     launchScene.type = "button";
-    launchScene.className = "session-launch session-launch-scene";
-    launchScene.textContent = "▶";
-    const sceneHasClips = tracks.some((track) => (snapshot.clipSlots ?? []).some((slot) => slot.sceneId === scene.id && slot.trackId === track.id && slot.clipId));
+    launchScene.dataset.sessionSceneId = scene.id;
+    const sceneSlots = (snapshot.clipSlots ?? []).filter(
+      (slot) => slot.sceneId === scene.id && slot.clipId && (slot.clipKind === "midi" || slot.clipKind === "audio"),
+    );
+    const sceneHasClips = sceneSlots.length > 0;
+    const sceneLaunches = sessionLaunches.filter((launch) => sceneSlots.some(
+      (slot) => slot.trackId === launch.trackId && slot.clipId === launch.clipId,
+    ));
+    const sceneState = sceneLaunches.some((launch) => launch.state === "playing")
+      ? "playing"
+      : sceneLaunches.some((launch) => launch.state === "queued") ? "queued" : null;
+    launchScene.className = `session-launch session-launch-scene${sceneState === "playing" ? " is-playing" : ""}${sceneState === "queued" ? " is-queued" : ""}`;
+    launchScene.textContent = sceneState === "playing" ? "■" : sceneState === "queued" ? "○" : "▶";
     const engineReady = ["playing", "paused"].includes(projectTransportState);
     launchScene.disabled = !sceneHasClips || !engineReady;
-    launchScene.title = !sceneHasClips
-      ? "Asigna clips MIDI o de audio a esta escena"
-      : engineReady
-        ? `Lanzar ${scene.name} ${sessionQuantizeLabel()}`
-        : "Dale a Play para lanzar la escena";
+    launchScene.title = sceneState === "playing"
+      ? `Detener ${scene.name}`
+      : !sceneHasClips
+        ? "Asigna clips MIDI o de audio a esta escena"
+        : engineReady
+          ? `Lanzar ${scene.name} ${sessionQuantizeLabel()}`
+          : "Dale a Play para lanzar la escena";
     launchScene.setAttribute("aria-label", launchScene.title);
-    launchScene.addEventListener("click", () => launchSessionScene(scene.id, snapshot));
-    sceneHeader.append(launchScene, sceneName, moveUp, moveDown, remove);
+    launchScene.addEventListener("click", () => {
+      if (sceneState === "playing") {
+        for (const launch of sceneLaunches) void stopSessionTrack(launch.trackId, scene.id);
+      } else {
+        void launchSessionScene(scene.id, snapshot);
+      }
+    });
+    const sceneIndexLabel = document.createElement("span");
+    sceneIndexLabel.className = "session-scene-index";
+    sceneIndexLabel.textContent = String(sceneIndex + 1).padStart(2, "0");
+    sceneIndexLabel.title = `Escena ${sceneIndex + 1}`;
+    sceneIndexLabel.setAttribute("aria-label", `Escena ${sceneIndex + 1}`);
+    const sceneStatus = document.createElement("small");
+    sceneStatus.className = `session-scene-status${sceneState === "playing" ? " is-playing" : ""}${sceneState === "queued" ? " is-queued" : ""}`;
+    sceneStatus.textContent = sceneState === "playing"
+      ? "REPRODUCIENDO"
+      : sceneState === "queued" ? "EN COLA" : sceneHasClips ? `${sceneSlots.length} CLIP${sceneSlots.length === 1 ? "" : "S"}` : "VACÍA";
+    sceneStatus.title = sceneHasClips
+      ? `${sceneSlots.length} clip${sceneSlots.length === 1 ? "" : "s"} asignado${sceneSlots.length === 1 ? "" : "s"}`
+      : "Escena sin clips asignados";
+    sceneHeader.classList.toggle("is-playing", sceneState === "playing");
+    sceneHeader.classList.toggle("is-queued", sceneState === "queued");
+    sceneHeader.append(sceneIndexLabel, launchScene, sceneName, sceneStatus, moveUp, moveDown, remove);
     grid.append(sceneHeader);
     for (const [trackIndex, track] of tracks.entries()) {
       const slot = (snapshot.clipSlots ?? []).find((item) => item.sceneId === scene.id && item.trackId === track.id);
@@ -1726,7 +1792,15 @@ function renderSessionSurface(snapshot) {
   if (!(snapshot.scenes ?? []).length) {
     const empty = document.createElement("div");
     empty.className = "surface-empty session-empty-state";
-    empty.textContent = "Aún no hay escenas. Añade una escena y asigna clips existentes a las casillas.";
+    const emptyMessage = document.createElement("p");
+    emptyMessage.textContent = "Aún no hay escenas. Añade una escena y asigna clips existentes a las casillas.";
+    const emptyAddScene = document.createElement("button");
+    emptyAddScene.type = "button";
+    emptyAddScene.className = "button button-accent";
+    emptyAddScene.textContent = "+ Añadir escena";
+    emptyAddScene.title = "Añadir una escena vacía al proyecto";
+    emptyAddScene.addEventListener("click", () => runCommand("Escena añadida", () => platform.addScene()));
+    empty.append(emptyMessage, emptyAddScene);
     empty.style.gridColumn = `1 / span ${tracks.length + 1}`;
     empty.style.gridRow = "2";
     grid.append(empty);
@@ -1859,27 +1933,27 @@ function renderDeviceInspector(snapshot) {
 
   const selectedClip = snapshot.midiClips.find((clip) => clip.id === selectedClipId)
     ?? (snapshot.audioClips ?? []).find((clip) => clip.id === selectedClipId);
-  const focusedTrack = snapshot.tracks.find((track) => track.id === deviceFocusedTrackId && track.kind === "midi")
-    ?? snapshot.tracks.find((track) => track.id === selectedClip?.trackId)
+  const focusedTrack = snapshot.tracks.find((track) => track.id === deviceFocusedTrackId && track.role !== "master")
+    ?? snapshot.tracks.find((track) => track.id === selectedClip?.trackId && track.role !== "master")
     ?? [...selectedTrackIds]
       .map((id) => snapshot.tracks.find((track) => track.id === id))
-      .find((track) => track && track.kind === "midi")
-    ?? snapshot.tracks.find((track) => track.kind === "midi" && track.role !== "master");
+      .find((track) => track && track.role !== "master")
+    ?? snapshot.tracks.find((track) => track.role !== "master");
   deviceFocusedTrackId = focusedTrack?.id ?? null;
 
   if (!focusedTrack) {
     const empty = document.createElement("p");
     empty.className = "surface-empty";
-    empty.textContent = "Selecciona una pista MIDI para ver su cadena de dispositivos.";
+    empty.textContent = "Selecciona una pista para ver su cadena de dispositivos.";
     elements.deviceInspector.append(empty);
     return;
   }
 
-  // Navegador de pistas MIDI — permite saltar sin salir del panel
-  const midiTracks = snapshot.tracks.filter((t) => t.kind === "midi" && !t.virtualMaster);
+  // Navegador de pistas — permite saltar sin salir del panel
+  const deviceTracks = snapshot.tracks.filter((t) => t.role !== "master");
   const trackNav = document.createElement("nav");
   trackNav.className = "device-track-nav";
-  for (const t of midiTracks) {
+  for (const t of deviceTracks) {
     const btn = document.createElement("button");
     btn.type = "button";
     btn.className = "device-track-nav-btn";
@@ -1924,7 +1998,127 @@ function renderDeviceInspector(snapshot) {
   }
   instBox.append(instHeader, instBody);
 
-  // —— Box 2: Efectos (no disponible en motor) ——
+  // —— Box 2: EQ paramétrico real ——
+  const eqBox = document.createElement("div");
+  eqBox.className = "device-rack-box device-rack-eq";
+  const eqHeader = document.createElement("div");
+  eqHeader.className = "device-rack-header";
+  const eqLabel = document.createElement("span");
+  eqLabel.className = "device-rack-slot-label";
+  eqLabel.textContent = "EQ";
+  const eqCount = document.createElement("span");
+  eqCount.className = "device-rack-track-name";
+  const eqBands = Array.isArray(focusedTrack.eqBands)
+    ? focusedTrack.eqBands.map((band) => ({ ...band }))
+    : [];
+  eqCount.textContent = `${eqBands.length}/8 bandas`;
+  eqHeader.append(eqLabel, eqCount);
+  const eqBody = document.createElement("div");
+  eqBody.className = "device-rack-body device-eq-body";
+  const commitEq = (bands) => runCommand(
+    "EQ actualizado",
+    () => platform.setTrackEq(focusedTrack.id, bands),
+  );
+  const renderEqRows = () => {
+    eqBody.replaceChildren();
+    const rows = document.createElement("div");
+    rows.className = "eq-band-list";
+    const filterTypes = [
+      ["bell", "Bell"],
+      ["low_shelf", "Low shelf"],
+      ["high_shelf", "High shelf"],
+      ["low_pass", "Low pass"],
+      ["high_pass", "High pass"],
+      ["notch", "Notch"],
+    ];
+    eqBands.forEach((band, index) => {
+      const row = document.createElement("div");
+      row.className = "eq-band-row";
+      const enabled = document.createElement("input");
+      enabled.type = "checkbox";
+      enabled.checked = band.enabled !== false;
+      enabled.title = "Activar o desactivar banda";
+      enabled.addEventListener("change", () => {
+        eqBands[index] = { ...eqBands[index], enabled: enabled.checked };
+        void commitEq(eqBands);
+      });
+      const type = document.createElement("select");
+      type.setAttribute("aria-label", `Tipo de filtro de banda ${index + 1}`);
+      for (const [value, label] of filterTypes) type.append(new Option(label, value));
+      type.value = band.filterType ?? "bell";
+      type.addEventListener("change", () => {
+        eqBands[index] = { ...eqBands[index], filterType: type.value };
+        void commitEq(eqBands);
+      });
+      const number = (label, key, min, max, step, suffix = "") => {
+        const field = document.createElement("label");
+        field.className = "eq-band-field";
+        field.title = label;
+        const input = document.createElement("input");
+        input.type = "number";
+        input.min = String(min);
+        input.max = String(max);
+        input.step = String(step);
+        input.value = String(band[key]);
+        input.setAttribute("aria-label", `${label} de banda ${index + 1}`);
+        input.addEventListener("change", () => {
+          const value = Number(input.value);
+          if (!Number.isFinite(value)) return;
+          eqBands[index] = { ...eqBands[index], [key]: value };
+          void commitEq(eqBands);
+        });
+        const caption = document.createElement("span");
+        caption.textContent = suffix ? `${label} (${suffix})` : label;
+        field.append(caption, input);
+        return field;
+      };
+      const remove = document.createElement("button");
+      remove.type = "button";
+      remove.className = "eq-band-remove";
+      remove.textContent = "×";
+      remove.title = `Eliminar banda ${index + 1}`;
+      remove.addEventListener("click", () => {
+        eqBands.splice(index, 1);
+        void commitEq(eqBands);
+      });
+      row.append(
+        enabled,
+        type,
+        number("Frecuencia", "frequencyHz", 1, 20_000, 1, "Hz"),
+        number("Ganancia", "gainDb", -24, 24, 0.1, "dB"),
+        number("Q", "q", 0.1, 20, 0.01),
+        remove,
+      );
+      rows.append(row);
+    });
+    if (!eqBands.length) {
+      const empty = document.createElement("span");
+      empty.className = "device-rack-empty";
+      empty.textContent = "Sin bandas. Añade un filtro para comenzar.";
+      rows.append(empty);
+    }
+    eqBody.append(rows);
+    const add = document.createElement("button");
+    add.type = "button";
+    add.className = "eq-band-add";
+    add.textContent = "＋ Banda";
+    add.disabled = eqBands.length >= 8;
+    add.addEventListener("click", () => {
+      eqBands.push({
+        filterType: "bell",
+        frequencyHz: 1_000,
+        gainDb: 0,
+        q: 1,
+        enabled: true,
+      });
+      void commitEq(eqBands);
+    });
+    eqBody.append(add);
+  };
+  renderEqRows();
+  eqBox.append(eqHeader, eqBody);
+
+  // —— Box 3: Efectos (no disponible en motor) ——
   const fxBox = document.createElement("div");
   fxBox.className = "device-rack-box device-rack-fx device-rack-unavailable";
   const fxHeader = document.createElement("div");
@@ -1941,7 +2135,7 @@ function renderDeviceInspector(snapshot) {
   fxBody.append(fxMsg);
   fxBox.append(fxHeader, fxBody);
 
-  // —— Box 3: Mixer inline (ganancia, pan, ACT/M/S) ——
+  // —— Box 4: Mixer inline (ganancia, pan, ACT/M/S) ——
   const mixBox = document.createElement("div");
   mixBox.className = "device-rack-box device-rack-mixer";
   const mixHeader = document.createElement("div");
@@ -1956,7 +2150,7 @@ function renderDeviceInspector(snapshot) {
   if (mixControls) mixBody.append(mixControls);
   mixBox.append(mixHeader, mixBody);
 
-  rack.append(instBox, fxBox, mixBox);
+  rack.append(instBox, eqBox, fxBox, mixBox);
   elements.deviceInspector.append(trackNav, rack);
 }
 
@@ -2121,7 +2315,7 @@ function renderSnapshot(snapshot) {
 
   for (const track of snapshot.tracks) {
     const row = document.createElement("div");
-    row.className = "track-row";
+    row.className = `track-row${selectedTrackIds.has(track.id) ? " is-track-selected" : ""}`;
     row.dataset.trackId = track.id;
     row.style.setProperty("--track-color", track.color);
     const icon = document.createElement("span");
@@ -2157,7 +2351,9 @@ function renderSnapshot(snapshot) {
     elements.tracks.append(row);
 
     const lane = document.createElement("div");
-    lane.className = "timeline-lane";
+    lane.className = `timeline-lane${selectedTrackIds.has(track.id) ? " is-track-selected" : ""}`;
+    lane.dataset.trackId = track.id;
+    lane.setAttribute("aria-label", `Pista ${track.name} en Arrangement`);
     lane.style.setProperty("--track-color", track.color);
     lane.addEventListener("click", (event) => {
       if (event.target.closest(".audio-clip, .midi-clip, button")) return;
@@ -2297,7 +2493,14 @@ function arrangementTrackHeight(track, projectId) {
   } catch {
     // Si el WebView no ofrece almacenamiento local, la altura sigue siendo usable durante la sesión.
   }
-  const fallback = window.matchMedia("(max-height: 760px)").matches ? 56 : 64;
+  const visibleHeight = elements.arrangementView?.clientHeight ?? 0;
+  const trackCount = Math.max(1, lastSnapshot?.tracks.length ?? 1);
+  const viewportFallback = window.matchMedia("(max-height: 760px)").matches ? 56 : 64;
+  const estimatedCanvas = Math.floor(Math.max(0, window.innerHeight - 408) / trackCount);
+  const canvasFallback = visibleHeight > 0
+    ? Math.floor(visibleHeight / trackCount)
+    : estimatedCanvas;
+  const fallback = Math.max(viewportFallback, Math.min(160, canvasFallback));
   const height = Number.isFinite(stored) && stored >= ARRANGEMENT_TRACK_HEIGHT_MIN
     ? Math.min(ARRANGEMENT_TRACK_HEIGHT_MAX, stored)
     : fallback;
@@ -2887,9 +3090,12 @@ function renderProjectMedia(snapshot) {
     const track = midiTracks.find((item) => item.id === clip.trackId);
     const button = document.createElement("button");
     button.type = "button";
-    button.className = "browser-content-item";
+    button.dataset.browserItemKey = browserItemKey("midi", clip.id);
+    const selected = selectedClipId === clip.id;
+    button.className = `browser-content-item${selected ? " is-selected" : ""}`;
     button.textContent = `${clip.name} · ${track?.name ?? "Pista desconocida"}`;
     button.title = `${clip.name} · ${clip.noteCount} notas; seleccionar y enfocar en Arreglo`;
+    button.setAttribute("aria-pressed", String(selected));
     button.addEventListener("click", () => {
       rememberBrowserItem("midi", clip.id);
       focusClipInArrangement(clip, snapshot);
@@ -2909,13 +3115,18 @@ function renderProjectMedia(snapshot) {
   for (const track of instrumentMatches) {
     const button = document.createElement("button");
     button.type = "button";
-    button.className = "browser-content-item";
+    button.dataset.browserItemKey = browserItemKey("instrument", track.id);
+    const selected = selectedDetailTab === "device" && deviceFocusedTrackId === track.id;
+    button.className = `browser-content-item${selected ? " is-selected" : ""}`;
     const instrument = track.instrument;
     button.textContent = `${track.name} · ${instrument.backend === "vst3" ? vst3PluginLabel(instrument.plugin?.path) : instrumentBackendLabel(instrument.backend)}`;
     button.title = "Abrir el instrumento asignado a esta pista";
+    button.setAttribute("aria-pressed", String(selected));
     button.addEventListener("click", () => {
       rememberBrowserItem("instrument", track.id);
       openTrackDeviceDetail(track, snapshot, { arrangement: true });
+      renderProjectMedia(snapshot);
+      document.querySelector(`[data-browser-item-key="${CSS.escape(browserItemKey("instrument", track.id))}"]`)?.focus();
       document.querySelector(`.track-row[data-track-id="${CSS.escape(track.id)}"]`)?.scrollIntoView({ block: "nearest" });
     });
     appendBrowserContentRow(
@@ -2969,16 +3180,33 @@ function renderProjectMedia(snapshot) {
     ? [{ id: "all", label: "Todo", count: availableCategories.reduce((total, category) => total + category.count, 0) }, ...availableCategories]
     : availableCategories;
   elements.browserCategoryList.replaceChildren();
-  for (const category of visibleCategories) {
+  for (const [categoryIndex, category] of visibleCategories.entries()) {
     const button = document.createElement("button");
     button.type = "button";
+    button.role = "tab";
     button.className = `browser-category${browserSelectedCategory === category.id ? " is-selected" : ""}`;
-    button.textContent = category.label;
+    button.dataset.categoryId = category.id;
+    button.textContent = `${category.label} · ${category.count}`;
+    button.setAttribute("aria-selected", String(browserSelectedCategory === category.id));
     button.setAttribute("aria-pressed", String(browserSelectedCategory === category.id));
     button.setAttribute("aria-label", `${category.label}, ${category.count} elementos`);
+    button.tabIndex = browserSelectedCategory === category.id ? 0 : -1;
     button.addEventListener("click", () => {
       browserSelectedCategory = category.id;
       if (lastSnapshot) renderProjectMedia(lastSnapshot);
+      elements.browserCategoryList.querySelector(`[data-category-id="${CSS.escape(category.id)}"]`)?.focus();
+    });
+    button.addEventListener("keydown", (event) => {
+      if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+      event.preventDefault();
+      const nextIndex = event.key === "Home"
+        ? 0
+        : event.key === "End"
+          ? visibleCategories.length - 1
+          : (categoryIndex + (event.key === "ArrowRight" ? 1 : -1) + visibleCategories.length) % visibleCategories.length;
+      const next = elements.browserCategoryList.querySelectorAll('[role="tab"]')[nextIndex];
+      next?.focus();
+      next?.click();
     });
     elements.browserCategoryList.append(button);
   }
@@ -2996,10 +3224,13 @@ function renderProjectMedia(snapshot) {
   for (const clip of matching) {
     const trackName = snapshot.tracks.find((track) => track.id === clip.trackId)?.name ?? "Pista desconocida";
     const item = document.createElement("div");
-    item.className = "browser-media-item";
+    const selected = selectedClipId === clip.id;
+    item.className = `browser-media-item${selected ? " is-selected" : ""}`;
     const selectButton = document.createElement("button");
     selectButton.type = "button";
-    selectButton.className = "browser-media-select";
+    selectButton.dataset.browserItemKey = browserItemKey("audio", clip.id);
+    selectButton.className = `browser-media-select${selected ? " is-selected" : ""}`;
+    selectButton.setAttribute("aria-pressed", String(selected));
     selectButton.setAttribute("aria-label", `Mostrar ${clip.name} en Arrangement`);
     const name = document.createElement("strong");
     name.textContent = clip.name;
@@ -3017,12 +3248,17 @@ function renderProjectMedia(snapshot) {
       previewAudio(clip.sourceId, preview);
     });
     const select = () => {
+      const browserFocused = document.activeElement?.closest(".browser") !== null;
       rememberBrowserItem("audio", clip.id);
       selectedClipId = clip.id;
       selectedDetailTab = "clip";
       selectSurface("arrangement");
       renderClipInspector(snapshot);
       updateWorkspaceLayout();
+      renderProjectMedia(snapshot);
+      if (browserFocused) {
+        document.querySelector(`[data-browser-item-key="${CSS.escape(browserItemKey("audio", clip.id))}"]`)?.focus();
+      }
       const target = [...elements.lanes.querySelectorAll("[data-clip-id]")]
         .find((block) => block.dataset.clipId === clip.id);
       if (!target) return;
@@ -3362,6 +3598,7 @@ elements.importCommit.addEventListener("click", async () => {
   const trackId = elements.importTrack.value;
   if (!pendingAudioPath || !trackId) return;
   stopPreview();
+  const previousAudioClipIds = new Set((lastSnapshot?.audioClips ?? []).map((clip) => clip.id));
   await whileBusy([elements.importCommit], async () => {
     try {
       const snapshot = await platform.importAudio({
@@ -3371,11 +3608,17 @@ elements.importCommit.addEventListener("click", async () => {
         sourceChannelSelection: elements.importChannels.value.split(",").map(Number),
         startTick: editCursorTick,
       });
+      const importedClip = (snapshot.audioClips ?? []).find((clip) => !previousAudioClipIds.has(clip.id));
       pendingAudioPath = null;
       elements.importSelected.textContent = "No hay archivo seleccionado";
       elements.importPreview.disabled = true;
       renderSnapshot(snapshot);
-      setNotice("Audio importado", "La fuente y región se registraron; el Arreglo muestra su forma de onda y Play reproduce el audio junto con el proyecto.");
+      if (importedClip) {
+        focusClipInArrangement(importedClip, snapshot);
+        setNotice("Audio importado", `${importedClip.name} quedó seleccionado en Arreglo; la fuente y región se registraron.`);
+      } else {
+        setNotice("Audio importado", "La fuente y región se registraron; el Arreglo muestra su forma de onda.");
+      }
     } catch (error) {
       setNotice("No se pudo importar audio", String(error));
     }
@@ -3786,12 +4029,47 @@ elements.detailClipTab.addEventListener("click", () => {
 });
 elements.detailDeviceTab.addEventListener("click", () => {
   selectedDetailTab = "device";
-  const selectedClip = lastSnapshot?.midiClips.find((clip) => clip.id === selectedClipId);
-  const selectedClipTrack = lastSnapshot?.tracks.find((track) => track.id === selectedClip?.trackId && track.kind === "midi");
+  const selectedClip = lastSnapshot?.midiClips.find((clip) => clip.id === selectedClipId)
+    ?? (lastSnapshot?.audioClips ?? []).find((clip) => clip.id === selectedClipId);
+  const selectedClipTrack = lastSnapshot?.tracks.find((track) => track.id === selectedClip?.trackId && track.role !== "master");
   if (selectedClipTrack) deviceFocusedTrackId = selectedClipTrack.id;
   if (lastSnapshot) renderDeviceInspector(lastSnapshot);
   updateWorkspaceLayout();
 });
+for (const [index, tab] of [elements.detailClipTab, elements.detailDeviceTab].entries()) {
+  tab.addEventListener("keydown", (event) => {
+    if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+    event.preventDefault();
+    const tabs = [elements.detailClipTab, elements.detailDeviceTab];
+    const nextIndex = event.key === "Home"
+      ? 0
+      : event.key === "End"
+        ? tabs.length - 1
+        : (index + (event.key === "ArrowRight" ? 1 : -1) + tabs.length) % tabs.length;
+    tabs[nextIndex].focus();
+    tabs[nextIndex].click();
+  });
+}
+const mainViewTabs = [
+  elements.showSession,
+  elements.showArrangement,
+  elements.showMixerPhase,
+  elements.showClipPhase,
+  elements.showDevicePhase,
+].filter(Boolean);
+for (const [index, tab] of mainViewTabs.entries()) {
+  tab.addEventListener("keydown", (event) => {
+    if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+    event.preventDefault();
+    const nextIndex = event.key === "Home"
+      ? 0
+      : event.key === "End"
+        ? mainViewTabs.length - 1
+        : (index + (event.key === "ArrowRight" ? 1 : -1) + mainViewTabs.length) % mainViewTabs.length;
+    mainViewTabs[nextIndex].focus();
+    mainViewTabs[nextIndex].click();
+  });
+}
 elements.toggleBrowser.addEventListener("click", () => {
   browserVisible = !browserVisible;
   updateWorkspaceLayout();

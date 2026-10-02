@@ -70,10 +70,31 @@ forma de onda limita la duración procesada a diez minutos y produce como máxim
 - Los procesos externos `ffmpeg` y `ffprobe` deben estar instalados. Un fallo se
   presenta como error de importación/forma de onda, sin registrar una región
   incompleta.
+Tras confirmar una importación, la shell identifica la nueva región por su ID,
+la selecciona en Arrangement y abre el detalle contextual. El estado del archivo
+seleccionado se anuncia con `aria-live`; la importación no depende únicamente
+del color o del cambio de forma de onda para comunicar éxito.
+**Verificación final agrupada 2026-09-30:** tras la mejora de selección de la
+nueva región, pasaron sintaxis de los tres scripts frontend, formato Rust,
+`cargo test -p estudio-daw-ui-shell` (32 pasadas, 1 ignorada),
+`cargo test -p estudio-daw-media-adapter` (8 pasadas en 2 suites) y la prueba
+focal de importación del `command-bus`. OpenSpec y `git diff --check` también
+pasaron.
+El mezclador de clips tiene cobertura determinista de límites y desvanecimientos:
+una región no mezcla fuera de su duración y aplica entrada/salida gradual por
+canal. Esta prueba no sustituye la reproducción real ni la QA acústica.
+
+
+
 
 La tarea OpenSpec 2.2 permanece abierta hasta completar QA visual del flujo de
 importación y edición en la aplicación. La tarea 2.3 también sigue abierta por
 QA funcional/acústica, posicionamiento compartido del transporte y ajuste
-sample-accurate del scheduler; los cambios de
-región durante Play ya reconstruyen el plan activo. No se ejecutó suite de
-pruebas en esta intervención.
+sample-accurate del scheduler; los cambios de región durante Play ya
+reconstruyen el plan activo.
+
+**Verificación 2026-09-30:** `cargo test -p estudio-daw-media-adapter` pasó con
+8 pruebas en 2 suites; `cargo test -p estudio-daw-command-bus import_audio`
+pasó la prueba transaccional de importación y deshacer. La inspección visual
+Tauri a tamaños objetivo sigue limitada por la geometría tiled de Hyprland; no
+se presenta el preview como sustituto de esa QA.

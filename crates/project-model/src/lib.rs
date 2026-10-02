@@ -3,6 +3,7 @@
 //! DAWproject sólo es una frontera de intercambio. El modelo interno conserva
 //! información adicional como escala, procedencia y estado de proxies.
 
+pub use estudio_daw_dsp::{EqBandConfig, EqFilterType};
 use estudio_daw_midi_types::{MidiTake, RecordedMidiEvent, RecordedMidiMessage};
 use quick_xml::{de::from_str, escape::escape};
 use serde::{Deserialize, Serialize};
@@ -865,6 +866,9 @@ pub struct Track {
     /// Mixer state is shared by all views; it is not presentation-only state.
     #[serde(default)]
     pub mixer: TrackMixerState,
+    /// Ecualizador paramétrico no destructivo insertado antes del gain/pan.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub eq_bands: Vec<EqBandConfig>,
     pub notes: Vec<Note>,
     pub audio_channels: Option<u32>,
     /// Procedencia original/proxy de una pista de audio. Las pistas MIDI no
@@ -990,6 +994,7 @@ impl Track {
             annotation: String::new(),
             group_name: None,
             mixer: TrackMixerState::default(),
+            eq_bands: Vec::new(),
             notes: Vec::new(),
             audio_channels,
             media_source: None,
@@ -1497,6 +1502,7 @@ pub fn import_project_xml(xml: &str) -> Result<ImportResult, ProjectError> {
                 annotation: String::new(),
                 group_name: None,
                 mixer: TrackMixerState::default(),
+                eq_bands: Vec::new(),
                 notes,
                 audio_channels: is_audio_track
                     .then(|| track.channel.and_then(|c| c.audio_channels))
@@ -2537,6 +2543,30 @@ mod tests {
             Track::new("bad", "Bad", TrackKind::Midi, TrackRole::Audio),
             Err(TrackValidationError::RoleKindMismatch)
         );
+    }
+
+    #[test]
+    fn track_eq_bands_roundtrip_and_legacy_default() {
+        let mut track = Track::new("eq-track", "EQ", TrackKind::Audio, TrackRole::Audio).unwrap();
+        track.eq_bands = vec![EqBandConfig {
+            filter_type: EqFilterType::Bell,
+            frequency_hz: 1_000.0,
+            gain_db: -3.0,
+            q: 1.4,
+            enabled: true,
+        }];
+        let encoded = serde_json::to_vec(&track).unwrap();
+        let decoded: Track = serde_json::from_slice(&encoded).unwrap();
+        assert_eq!(decoded.eq_bands, track.eq_bands);
+
+        let legacy = serde_json::to_vec(
+            &Track::new("legacy-eq", "Legacy", TrackKind::Audio, TrackRole::Audio).unwrap(),
+        )
+        .unwrap();
+        let legacy_value: serde_json::Value = serde_json::from_slice(&legacy).unwrap();
+        assert!(!legacy_value.as_object().unwrap().contains_key("eq_bands"));
+        let restored: Track = serde_json::from_value(legacy_value).unwrap();
+        assert!(restored.eq_bands.is_empty());
     }
 
     #[test]

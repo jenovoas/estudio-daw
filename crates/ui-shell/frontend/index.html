@@ -46,7 +46,7 @@
             Buscar contenido
             <input id="browser-content-search" type="search" placeholder="Buscar sonidos, clips, instrumentos..." />
           </label>
-          <nav id="browser-category-list" class="browser-categories" aria-label="Categorías del proyecto"></nav>
+          <nav id="browser-category-list" class="browser-categories" role="tablist" aria-orientation="horizontal" aria-label="Categorías del proyecto"></nav>
           <nav id="browser-collection-list" class="browser-collections" aria-label="Colecciones del proyecto"></nav>
           <p id="browser-library-empty" class="browser-empty-hint" hidden>El proyecto aún no tiene clips ni medios. Crea una pista o importa audio.</p>
           <section id="browser-midi-content" class="browser-content-section" aria-label="Clips MIDI" hidden>
@@ -106,7 +106,7 @@
             <label class="media-import-field">Canales
               <select id="audio-import-channels" disabled><option value="">Selecciona archivo</option></select>
             </label>
-            <div id="audio-import-selected" class="audio-import-selected">No hay archivo</div>
+            <div id="audio-import-selected" class="audio-import-selected" aria-live="polite">No hay archivo</div>
             <button id="browser-import-audio" class="browser-action" disabled>
               <span class="action-glyph">♫</span>
               <span><strong>Elegir archivo</strong><small>Explorar almacenamiento</small></span>
@@ -244,12 +244,12 @@
             <strong id="lower-panel-title">DETALLE DE CLIP</strong>
             <span class="lower-panel-subtitle">Editor contextual</span>
             <div class="detail-tabs" role="tablist" aria-label="Detalle contextual">
-              <button id="detail-clip-tab" class="detail-tab is-selected" type="button" aria-pressed="true">♩ Clip</button>
-              <button id="detail-device-tab" class="detail-tab" type="button" aria-pressed="false">🎛 Dispositivo</button>
+              <button id="detail-clip-tab" class="detail-tab is-selected" type="button" role="tab" aria-selected="true" aria-pressed="true" aria-controls="clip-inspector">♩ Clip</button>
+              <button id="detail-device-tab" class="detail-tab" type="button" role="tab" aria-selected="false" aria-pressed="false" aria-controls="device-inspector">🎛 Dispositivo</button>
             </div>
           </div>
-          <div id="clip-inspector" class="clip-inspector" aria-live="polite"><span>Sin clip seleccionado</span></div>
-          <div id="device-inspector" class="device-inspector" hidden></div>
+          <div id="clip-inspector" class="clip-inspector" role="tabpanel" aria-labelledby="detail-clip-tab" aria-live="polite"><span>Sin clip seleccionado</span></div>
+          <div id="device-inspector" class="device-inspector" role="tabpanel" aria-labelledby="detail-device-tab" hidden></div>
           <details id="audio-settings" class="audio-settings">
             <summary class="audio-summary">
               <span class="audio-summary-icon">◉</span>

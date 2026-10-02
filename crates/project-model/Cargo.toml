@@ -6,6 +6,7 @@ license.workspace = true
 description = "Modelo canónico de proyecto y adaptador de intercambio DAWproject para Estudio DAW"
 
 [dependencies]
+estudio-daw-dsp = { path = "../dsp" }
 estudio-daw-midi-types = { path = "../midi-types" }
 quick-xml = { version = "0.37", features = ["serialize"] }
 serde = { version = "1", features = ["derive"] }

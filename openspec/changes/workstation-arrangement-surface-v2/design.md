@@ -331,6 +331,51 @@ de capacidades anteriores no son un inventario actualizado: Session ya tiene
 manejadores de lanzamiento y el adaptador expone retorno al Arreglo. Este plan
 no pide implementar nuevamente esos comportamientos.
 
+### Implementación visual L2 — 2026-09-30
+
+El lienzo de Arrangement conserva el marco existente y ahora distribuye su
+espacio útil de forma explícita: las reglas autoritativas del grid estiran las
+filas de superficie, el panel de pistas usa una columna responsive y el panel
+inferior mantiene su altura contextual. Los carriles reciben una altura inicial
+proporcional al viewport, limitada a un rango denso; una altura guardada por
+pista en `localStorage` sigue teniendo precedencia. No se añade estado musical,
+IPC ni mutación al modelo.
+
+La verificación headless del frontend real a 1920×1080 y 1280×720 observó
+transporte visible, clips alineados, cabeceras, Session, cambio de vista y
+editor inferior accesibles. Esta comprobación usa `platform-preview.js`; no
+sustituye la captura Tauri pendiente de 3.1.1 ni la aceptación visual final de
+3.1.6.
+
+### Implementación visual L3 — 2026-09-30
+
+El Browser mantiene sus categorías y colecciones derivadas del snapshot, pero
+ahora muestra el conteo de resultados en cada categoría y conserva un estado
+activo con contraste explícito. Arrangement refleja la selección de pista en
+dos superficies simultáneas: cabecera y carril temporal. Cada carril expone
+también una etiqueta accesible y no se añade una segunda fuente de selección.
+La sincronización ocurre en la función común de selección de pistas, no en un
+atajo específico de Arrangement.
+
+El smoke preview a 1280×720 confirmó los conteos de Demo MIDI y la selección
+compartida. La interacción Tauri y la aceptación visual de 3.1.6 siguen
+pendientes.
+
+La selección común incluye las cabeceras de Session además de las filas de
+Arrangement y los canales de Mezclador. Al volver de Session a Arrangement se
+conserva la identidad seleccionada y se vuelve a resaltar el carril; el estado
+de lanzamiento no se fuerza ni se simula cuando el motor no está listo.
+
+### Implementación visual L4 — 2026-09-30
+
+Cada cabecera de escena muestra su posición estable y el botón de lanzamiento
+deriva su estado de las casillas activas de esa escena: `▶` disponible,
+`○` en cola y `■` reproduciendo. Cuando reproduce, el mismo control detiene
+las pistas asociadas en vez de relanzar silenciosamente la escena. Si el motor
+no está listo, la acción permanece deshabilitada con un diagnóstico visible.
+La mezcla por pista sigue alineada bajo la rejilla y los buses/Master siguen
+fuera de las casillas de clips.
+
 ### Evidencia de partida y límites
 
 - `index.html` coloca transporte, vistas, historial, rango, rejilla y paneles

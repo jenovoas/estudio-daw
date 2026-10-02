@@ -9,9 +9,9 @@ use estudio_daw_project_model::{
     add_audio_clip, add_audio_clip_for_source, append_media_source, attach_media_source,
     attach_midi_take, create_empty_midi_clip, quantize_midi_clip, set_audio_clip_fades,
     set_audio_clip_gain, split_midi_clip, trim_audio_clip, AudioClip, ClipReference, ClipSlot,
-    InstrumentConfig, MediaSource, Project, ProjectEvent, ProjectHistory, ProjectSnapshot,
-    ProxyAsset, Scene, Track, TrackInputRoute, TrackKind, TrackMixerState, TrackRole,
-    TransportLoopRange,
+    EqBandConfig, InstrumentConfig, MediaSource, Project, ProjectEvent, ProjectHistory,
+    ProjectSnapshot, ProxyAsset, Scene, Track, TrackInputRoute, TrackKind, TrackMixerState,
+    TrackRole, TransportLoopRange,
 };
 use estudio_daw_session::{Session, SessionCommand, TransportSnapshot, TransportState};
 use serde::{Deserialize, Serialize};
@@ -88,6 +88,10 @@ pub enum ProjectCommand {
     },
     RemoveTrack {
         track_id: String,
+    },
+    SetTrackEq {
+        track_id: String,
+        bands: Vec<EqBandConfig>,
     },
     SetTrackMixer {
         track_id: String,
@@ -768,6 +772,34 @@ impl CommandRuntime {
                         .map_err(|error| error.to_string())
                 })
                 .map_err(|error| CommandError::Project(error.to_string()))?,
+            ProjectCommand::SetTrackEq { track_id, bands } => self
+                .project_history
+                .transact("set track EQ", |project| -> Result<(), String> {
+                    if bands.len() > 8 {
+                        return Err(String::from("una pista admite como máximo 8 bandas de EQ"));
+                    }
+                    for band in &bands {
+                        if !band.frequency_hz.is_finite()
+                            || band.frequency_hz <= 0.0
+                            || band.frequency_hz > 20_000.0
+                            || !band.gain_db.is_finite()
+                            || !band.q.is_finite()
+                            || band.q <= 0.0
+                        {
+                            return Err(String::from(
+                                "cada banda de EQ requiere frecuencia 0-20000 Hz, ganancia finita y Q positivo",
+                            ));
+                        }
+                    }
+                    let track = project
+                        .tracks
+                        .iter_mut()
+                        .find(|item| item.id == track_id)
+                        .ok_or_else(|| format!("unknown track: {track_id}"))?;
+                    track.eq_bands = bands;
+                    Ok(())
+                })
+                .map_err(|error| CommandError::Project(error.to_string()))?,
             ProjectCommand::SetTrackMixer { track_id, mixer } => self
                 .project_history
                 .transact("set track mixer", |project| -> Result<(), String> {
@@ -781,7 +813,7 @@ impl CommandRuntime {
                         .tracks
                         .iter_mut()
                         .find(|item| item.id == track_id)
-                        .ok_or_else(|| format!("unknown track: {track_id}"))?;
+                        .ok_or_else(|| String::from("unknown track: {track_id}"))?;
                     track.mixer = mixer;
                     Ok(())
                 })
@@ -1499,6 +1531,7 @@ mod tests {
                     annotation: String::new(),
                     group_name: None,
                     mixer: TrackMixerState::default(),
+                    eq_bands: Vec::new(),
                     notes: Vec::new(),
                     audio_channels: None,
                     media_source: None,
@@ -1521,6 +1554,7 @@ mod tests {
                     annotation: String::new(),
                     group_name: None,
                     mixer: TrackMixerState::default(),
+                    eq_bands: Vec::new(),
                     notes: Vec::new(),
                     audio_channels: Some(2),
                     media_source: None,
@@ -1728,6 +1762,46 @@ mod tests {
         assert!(restored.audio_playlists.iter().any(|playlist| {
             playlist.track_id == "track-audio" && playlist.region_ids == ["clip-1"]
         }));
+    }
+
+    #[test]
+    fn track_eq_command_persists_bands_and_rejects_invalid_count_without_mutation() {
+        let mut runtime = CommandRuntime::new(project());
+        let band = EqBandConfig {
+            filter_type: estudio_daw_project_model::EqFilterType::Bell,
+            frequency_hz: 1_000.0,
+            gain_db: -3.0,
+            q: 1.4,
+            enabled: true,
+        };
+        runtime
+            .apply(envelope(
+                "set-track-eq",
+                DomainCommand::Project(ProjectCommand::SetTrackEq {
+                    track_id: "track-audio".into(),
+                    bands: vec![band],
+                }),
+            ))
+            .unwrap();
+        assert_eq!(
+            runtime.snapshot().project.project.tracks[1].eq_bands,
+            vec![band]
+        );
+
+        let invalid = vec![band; 9];
+        assert!(runtime
+            .apply(envelope(
+                "invalid-track-eq",
+                DomainCommand::Project(ProjectCommand::SetTrackEq {
+                    track_id: "track-audio".into(),
+                    bands: invalid,
+                }),
+            ))
+            .is_err());
+        assert_eq!(
+            runtime.snapshot().project.project.tracks[1].eq_bands,
+            vec![band]
+        );
     }
 
     #[test]
