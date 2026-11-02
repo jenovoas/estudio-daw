@@ -1,0 +1,608 @@
+{
+  ".codebase-memory/artifact.json": {
+    "mtime": 1793219408.712727,
+    "seen": 1793427559.1649203,
+    "ast_hash": "aa5765542e36028c211eb0d595651cb7",
+    "semantic_hash": "aa5765542e36028c211eb0d595651cb7",
+    "ast_empty": true
+  },
+  "Cargo.toml": {
+    "mtime": 1793219408.712727,
+    "seen": 1793427559.164928,
+    "ast_hash": "13e2f04ecd1f52b8038e45f652ff9a30",
+    "semantic_hash": "13e2f04ecd1f52b8038e45f652ff9a30",
+    "ast_empty": true
+  },
+  "crates/application/Cargo.toml": {
+    "mtime": 1793219408.712727,
+    "seen": 1793427559.1649315,
+    "ast_hash": "607657baac2e53795b067a593ac4abc2",
+    "semantic_hash": "607657baac2e53795b067a593ac4abc2"
+  },
+  "crates/application/src/lib.rs": {
+    "mtime": 1793219408.712727,
+    "seen": 1793427559.16498,
+    "ast_hash": "888df71f5b669501ac869d72dec8d9f7",
+    "semantic_hash": "888df71f5b669501ac869d72dec8d9f7"
+  },
+  "crates/audio-engine/Cargo.toml": {
+    "mtime": 1793219408.712727,
+    "seen": 1793427559.1650126,
+    "ast_hash": "c6b0af3dd86a49a9ab2ba266369bc937",
+    "semantic_hash": "c6b0af3dd86a49a9ab2ba266369bc937"
+  },
+  "crates/audio-engine/src/lib.rs": {
+    "mtime": 1793219408.712727,
+    "seen": 1793427559.1650395,
+    "ast_hash": "028176f84c076d0156649b04cf50600c",
+    "semantic_hash": "028176f84c076d0156649b04cf50600c"
+  },
+  "crates/audio-engine/tests/realtime_no_alloc.rs": {
+    "mtime": 1793219408.712727,
+    "seen": 1793427559.165066,
+    "ast_hash": "f31be8e9077afd88278fc62c0665b70c",
+    "semantic_hash": "f31be8e9077afd88278fc62c0665b70c"
+  },
+  "crates/audio-platform/Cargo.toml": {
+    "mtime": 1793219408.712727,
+    "seen": 1793427559.165092,
+    "ast_hash": "1ca1ce16aa2e3265d4b921ac4ad1267c",
+    "semantic_hash": "1ca1ce16aa2e3265d4b921ac4ad1267c"
+  },
+  "crates/audio-platform/src/lib.rs": {
+    "mtime": 1793219408.712727,
+    "seen": 1793427559.1651168,
+    "ast_hash": "b10893cb6024645f8bdaedc48ae596ef",
+    "semantic_hash": "b10893cb6024645f8bdaedc48ae596ef"
+  },
+  "crates/cli/Cargo.toml": {
+    "mtime": 1793219408.712727,
+    "seen": 1793427559.1651413,
+    "ast_hash": "08a276746d9a62f3bb6eefa3cd599742",
+    "semantic_hash": "08a276746d9a62f3bb6eefa3cd599742"
+  },
+  "crates/cli/src/bin/estudio-daw-project.rs": {
+    "mtime": 1793219408.712727,
+    "seen": 1793427559.1651642,
+    "ast_hash": "1bd3d0fe28122a7867e7c9ef36f9ff1e",
+    "semantic_hash": "1bd3d0fe28122a7867e7c9ef36f9ff1e"
+  },
+  "crates/command-bus/Cargo.toml": {
+    "mtime": 1793219408.712727,
+    "seen": 1793427559.1651924,
+    "ast_hash": "09ae736ce7a61ec034bcbbd945ab3473",
+    "semantic_hash": "09ae736ce7a61ec034bcbbd945ab3473"
+  },
+  "crates/command-bus/src/lib.rs": {
+    "mtime": 1793219408.712727,
+    "seen": 1793427559.165216,
+    "ast_hash": "61e289118546c0138c87c5854146e2b1",
+    "semantic_hash": "61e289118546c0138c87c5854146e2b1"
+  },
+  "crates/compute-runtime/Cargo.toml": {
+    "mtime": 1793219408.712727,
+    "seen": 1793427559.1652405,
+    "ast_hash": "334d5037bca1f28f8fc5d16d1b27eb43",
+    "semantic_hash": "334d5037bca1f28f8fc5d16d1b27eb43"
+  },
+  "crates/compute-runtime/src/bin/compute-benchmark.rs": {
+    "mtime": 1793219408.712727,
+    "seen": 1793427559.1652637,
+    "ast_hash": "ca14e577491651665176e7aa70dda424",
+    "semantic_hash": "ca14e577491651665176e7aa70dda424"
+  },
+  "crates/compute-runtime/src/bin/gpu-probe.rs": {
+    "mtime": 1793219408.712727,
+    "seen": 1793427559.1652913,
+    "ast_hash": "f1d110014ea4850f0312168fe2ee9d3f",
+    "semantic_hash": "f1d110014ea4850f0312168fe2ee9d3f"
+  },
+  "crates/compute-runtime/src/lib.rs": {
+    "mtime": 1793219408.712727,
+    "seen": 1793427559.1653173,
+    "ast_hash": "0416bf4b03eeccdc280afff1ab2fcbff",
+    "semantic_hash": "0416bf4b03eeccdc280afff1ab2fcbff"
+  },
+  "crates/dsp/Cargo.toml": {
+    "mtime": 1793219408.712727,
+    "seen": 1793427559.1653416,
+    "ast_hash": "aebef662be5902bad266e79d86b8797c",
+    "semantic_hash": "aebef662be5902bad266e79d86b8797c"
+  },
+  "crates/dsp/src/lib.rs": {
+    "mtime": 1793219408.712727,
+    "seen": 1793427559.1653645,
+    "ast_hash": "10bf4ce3d399b3606113054757e08203",
+    "semantic_hash": "10bf4ce3d399b3606113054757e08203"
+  },
+  "crates/media-adapter/Cargo.toml": {
+    "mtime": 1793219408.712727,
+    "seen": 1793427559.1653886,
+    "ast_hash": "5c2dc96a11e35a65f278f8fcd30d6b0a",
+    "semantic_hash": "5c2dc96a11e35a65f278f8fcd30d6b0a"
+  },
+  "crates/media-adapter/src/lib.rs": {
+    "mtime": 1793219408.712727,
+    "seen": 1793427559.1654112,
+    "ast_hash": "14d549b64eeba9dc0c76a5fe429ca793",
+    "semantic_hash": "14d549b64eeba9dc0c76a5fe429ca793"
+  },
+  "crates/midi-engine/Cargo.toml": {
+    "mtime": 1793219408.712727,
+    "seen": 1793427559.1654356,
+    "ast_hash": "174dadc5acabb2dacdb4104cc6448314",
+    "semantic_hash": "174dadc5acabb2dacdb4104cc6448314"
+  },
+  "crates/midi-engine/src/lib.rs": {
+    "mtime": 1793219408.716727,
+    "seen": 1793427559.1654587,
+    "ast_hash": "40c2acf0cc999ccfb2fd22dbc4db0675",
+    "semantic_hash": "40c2acf0cc999ccfb2fd22dbc4db0675"
+  },
+  "crates/midi-engine/tests/alsa_hotplug.rs": {
+    "mtime": 1793219408.716727,
+    "seen": 1793427559.1654828,
+    "ast_hash": "314215e8f99495e2672df5788ce27538",
+    "semantic_hash": "314215e8f99495e2672df5788ce27538"
+  },
+  "crates/midi-engine/tests/alsa_live_input.rs": {
+    "mtime": 1793219408.716727,
+    "seen": 1793427559.1655073,
+    "ast_hash": "dbd8487e56405be886a78d3dc9c2ca98",
+    "semantic_hash": "dbd8487e56405be886a78d3dc9c2ca98"
+  },
+  "crates/midi-types/Cargo.toml": {
+    "mtime": 1793219408.716727,
+    "seen": 1793427559.1655316,
+    "ast_hash": "c1705f2b321df656aef27959c85e084e",
+    "semantic_hash": "c1705f2b321df656aef27959c85e084e"
+  },
+  "crates/midi-types/src/lib.rs": {
+    "mtime": 1793219408.716727,
+    "seen": 1793427559.1655545,
+    "ast_hash": "7d2db855dfd1c8b731ac27337168e409",
+    "semantic_hash": "7d2db855dfd1c8b731ac27337168e409"
+  },
+  "crates/project-model/Cargo.toml": {
+    "mtime": 1793219408.716727,
+    "seen": 1793427559.1655788,
+    "ast_hash": "5a4588a8f530582fbbe6a14fded63575",
+    "semantic_hash": "5a4588a8f530582fbbe6a14fded63575"
+  },
+  "crates/project-model/src/lib.rs": {
+    "mtime": 1793219408.716727,
+    "seen": 1793427559.165601,
+    "ast_hash": "f92207a2bf4b0f1a7b9f0f4a48cf2ae5",
+    "semantic_hash": "f92207a2bf4b0f1a7b9f0f4a48cf2ae5"
+  },
+  "crates/runtime-diagnostics/Cargo.toml": {
+    "mtime": 1793219408.716727,
+    "seen": 1793427559.1656249,
+    "ast_hash": "7aba40d06d13d33fd55ba0ce4775dca6",
+    "semantic_hash": "7aba40d06d13d33fd55ba0ce4775dca6"
+  },
+  "crates/runtime-diagnostics/src/lib.rs": {
+    "mtime": 1793219408.716727,
+    "seen": 1793427559.1656468,
+    "ast_hash": "cae3ea0cc5964ec9abe1e03339716058",
+    "semantic_hash": "cae3ea0cc5964ec9abe1e03339716058"
+  },
+  "crates/session/Cargo.toml": {
+    "mtime": 1793219408.716727,
+    "seen": 1793427559.1656709,
+    "ast_hash": "789afda7db0ddf589c6870690c295917",
+    "semantic_hash": "789afda7db0ddf589c6870690c295917"
+  },
+  "crates/session/src/lib.rs": {
+    "mtime": 1793219408.716727,
+    "seen": 1793427559.165693,
+    "ast_hash": "31ec1422dd4c13991716551b8c774359",
+    "semantic_hash": "31ec1422dd4c13991716551b8c774359"
+  },
+  "crates/synth/Cargo.toml": {
+    "mtime": 1793219408.716727,
+    "seen": 1793427559.1657164,
+    "ast_hash": "608719d1c4f07e382e89fb30daaa6d49",
+    "semantic_hash": "608719d1c4f07e382e89fb30daaa6d49"
+  },
+  "crates/synth/src/fluidsynth.rs": {
+    "mtime": 1793219408.716727,
+    "seen": 1793427559.1657386,
+    "ast_hash": "5bfdca6009db0641f04777d7ed17a349",
+    "semantic_hash": "5bfdca6009db0641f04777d7ed17a349"
+  },
+  "crates/synth/src/fluidsynth_worker.rs": {
+    "mtime": 1793219408.716727,
+    "seen": 1793427559.1657627,
+    "ast_hash": "9a6f2014144824a7d8840810efbff1b2",
+    "semantic_hash": "9a6f2014144824a7d8840810efbff1b2"
+  },
+  "crates/synth/src/lib.rs": {
+    "mtime": 1793219408.716727,
+    "seen": 1793427559.1657863,
+    "ast_hash": "e463b4aca663aa3fcc7f21e6a8018cbb",
+    "semantic_hash": "e463b4aca663aa3fcc7f21e6a8018cbb"
+  },
+  "crates/synth/tests/realtime_no_alloc.rs": {
+    "mtime": 1793219408.716727,
+    "seen": 1793427559.16581,
+    "ast_hash": "a11305839f3310fbd52738759848647a",
+    "semantic_hash": "a11305839f3310fbd52738759848647a"
+  },
+  "crates/test_plugins/EstudioFixture.vst3/Contents/Resources/moduleinfo.json": {
+    "mtime": 1793219408.716727,
+    "seen": 1793427559.165834,
+    "ast_hash": "183e749a68efe0661c30b5f6d9592ba8",
+    "semantic_hash": "183e749a68efe0661c30b5f6d9592ba8",
+    "ast_empty": true
+  },
+  "crates/ui-shell/Cargo.toml": {
+    "mtime": 1793219408.716727,
+    "seen": 1793427559.165836,
+    "ast_hash": "4220abaabd31e396219d21caeb6f70fe",
+    "semantic_hash": "4220abaabd31e396219d21caeb6f70fe"
+  },
+  "crates/ui-shell/build.rs": {
+    "mtime": 1793219408.716727,
+    "seen": 1793427559.165859,
+    "ast_hash": "3980b4cf7f2804e5b163d4adb9e6fa70",
+    "semantic_hash": "3980b4cf7f2804e5b163d4adb9e6fa70"
+  },
+  "crates/ui-shell/capabilities/default.json": {
+    "mtime": 1793219408.716727,
+    "seen": 1793427559.1658814,
+    "ast_hash": "08c55e2ee427b44f7e459718b1d975e0",
+    "semantic_hash": "08c55e2ee427b44f7e459718b1d975e0"
+  },
+  "crates/ui-shell/frontend/main.js": {
+    "mtime": 1793219408.716727,
+    "seen": 1793427559.1659057,
+    "ast_hash": "635464335b1d13e024579d85c0a21f74",
+    "semantic_hash": "635464335b1d13e024579d85c0a21f74"
+  },
+  "crates/ui-shell/frontend/platform-preview.js": {
+    "mtime": 1793219408.716727,
+    "seen": 1793427559.1659307,
+    "ast_hash": "b3119a4db67dcbdd68da2bed58cc1724",
+    "semantic_hash": "b3119a4db67dcbdd68da2bed58cc1724"
+  },
+  "crates/ui-shell/frontend/platform-tauri.js": {
+    "mtime": 1793219408.716727,
+    "seen": 1793427559.1659553,
+    "ast_hash": "b38db576ad5cbf8b811694a9cba04ea4",
+    "semantic_hash": "b38db576ad5cbf8b811694a9cba04ea4"
+  },
+  "crates/ui-shell/gen/schemas/acl-manifests.json": {
+    "mtime": 1793219408.720727,
+    "seen": 1793427559.1659794,
+    "ast_hash": "33bfe58696ed12d90995b94c831c5e1f",
+    "semantic_hash": "33bfe58696ed12d90995b94c831c5e1f",
+    "ast_empty": true
+  },
+  "crates/ui-shell/gen/schemas/capabilities.json": {
+    "mtime": 1793219408.720727,
+    "seen": 1793427559.1659808,
+    "ast_hash": "0bf3bb5861c6a109b9538bfeca138392",
+    "semantic_hash": "0bf3bb5861c6a109b9538bfeca138392",
+    "ast_empty": true
+  },
+  "crates/ui-shell/gen/schemas/desktop-schema.json": {
+    "mtime": 1793219408.720727,
+    "seen": 1793427559.1659822,
+    "ast_hash": "8ccd287a95318e3d07adb2323849812c",
+    "semantic_hash": "8ccd287a95318e3d07adb2323849812c",
+    "ast_empty": true
+  },
+  "crates/ui-shell/gen/schemas/linux-schema.json": {
+    "mtime": 1793219408.720727,
+    "seen": 1793427559.1659834,
+    "ast_hash": "8ccd287a95318e3d07adb2323849812c",
+    "semantic_hash": "8ccd287a95318e3d07adb2323849812c",
+    "ast_empty": true
+  },
+  "crates/ui-shell/src/audio_runtime.rs": {
+    "mtime": 1793219408.720727,
+    "seen": 1793427559.1659849,
+    "ast_hash": "7ed47645f2344232952d30a035de06dd",
+    "semantic_hash": "7ed47645f2344232952d30a035de06dd"
+  },
+  "crates/ui-shell/src/main.rs": {
+    "mtime": 1793219408.720727,
+    "seen": 1793427559.1660101,
+    "ast_hash": "1701ef03b8348fd738e8e1294fe0f106",
+    "semantic_hash": "1701ef03b8348fd738e8e1294fe0f106"
+  },
+  "crates/ui-shell/src/project_security.rs": {
+    "mtime": 1793219408.720727,
+    "seen": 1793427559.1660342,
+    "ast_hash": "cda4c2c2981a6786b6d7c123e28d4372",
+    "semantic_hash": "cda4c2c2981a6786b6d7c123e28d4372"
+  },
+  "crates/ui-shell/tauri.conf.json": {
+    "mtime": 1793219408.720727,
+    "seen": 1793427559.166058,
+    "ast_hash": "cc4d60bc089a3035de76bcaea0028529",
+    "semantic_hash": "cc4d60bc089a3035de76bcaea0028529"
+  },
+  "crates/vst3-host/Cargo.toml": {
+    "mtime": 1793219408.720727,
+    "seen": 1793427559.1660802,
+    "ast_hash": "8119953cc03d2ef51f666bdfe9f822ba",
+    "semantic_hash": "8119953cc03d2ef51f666bdfe9f822ba"
+  },
+  "crates/vst3-host/src/audio.rs": {
+    "mtime": 1793219408.720727,
+    "seen": 1793427559.1661022,
+    "ast_hash": "0cbfe737db21fa240e39945e7037351e",
+    "semantic_hash": "0cbfe737db21fa240e39945e7037351e"
+  },
+  "crates/vst3-host/src/backends/cpal_backend.rs": {
+    "mtime": 1793219408.720727,
+    "seen": 1793427559.1661263,
+    "ast_hash": "f6974fcc89ab3c9fe9ef166ccf6091e2",
+    "semantic_hash": "f6974fcc89ab3c9fe9ef166ccf6091e2"
+  },
+  "crates/vst3-host/src/backends/mod.rs": {
+    "mtime": 1793219408.720727,
+    "seen": 1793427559.1661525,
+    "ast_hash": "70ff8f6efce299130b1bf6805b0764ea",
+    "semantic_hash": "70ff8f6efce299130b1bf6805b0764ea"
+  },
+  "crates/vst3-host/src/bin/vst3-host-helper.rs": {
+    "mtime": 1793219408.720727,
+    "seen": 1793427559.1661797,
+    "ast_hash": "3cb70ef927c59a505912c1e563af25ba",
+    "semantic_hash": "3cb70ef927c59a505912c1e563af25ba"
+  },
+  "crates/vst3-host/src/bin/vst3-host-probe.rs": {
+    "mtime": 1793219408.720727,
+    "seen": 1793427559.1662056,
+    "ast_hash": "fbd223e45d8ac08851b2f59d89fa5952",
+    "semantic_hash": "fbd223e45d8ac08851b2f59d89fa5952"
+  },
+  "crates/vst3-host/src/discovery.rs": {
+    "mtime": 1793219408.720727,
+    "seen": 1793427559.1662314,
+    "ast_hash": "e4678bd409c5f1fe4a775e57de04b6f0",
+    "semantic_hash": "e4678bd409c5f1fe4a775e57de04b6f0"
+  },
+  "crates/vst3-host/src/embed.rs": {
+    "mtime": 1793219408.720727,
+    "seen": 1793427559.1662557,
+    "ast_hash": "68f259e5a45be0087ff489b4c3762141",
+    "semantic_hash": "68f259e5a45be0087ff489b4c3762141"
+  },
+  "crates/vst3-host/src/error.rs": {
+    "mtime": 1793219408.720727,
+    "seen": 1793427559.1662786,
+    "ast_hash": "88ea65467888c72180e0d9136cc9b40d",
+    "semantic_hash": "88ea65467888c72180e0d9136cc9b40d"
+  },
+  "crates/vst3-host/src/host.rs": {
+    "mtime": 1793219408.720727,
+    "seen": 1793427559.166302,
+    "ast_hash": "7bf6abf28094f56f822c3a225aaf9c3e",
+    "semantic_hash": "7bf6abf28094f56f822c3a225aaf9c3e"
+  },
+  "crates/vst3-host/src/internal/com_implementations.rs": {
+    "mtime": 1793219408.720727,
+    "seen": 1793427559.1663256,
+    "ast_hash": "4650c477a7f64516ba454c6ea6698872",
+    "semantic_hash": "4650c477a7f64516ba454c6ea6698872"
+  },
+  "crates/vst3-host/src/internal/data_exchange.rs": {
+    "mtime": 1793219408.720727,
+    "seen": 1793427559.166352,
+    "ast_hash": "ecf898324530b07c29bb693811d99dbc",
+    "semantic_hash": "ecf898324530b07c29bb693811d99dbc"
+  },
+  "crates/vst3-host/src/internal/denormal.rs": {
+    "mtime": 1793219408.720727,
+    "seen": 1793427559.1663785,
+    "ast_hash": "8f45d6a910b10ffb54054dbb7af083e6",
+    "semantic_hash": "8f45d6a910b10ffb54054dbb7af083e6"
+  },
+  "crates/vst3-host/src/internal/isolated_plugin_impl.rs": {
+    "mtime": 1793219408.724727,
+    "seen": 1793427559.1664038,
+    "ast_hash": "981bfd75fb76a05c62e644c5f8f9eb68",
+    "semantic_hash": "981bfd75fb76a05c62e644c5f8f9eb68"
+  },
+  "crates/vst3-host/src/internal/mod.rs": {
+    "mtime": 1793219408.724727,
+    "seen": 1793427559.16643,
+    "ast_hash": "2380bec5031de5336a0f86ba0866284b",
+    "semantic_hash": "2380bec5031de5336a0f86ba0866284b"
+  },
+  "crates/vst3-host/src/internal/module_info.rs": {
+    "mtime": 1793219408.724727,
+    "seen": 1793427559.1664557,
+    "ast_hash": "27a4cd4677cfa1567d631eac44637294",
+    "semantic_hash": "27a4cd4677cfa1567d631eac44637294"
+  },
+  "crates/vst3-host/src/internal/module_loader/linux.rs": {
+    "mtime": 1793219408.724727,
+    "seen": 1793427559.1664815,
+    "ast_hash": "fe3ddba433f42b3acc1afccfec422d03",
+    "semantic_hash": "fe3ddba433f42b3acc1afccfec422d03"
+  },
+  "crates/vst3-host/src/internal/module_loader/macos.rs": {
+    "mtime": 1793219408.724727,
+    "seen": 1793427559.1665094,
+    "ast_hash": "460af863b1b96dc5e8bd31628904a569",
+    "semantic_hash": "460af863b1b96dc5e8bd31628904a569"
+  },
+  "crates/vst3-host/src/internal/module_loader/mod.rs": {
+    "mtime": 1793219408.724727,
+    "seen": 1793427559.1665359,
+    "ast_hash": "db47bed8b5dda9b9070003ec278cfb08",
+    "semantic_hash": "db47bed8b5dda9b9070003ec278cfb08"
+  },
+  "crates/vst3-host/src/internal/module_loader/private_namespace.rs": {
+    "mtime": 1793219408.724727,
+    "seen": 1793427559.166564,
+    "ast_hash": "d60b9995c812d9b9b5e0da569ba74d88",
+    "semantic_hash": "d60b9995c812d9b9b5e0da569ba74d88"
+  },
+  "crates/vst3-host/src/internal/module_loader/windows.rs": {
+    "mtime": 1793219408.724727,
+    "seen": 1793427559.166592,
+    "ast_hash": "6ea221491bbfe6b97335a5e77617a034",
+    "semantic_hash": "6ea221491bbfe6b97335a5e77617a034"
+  },
+  "crates/vst3-host/src/internal/plugin_impl.rs": {
+    "mtime": 1793219408.724727,
+    "seen": 1793427559.16662,
+    "ast_hash": "bfb2ac3f218fe192382a737b25ce7dc3",
+    "semantic_hash": "bfb2ac3f218fe192382a737b25ce7dc3"
+  },
+  "crates/vst3-host/src/internal/utils.rs": {
+    "mtime": 1793219408.724727,
+    "seen": 1793427559.1666458,
+    "ast_hash": "bb437d89f13c5e6c430d88b2004e3bda",
+    "semantic_hash": "bb437d89f13c5e6c430d88b2004e3bda"
+  },
+  "crates/vst3-host/src/lib.rs": {
+    "mtime": 1793219408.724727,
+    "seen": 1793427559.166671,
+    "ast_hash": "f780c9e2022b2af7fc2d77f61857d75b",
+    "semantic_hash": "f780c9e2022b2af7fc2d77f61857d75b"
+  },
+  "crates/vst3-host/src/midi.rs": {
+    "mtime": 1793219408.724727,
+    "seen": 1793427559.1666949,
+    "ast_hash": "363587fb66a65183fe935156172b1a25",
+    "semantic_hash": "363587fb66a65183fe935156172b1a25"
+  },
+  "crates/vst3-host/src/midi_input.rs": {
+    "mtime": 1793219408.724727,
+    "seen": 1793427559.1667187,
+    "ast_hash": "f3a12142d4ccb078d2099ce562d2d5ca",
+    "semantic_hash": "f3a12142d4ccb078d2099ce562d2d5ca"
+  },
+  "crates/vst3-host/src/parameters.rs": {
+    "mtime": 1793219408.724727,
+    "seen": 1793427559.1667442,
+    "ast_hash": "607de3c179c2a29bcadd2b13418e6cb3",
+    "semantic_hash": "607de3c179c2a29bcadd2b13418e6cb3"
+  },
+  "crates/vst3-host/src/playback.rs": {
+    "mtime": 1793219408.724727,
+    "seen": 1793427559.1667688,
+    "ast_hash": "a99263cdd638557f52d10d34ba932d3a",
+    "semantic_hash": "a99263cdd638557f52d10d34ba932d3a"
+  },
+  "crates/vst3-host/src/plugin.rs": {
+    "mtime": 1793219408.724727,
+    "seen": 1793427559.1667924,
+    "ast_hash": "15e2dfcf1f729b7cfbe5a887b47905a4",
+    "semantic_hash": "15e2dfcf1f729b7cfbe5a887b47905a4"
+  },
+  "crates/vst3-host/src/process_isolation.rs": {
+    "mtime": 1793219408.724727,
+    "seen": 1793427559.166816,
+    "ast_hash": "4eea0a804d9dc04f6d2a6f685503909d",
+    "semantic_hash": "4eea0a804d9dc04f6d2a6f685503909d"
+  },
+  "crates/vst3-host/src/realtime.rs": {
+    "mtime": 1793219408.724727,
+    "seen": 1793427559.1668398,
+    "ast_hash": "0f3f07d663f60b2ac4bafdefcdc67cd3",
+    "semantic_hash": "0f3f07d663f60b2ac4bafdefcdc67cd3"
+  },
+  "crates/vst3-host/src/simple.rs": {
+    "mtime": 1793219408.724727,
+    "seen": 1793427559.1668637,
+    "ast_hash": "2898d560c766cb785f7a231c5d650380",
+    "semantic_hash": "2898d560c766cb785f7a231c5d650380"
+  },
+  "crates/vst3-host/src/transport.rs": {
+    "mtime": 1793219408.724727,
+    "seen": 1793427559.1668875,
+    "ast_hash": "2dd00ebc74a7033b519d7be8366036d2",
+    "semantic_hash": "2dd00ebc74a7033b519d7be8366036d2"
+  },
+  "crates/vst3-host/src/window.rs": {
+    "mtime": 1793219408.724727,
+    "seen": 1793427559.166912,
+    "ast_hash": "f6b1ef3d62a4a973b5e80578b2a1b990",
+    "semantic_hash": "f6b1ef3d62a4a973b5e80578b2a1b990"
+  },
+  "mi-toma.json": {
+    "mtime": 1793219408.7287269,
+    "seen": 1793427559.1669362,
+    "ast_hash": "fde633098fc82f0a96b6c52c17eb1570",
+    "semantic_hash": "fde633098fc82f0a96b6c52c17eb1570",
+    "ast_empty": true
+  },
+  "openspec/changes/archive/2026-09-28-project-input-security/.openspec.yaml": {
+    "mtime": 1793219408.7287269,
+    "seen": 1793427559.1669376,
+    "ast_hash": "18273e88837b7470034049248dddce69",
+    "semantic_hash": "18273e88837b7470034049248dddce69",
+    "ast_empty": true
+  },
+  "openspec/changes/audio-latency-profiles/.openspec.yaml": {
+    "mtime": 1793219408.7287269,
+    "seen": 1793427559.1669388,
+    "ast_hash": "2666416478bb753f527d87940c723fd5",
+    "semantic_hash": "2666416478bb753f527d87940c723fd5",
+    "ast_empty": true
+  },
+  "openspec/changes/production-pipeline-eq/.openspec.yaml": {
+    "mtime": 1793219408.7287269,
+    "seen": 1793427559.1669405,
+    "ast_hash": "9732e53f3ecbde4dee3453a20c75be50",
+    "semantic_hash": "9732e53f3ecbde4dee3453a20c75be50",
+    "ast_empty": true
+  },
+  "openspec/changes/render-plan-chain-contract/.openspec.yaml": {
+    "mtime": 1793219408.7287269,
+    "seen": 1793427559.1669416,
+    "ast_hash": "2666416478bb753f527d87940c723fd5",
+    "semantic_hash": "2666416478bb753f527d87940c723fd5",
+    "ast_empty": true
+  },
+  "openspec/changes/runtime-transport-correctness/.openspec.yaml": {
+    "mtime": 1793219408.7287269,
+    "seen": 1793427559.166943,
+    "ast_hash": "2666416478bb753f527d87940c723fd5",
+    "semantic_hash": "2666416478bb753f527d87940c723fd5",
+    "ast_empty": true
+  },
+  "openspec/changes/soundfont-instrument-rendering/.openspec.yaml": {
+    "mtime": 1793219408.7287269,
+    "seen": 1793427559.1669443,
+    "ast_hash": "eeedaec07b367e2e21bda1c2c5a1be80",
+    "semantic_hash": "eeedaec07b367e2e21bda1c2c5a1be80",
+    "ast_empty": true
+  },
+  "openspec/changes/ui-session-workflow/.openspec.yaml": {
+    "mtime": 1793219408.7287269,
+    "seen": 1793427559.1669455,
+    "ast_hash": "2666416478bb753f527d87940c723fd5",
+    "semantic_hash": "2666416478bb753f527d87940c723fd5",
+    "ast_empty": true
+  },
+  "openspec/changes/workstation-arrangement-surface-v2/.openspec.yaml": {
+    "mtime": 1793219408.7327268,
+    "seen": 1793427559.1669471,
+    "ast_hash": "2666416478bb753f527d87940c723fd5",
+    "semantic_hash": "2666416478bb753f527d87940c723fd5",
+    "ast_empty": true
+  },
+  "openspec/config.yaml": {
+    "mtime": 1793219408.7327268,
+    "seen": 1793427559.1669483,
+    "ast_hash": "5b97b9a47c1b7f856873488213a09145",
+    "semantic_hash": "5b97b9a47c1b7f856873488213a09145",
+    "ast_empty": true
+  },
+  "tests/fixtures/dawproject/minimal/project.json": {
+    "mtime": 1793219408.7327268,
+    "seen": 1793427559.1669497,
+    "ast_hash": "f41b02471d3c4fcd67568b5178936794",
+    "semantic_hash": "f41b02471d3c4fcd67568b5178936794",
+    "ast_empty": true
+  }
+}

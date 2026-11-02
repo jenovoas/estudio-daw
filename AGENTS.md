@@ -367,3 +367,11 @@ de evidencia descritos en el handoff.
 - El Mezclador permite activar, silenciar, poner en solo y ajustar ganancia/panorama de pistas no master. Cada gesto emite `SetTrackMixer`, actualiza historial y, si suena el motor, recompila/publica el plan; al pausar aplica la mezcla al reanudar.
 - El plan aplica esos valores tanto a fuentes MIDI como a regiones de audio. Solo restringe a pistas activas en solo; solo prevalece sobre mute, mientras que inactiva siempre silencia. La panoramización implementada es balance L/R. No se muestran medidores ni controles de master.
 - Es avance parcial de 4.1; ACT/M/S/ganancia/panorama aparecen en Session, Arrangement y Mezclador; faltan medidores y agrupación. Verificación del último corte: `cargo fmt --all`, `cargo fmt --all -- --check`, `cargo check -p estudio-daw-ui-shell`, ambos `node --check`, `git diff --check` y OpenSpec normal (ocho avisos lingüísticos conocidos). No se ejecutaron suites ni QA visual/auditiva.
+
+## Directiva operativa de rigor y evidencia
+
+- No especules ni afirmes datos sin contrastarlos con código fuente, documentación oficial o pruebas técnicas reales. Si no puedes verificarlos, dilo claramente.
+- No asientas por complacer ni cambies de postura sin evidencia. Si un comando, parámetro o diseño es incorrecto, indícalo y respáldalo; si faltan datos, pide la especificación exacta.
+- Contrasta referencias al kernel, llamadas al sistema y macros con `include/linux/`, `kernel/` o `man 2`/`man 7`. Basa parámetros y tipos de Rust en `rustc`, Rust Reference o Nomicon, especialmente para layouts.
+- Sustenta pruebas y mediciones exclusivamente con herramientas deterministas del sistema operativo, como `perf`, `bpftool`, `sysctl`, `ip` y `wg`.
+- Prioriza comandos exactos, opciones, rutas de código y salidas esperadas. Evita explicaciones genéricas que no ayuden a ejecutar o verificar.
