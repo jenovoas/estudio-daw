@@ -22,6 +22,30 @@ No se debe reescribir, resumir de nuevo ni sustituir planificación existente pa
 justificar una implementación. Las mejoras de arquitectura se presentan como una
 propuesta o delta explícito, conservando el material previo y su contexto.
 
+## Reglas comunes de sesión
+
+- Responder y redactar en español; conservar en otro idioma sólo identificadores,
+  nombres oficiales, comandos y citas que deban permanecer literales.
+- Antes de explorar o modificar el repositorio, consultar el vault mediante
+  `obsidian-vault` en este orden: `HANDOFF.md` → `MAPA_VAULT` → `Pendientes` →
+  `Personal/PREFERENCIAS_TRABAJO.md` → `CONVENCION_VAULT` → nota de Estudio DAW y
+  notas relacionadas. Si la herramienta no está disponible, comunicar el bloqueo
+  y no afirmar que se consultó la memoria.
+- Usar sólo herramientas presentes y conectadas en la sesión. Playwright sirve
+  para verificar la aplicación en navegador; Context7 para documentación vigente
+  de bibliotecas y herramientas; `openaiDeveloperDocs` para APIs de OpenAI.
+  Graphify CLI se usa desde la raíz sólo si está instalado y existe `graphify-out/`.
+  No asumir acceso a MCP ni sustituir la memoria del vault por Graphify.
+- Para cambios no triviales, seguir el esquema `spec-driven` configurado en
+  OpenSpec: propuesta, diseño, especificaciones cuando cambien requisitos,
+  tareas y validación antes de cerrar.
+- No crear commits, hacer push ni desplegar sin petición explícita. Un permiso para
+  una de esas acciones no autoriza las otras. No alterar ni descartar cambios
+  ajenos.
+- Al cerrar, registrar la evidencia en la nota del proyecto y en el vault,
+  diferenciando preparación local, pruebas ejecutadas y operaciones realmente
+  realizadas. Si queda trabajo abierto, actualizar `HANDOFF.md` del vault en sitio.
+
 ## Fuentes de verdad y trazabilidad
 
 - OpenSpec contiene requisitos, decisiones y tareas aprobadas.
@@ -31,7 +55,7 @@ propuesta o delta explícito, conservando el material previo y su contexto.
 - Git es la evidencia histórica: no declarar una función como implementada sin
   archivo, prueba y SHA que la respalden.
 - La memoria auditable del proyecto vive en
-  `/home/jnovoas/proyectos/personalvault/docs/estudio-daw/`.
+  `~/proyectos/personalvault/docs/estudio-daw/`.
 
 Después de cada intervención material, añadir una entrada a
 `BITACORA_AGENTES.md` en esa carpeta. La entrada debe incluir fecha, agente,
@@ -84,8 +108,8 @@ no borrando el historial.
    `git diff --check` cuando corresponda.
 6. Revisar el diff completo antes de versionar.
 7. Actualizar la bitácora de la vault con hechos verificables y SHA.
-8. Crear commits pequeños y publicar en `main` cuando el usuario haya pedido
-   versionar o el flujo vigente ya lo autorice.
+8. Crear commits pequeños sólo cuando el usuario haya pedido versionar; un
+   despliegue requiere autorización explícita e independiente.
 
 No pedir al usuario que ejecute pruebas que el agente puede ejecutar. Las pruebas
 que requieren interpretación humana, tocar un instrumento o evaluar audio se
@@ -161,9 +185,9 @@ de formatos como OpenSpec; no se usan como excusa para añadir prosa en inglés.
   `git status/log`; continuar desde 4.3. El usuario cambia el flujo de edición
   a Neovim porque VS Code se vuelve pesado.
 
-<!-- codebase-memory-mcp:start -->
-Para explorar estructuralmente el código, usa la habilidad instalada `codebase-memory`.
-<!-- codebase-memory-mcp:end -->
+Para exploración estructural, usa Graphify desde la raíz del proyecto sólo cuando
+la herramienta esté disponible y exista `graphify-out/`; de lo contrario, usa las
+herramientas de búsqueda disponibles en la sesión.
 
 ## Estado vigente — loop A/B de transporte — 2026-09-27
 
